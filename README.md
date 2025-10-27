@@ -7,7 +7,7 @@
 </div>
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![ns--3-3.36/3.44](https://img.shields.io/badge/ns--3-3.36%2F3.44-green.svg)](https://www.nsnam.org/)
+[![ns--3-3.36/3.44](https://img.shields.io/badge/ns--3-3.44%2F3.36-green.svg)](https://www.nsnam.org/)
 [![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04+-lightgrey.svg)]()
 [![Language](https://img.shields.io/badge/Language-C%2B%2B-orange.svg)]()
 [![Python](https://img.shields.io/badge/Python-3.6%2B-blue.svg)](https://www.python.org/)
@@ -113,8 +113,8 @@ SUE-Sim/
 
 **🔄 SUE-Sim supports multiple ns-3 versions**
 
-- **ns-3.36**  - `master` branch
-- **ns-3.44**  - `ns3-44` branch
+- **ns-3 v3.44**  - `main` branch
+- **ns-3 v3.36**  - `ns3-36` branch
 
 **Modular Design Features**: The point-to-point-sue module adopts a design architecture independent of the native point-to-point, with complete modular characteristics and plug-and-play capabilities. Through interface design and standardized implementation, this module can be quickly migrated to different versions of the ns-3 environment.
 
