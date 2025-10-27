@@ -1,0 +1,37 @@
+build_lib(
+  LIBNAME point-to-point-sue
+  SOURCE_FILES
+    model/point-to-point-sue-net-device.cc
+    model/point-to-point-sue-channel.cc
+    model/sue-cbfc-header.cc
+    model/sue-header.cc
+    model/performance-logger.cc
+    model/xpu-delay-tag.cc
+    model/sue-client.cc
+    model/sue-server.cc
+    model/traffic-generator.cc
+    model/load-balancer.cc
+    helper/point-to-point-sue-helper.cc
+    model/simulation-config/application-deployer.cc
+    model/simulation-config/parameter-config.cc
+    model/simulation-config/sue-utils.cc
+    model/simulation-config/topology-builder.cc
+  HEADER_FILES
+    model/point-to-point-sue-net-device.h
+    model/point-to-point-sue-channel.h
+    model/sue-cbfc-header.h
+    model/sue-header.h
+    model/performance-logger.h
+    model/xpu-delay-tag.h
+    model/sue-client.h
+    model/sue-server.h
+    model/traffic-generator.h
+    model/load-balancer.h
+    helper/point-to-point-sue-helper.h
+    model/simulation-config/application-deployer.h
+    model/simulation-config/parameter-config.h
+    model/simulation-config/sue-utils.h
+    model/simulation-config/topology-builder.h
+  LIBRARIES_TO_LINK ${libnetwork} ${libcore} ${libpoint-to-point}
+  TEST_SOURCES test/point-to-point-sue-test.cc
+)
