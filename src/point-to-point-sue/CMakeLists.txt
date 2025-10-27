@@ -11,6 +11,7 @@ build_lib(
     model/sue-server.cc
     model/traffic-generator.cc
     model/load-balancer.cc
+    model/sue-ppp-header.cc
     helper/point-to-point-sue-helper.cc
     model/simulation-config/application-deployer.cc
     model/simulation-config/parameter-config.cc
@@ -27,6 +28,7 @@ build_lib(
     model/sue-server.h
     model/traffic-generator.h
     model/load-balancer.h
+    model/sue-ppp-header.h
     helper/point-to-point-sue-helper.h
     model/simulation-config/application-deployer.h
     model/simulation-config/parameter-config.h
