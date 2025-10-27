@@ -2451,7 +2451,7 @@ namespace ns3
             llrResending[mac][vcId] = false; // Stop retransmission
             lastAckedTime[mac][vcId] = Simulator::Now();
             // Set retransmission timer
-            if(resendPkt[mac][vcId].IsRunning()){
+            if(resendPkt[mac][vcId].IsPending()){
                 resendPkt[mac][vcId].Cancel();
                 }
         }
