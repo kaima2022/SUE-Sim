@@ -148,6 +148,18 @@ struct DelayConfig
 };
 
 /**
+ * \brief LLR configuration parameters
+ */
+struct LlrConfig
+{
+    bool m_llrEnabled;                    //!< Enable Link Layer Reliability
+    std::string LlrTimeout;               //!< LLR timeout value
+    uint32_t LlrWindowSize;               //!< LLR window size
+    std::string AckAddHeaderDelay;        //!< ACK/NACK header adding delay
+    std::string AckProcessDelay;          //!< ACK/NACK processing delay
+};
+
+/**
  * \brief Main configuration structure containing all sub-configurations
  */
 struct SueSimulationConfig
@@ -161,6 +173,7 @@ struct SueSimulationConfig
     LoadBalanceConfig loadBalance; //!< Load balancing parameters
     TraceConfig trace;          //!< Trace sampling parameters
     DelayConfig delay;          //!< Delay-related parameters
+    LlrConfig llr;              //!< Llr related parameters
 
     /**
      * \brief Constructor with default values

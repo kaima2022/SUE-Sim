@@ -31,7 +31,7 @@
 #include "ns3/data-rate.h"
 #include "ns3/ptr.h"
 #include "ns3/mac48-address.h"
-#include "ns3/ppp-header.h"
+#include "sue-ppp-header.h"
 #include "ns3/ethernet-header.h"
 #include "ns3/ipv4-header.h"
 #include "ns3/queue.h"
@@ -291,7 +291,7 @@ private:
    * \param p packet
    * \param protocolNumber protocol number
    */
-  void AddHeader (Ptr<Packet> p, uint16_t protocolNumber);
+  void AddHeader (Ptr<Packet> p, uint16_t protocolNumber,uint32_t seq);
 
   /**
    * Removes, from a packet of data, all headers and trailers that
@@ -301,7 +301,7 @@ private:
    * \return Returns true if the packet should be forwarded up the
    * protocol stack.
    */
-  bool ProcessHeader (Ptr<Packet> p, uint16_t& param);
+  bool ProcessHeader (Ptr<Packet> p, uint16_t& param,uint32_t& seq);
 
   /**
    * Start Sending a Packet Down the Wire.
@@ -634,6 +634,50 @@ public:
 
   // Global mappings
   static std::map<Ipv4Address, Mac48Address> s_ipToMacMap; //!< Global IP to MAC mapping
+
+  /// ---- LLR members ----
+  static const uint16_t ACK_REV = 0x1111;  //!< LLR ACK protocol number
+  static const uint16_t NACK_REV = 0x2222; //!< LLR NACK protocol number
+
+  /**
+   * \brief Structure holding info for a sent packet tracked by LLR
+   */
+
+  bool m_llrEnabled;                 //!< Whether LLR is enabled
+  uint32_t m_llrWindowSize;          //!< LLR window size (max outstanding packets per VC)
+  std::map<Mac48Address,
+           std::vector<std::map<uint32_t, Ptr<Packet>>>> m_sendList; //!< Per peer MAC: per VC map seq->packet
+  Time m_llrTimeout;                 //!< Retransmission timeout
+  Time m_AckAddHeaderDelay;          //!< Delay to add ACK/NACK header
+  Time m_AckProcessDelay;            //!< Delay to process received ACK/NACK
+
+  // Sequence tracking
+  std::map<Mac48Address,std::vector<uint32_t>> waitSeq;      //!< Per peer MAC: expected next receive sequence per VC
+  std::map<Mac48Address,std::vector<uint32_t>> sendSeq;      //!< Per peer MAC: next sequence to send per VC
+  std::map<Mac48Address,std::vector<uint32_t>> unack;        //!< Per peer MAC: outstanding unacknowledged sequences per VC
+  std::map<Mac48Address,std::vector<uint32_t>> llrResendseq; //!< Per peer MAC: sequences scheduled for resend per VC
+
+  // State flags
+  std::map<Mac48Address,std::vector<bool>> llrWait;      //!< Per peer MAC: VC waiting for ACK
+  std::map<Mac48Address,std::vector<bool>> llrResending; //!< Per peer MAC: VC currently resending
+
+  // Timing
+  std::map<Mac48Address,std::vector<Time>> lastAckedTime; //!< Per peer MAC: last ACK receive time per VC
+  std::map<Mac48Address,std::vector<Time>> lastAcksend;   //!< Per peer MAC: last ACK send time per VC
+
+  // Retransmission events
+  std::map<Mac48Address,std::vector<EventId>> resendPkt;  //!< Per peer MAC: scheduled resend events per VC
+
+  // LLR operations
+  void SendLlrAck(uint8_t vcId, uint32_t seq, Mac48Address dest);
+  void SendLlrNack(uint8_t vcId, uint32_t seq, Mac48Address dest);
+  void ProcessLlrAck(Ptr<Packet> p);
+  void ProcessLlrNack(Ptr<Packet> p);
+  void Resend(uint8_t vcId, Mac48Address dest);          //!< Timeout-based resend
+  void ResendInSwitch(uint8_t vcId, Mac48Address dest);  //!< Switch internal resend
+  void LlrSendPacket(Ptr<Packet> packet, uint8_t vcId, Mac48Address dest); //!< Initial send with sequencing
+  void LlrReceivePacket(Ptr<Packet> packet, uint8_t vcId, Mac48Address source, uint32_t seq_rev); //!< Handle received data
+  void LlrResendPacket(uint8_t vcId, Mac48Address dest); //!< Perform resend of pending sequences
 };
 
 } // namespace ns3

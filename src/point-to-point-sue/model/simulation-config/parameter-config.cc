@@ -91,12 +91,20 @@ SueSimulationConfig::SueSimulationConfig ()
     delay.ackProcessingDelay = "15ns";
     delay.vcSchedulingDelay = "8ns";
     delay.DataAddHeadDelay = "5ns";
-    delay.additionalHeaderSize = 46;
+    delay.additionalHeaderSize = 52;
     delay.creditGenerateDelay = "10ns";
     delay.CreUpdateAddHeadDelay = "3ns";
     delay.creditReturnProcessingDelay = "8ns";
     delay.batchCreditAggregationDelay = "5ns";
     delay.switchForwardDelay = "130ns";
+
+    //Initialize LLR configuration
+    llr.m_llrEnabled = false;
+    llr.LlrTimeout = "10000ns";
+    llr.LlrWindowSize = 10;                     
+    llr.AckAddHeaderDelay = "10ns";         
+    llr.AckProcessDelay = "10ns";           
+    
 }
 
 void
@@ -177,6 +185,13 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("prime2", "Second prime number for enhanced hash", loadBalance.prime2);
     cmd.AddValue("useVcInHash", "Include VC ID in hash calculation", loadBalance.useVcInHash);
     cmd.AddValue("enableBitOperations", "Enable bit mixing operations in hash", loadBalance.enableBitOperations);
+
+    //Llr related parameters
+    cmd.AddValue("EnableLLR", "Enable Link Layer Reliability", llr.m_llrEnabled);
+    cmd.AddValue("LlrTimeout", "LLR timeout value", llr.LlrTimeout);
+    cmd.AddValue("LlrWindowSize", "LLR window size", llr.LlrWindowSize);
+    cmd.AddValue("AckAddHeaderDelay", "ACK/NACK header adding delay", llr.AckAddHeaderDelay);
+    cmd.AddValue("AckProcessDelay", "ACK/NACK processing delay", llr.AckProcessDelay);
 
     cmd.Parse(argc, argv);
 }

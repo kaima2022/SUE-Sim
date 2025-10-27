@@ -94,7 +94,8 @@ SUE-Sim/
 │       │   ├── performance-logger.cc/.h                # Performance logger
 │       │   ├── traffic-generator.cc/.h                 # Traffic generator
 │       │   ├── load-balancer.cc/.h                     # Load balancer
-│       │   └── xpu-delay-tag.cc/.h                     # XPU delay tag
+│       │   ├── xpu-delay-tag.cc/.h                     # XPU delay tag
+|       |   └── sue-ppp-header.cc/.h                    # ppp header
 │       ├── helper/                  # Helper classes
 │       │   └── point-to-point-sue-helper.cc/.h
 │       ├── examples/                # Example code
