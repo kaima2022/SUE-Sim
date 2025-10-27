@@ -77,7 +77,7 @@ Install Python 3 and pip3:
 
 - Required Python packages:
   ```bash
-  pip3 install numpy==1.24.4 pandas==2.0.3 matplotlib==3.7.5 seaborn==0.13.2 scipy==1.10.1
+  pip3 install numpy pandas matplotlib seaborn scipy
   ```
 
 ### 2. Running Analysis Scripts
