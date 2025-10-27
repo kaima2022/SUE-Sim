@@ -1,155 +1,197 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2020 Orange Labs
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Rediet <getachew.redieteab@orange.com>
  *         Muhammad Iqbal Rochman <muhiqbalcr@uchicago.edu>
  *         Sébastien Deronne <sebastien.deronne@gmail.com> (DsssSigHeader)
  */
 
-#include "dsss-ppdu.h"
-
-#include "dsss-phy.h"
-
-#include "ns3/log.h"
-#include "ns3/wifi-phy-operating-channel.h"
 #include "ns3/wifi-phy.h"
 #include "ns3/wifi-psdu.h"
+#include "dsss-phy.h"
+#include "dsss-ppdu.h"
+#include "ns3/log.h"
 
-namespace ns3
+namespace ns3 {
+
+NS_LOG_COMPONENT_DEFINE ("DsssPpdu");
+
+DsssPpdu::DsssPpdu (Ptr<const WifiPsdu> psdu, const WifiTxVector& txVector, Time ppduDuration, uint64_t uid)
+  : WifiPpdu (psdu, txVector, uid)
 {
-
-NS_LOG_COMPONENT_DEFINE("DsssPpdu");
-
-DsssPpdu::DsssPpdu(Ptr<const WifiPsdu> psdu,
-                   const WifiTxVector& txVector,
-                   const WifiPhyOperatingChannel& channel,
-                   Time ppduDuration,
-                   uint64_t uid)
-    : WifiPpdu(psdu, txVector, channel, uid)
-{
-    NS_LOG_FUNCTION(this << psdu << txVector << channel << ppduDuration << uid);
-    SetPhyHeaders(txVector, ppduDuration);
+  NS_LOG_FUNCTION (this << psdu << txVector << ppduDuration << uid);
+  m_dsssSig.SetRate (txVector.GetMode ().GetDataRate (22));
+  Time psduDuration = ppduDuration - WifiPhy::CalculatePhyPreambleAndHeaderDuration (txVector);
+  m_dsssSig.SetLength (psduDuration.GetMicroSeconds ());
 }
 
-void
-DsssPpdu::SetPhyHeaders(const WifiTxVector& txVector, Time ppduDuration)
+DsssPpdu::~DsssPpdu ()
 {
-    NS_LOG_FUNCTION(this << txVector);
-    SetDsssHeader(m_dsssSig, txVector, ppduDuration);
-}
-
-void
-DsssPpdu::SetDsssHeader(DsssSigHeader& dsssSig,
-                        const WifiTxVector& txVector,
-                        Time ppduDuration) const
-{
-    dsssSig.SetRate(txVector.GetMode().GetDataRate(MHz_u{22}));
-    Time psduDuration = ppduDuration - WifiPhy::CalculatePhyPreambleAndHeaderDuration(txVector);
-    dsssSig.SetLength(psduDuration.GetMicroSeconds());
 }
 
 WifiTxVector
-DsssPpdu::DoGetTxVector() const
+DsssPpdu::DoGetTxVector (void) const
 {
-    WifiTxVector txVector;
-    txVector.SetPreambleType(m_preamble);
-    txVector.SetChannelWidth(MHz_u{22});
-    SetTxVectorFromDsssHeader(txVector, m_dsssSig);
-    return txVector;
-}
-
-void
-DsssPpdu::SetTxVectorFromDsssHeader(WifiTxVector& txVector, const DsssSigHeader& dsssSig) const
-{
-    txVector.SetMode(DsssPhy::GetDsssRate(dsssSig.GetRate()));
+  WifiTxVector txVector;
+  txVector.SetPreambleType (m_preamble);
+  txVector.SetMode (DsssPhy::GetDsssRate (m_dsssSig.GetRate ()));
+  txVector.SetChannelWidth (22);
+  return txVector;
 }
 
 Time
-DsssPpdu::GetTxDuration() const
+DsssPpdu::GetTxDuration (void) const
 {
-    const auto& txVector = GetTxVector();
-    const auto length = m_dsssSig.GetLength();
-    return (MicroSeconds(length) + WifiPhy::CalculatePhyPreambleAndHeaderDuration(txVector));
+  Time ppduDuration = Seconds (0);
+  const WifiTxVector& txVector = GetTxVector ();
+  ppduDuration = MicroSeconds (m_dsssSig.GetLength ()) + WifiPhy::CalculatePhyPreambleAndHeaderDuration (txVector);
+  return ppduDuration;
 }
 
 Ptr<WifiPpdu>
-DsssPpdu::Copy() const
+DsssPpdu::Copy (void) const
 {
-    return Ptr<WifiPpdu>(new DsssPpdu(*this), false);
+  return Create<DsssPpdu> (GetPsdu (), GetTxVector (), GetTxDuration (), m_uid);
 }
 
-DsssPpdu::DsssSigHeader::DsssSigHeader()
-    : m_rate(0b00001010),
-      m_length(0)
+DsssPpdu::DsssSigHeader::DsssSigHeader ()
+  : m_rate (0b00001010),
+    m_length (0)
 {
+}
+
+DsssPpdu::DsssSigHeader::~DsssSigHeader ()
+{
+}
+
+TypeId
+DsssPpdu::DsssSigHeader::GetTypeId (void)
+{
+  static TypeId tid = TypeId ("ns3::DsssSigHeader")
+    .SetParent<Header> ()
+    .SetGroupName ("Wifi")
+    .AddConstructor<DsssSigHeader> ()
+  ;
+  return tid;
+}
+
+TypeId
+DsssPpdu::DsssSigHeader::GetInstanceTypeId (void) const
+{
+  return GetTypeId ();
 }
 
 void
-DsssPpdu::DsssSigHeader::SetRate(uint64_t rate)
+DsssPpdu::DsssSigHeader::Print (std::ostream &os) const
 {
-    /* Here is the binary representation for a given rate:
-     * 1 Mbit/s: 00001010
-     * 2 Mbit/s: 00010100
-     * 5.5 Mbit/s: 00110111
-     * 11 Mbit/s: 01101110
-     */
-    switch (rate)
+  os << "SIGNAL=" << GetRate ()
+     << " LENGTH=" << m_length;
+}
+
+uint32_t
+DsssPpdu::DsssSigHeader::GetSerializedSize (void) const
+{
+  return 6;
+}
+
+void
+DsssPpdu::DsssSigHeader::SetRate (uint64_t rate)
+{
+  /* Here is the binary representation for a given rate:
+   * 1 Mbit/s: 00001010
+   * 2 Mbit/s: 00010100
+   * 5.5 Mbit/s: 00110111
+   * 11 Mbit/s: 01101110
+   */
+  switch (rate)
     {
-    case 1000000:
+      case 1000000:
         m_rate = 0b00001010;
         break;
-    case 2000000:
+      case 2000000:
         m_rate = 0b00010100;
         break;
-    case 5500000:
+      case 5500000:
         m_rate = 0b00110111;
         break;
-    case 11000000:
+      case 11000000:
         m_rate = 0b01101110;
         break;
-    default:
-        NS_ASSERT_MSG(false, "Invalid rate");
+      default:
+        NS_ASSERT_MSG (false, "Invalid rate");
         break;
     }
 }
 
 uint64_t
-DsssPpdu::DsssSigHeader::GetRate() const
+DsssPpdu::DsssSigHeader::GetRate (void) const
 {
-    uint64_t rate = 0;
-    switch (m_rate)
+  uint64_t rate = 0;
+  switch (m_rate)
     {
-    case 0b00001010:
+      case 0b00001010:
         rate = 1000000;
         break;
-    case 0b00010100:
+      case 0b00010100:
         rate = 2000000;
         break;
-    case 0b00110111:
+      case 0b00110111:
         rate = 5500000;
         break;
-    case 0b01101110:
+      case 0b01101110:
         rate = 11000000;
         break;
-    default:
-        NS_ASSERT_MSG(false, "Invalid rate");
+      default:
+        NS_ASSERT_MSG (false, "Invalid rate");
         break;
     }
-    return rate;
+  return rate;
 }
 
 void
-DsssPpdu::DsssSigHeader::SetLength(uint16_t length)
+DsssPpdu::DsssSigHeader::SetLength (uint16_t length)
 {
-    m_length = length;
+  m_length = length;
 }
 
 uint16_t
-DsssPpdu::DsssSigHeader::GetLength() const
+DsssPpdu::DsssSigHeader::GetLength (void) const
 {
-    return m_length;
+  return m_length;
 }
 
-} // namespace ns3
+void
+DsssPpdu::DsssSigHeader::Serialize (Buffer::Iterator start) const
+{
+  start.WriteU8 (m_rate);
+  start.WriteU8 (0); /* SERVICE */
+  start.WriteU16 (m_length);
+  start.WriteU16 (0); /* CRC */
+}
+
+uint32_t
+DsssPpdu::DsssSigHeader::Deserialize (Buffer::Iterator start)
+{
+  Buffer::Iterator i = start;
+  m_rate = i.ReadU8 ();
+  i.ReadU8 (); /* SERVICE */
+  m_length =  i.ReadU16 ();
+  i.ReadU16 (); /* CRC */
+  return i.GetDistanceFrom (start);
+}
+
+} //namespace ns3

@@ -4,7 +4,7 @@
 How to write tests
 ------------------
 
-A primary goal of the ns-3 project is to help users to improve the
+A primary goal of the ns-3 project is to help users to improve the 
 validity and credibility of their results.  There are many elements
 to obtaining valid models and simulations, and testing is a major
 component.  If you contribute models or examples to ns-3, you may
@@ -26,32 +26,32 @@ Sample TestSuite skeleton
 When starting from scratch (i.e. not adding a TestCase to an existing
 TestSuite), these things need to be decided up front:
 
-* What the test suite will be called
+* What the test suite will be called 
 * What type of test it will be (Build Verification Test, Unit Test,
   System Test, or Performance Test)
 * Where the test code will live (either in an existing ns-3 module or
-  separately in src/test/ directory).  You will have to edit the CMakeLists.txt
+  separately in src/test/ directory).  You will have to edit the wscript
   file in that directory to compile your new code, if it is a new file.
 
 A program called ``utils/create-module.py`` is a good starting point.
 This program can be invoked such as ``create-module.py router`` for
 a hypothetical new module called ``router``.  Once you do this, you
-will see a ``router`` directory, and a ``test/router-test-suite.cc``
+will see a ``router`` directory, and a ``test/router-test-suite.cc`` 
 test suite.  This file can be a starting point for your initial test.
 This is a working test suite, although the actual tests performed are
 trivial.  Copy it over to your module's test directory, and do a global
 substitution of "Router" in that file for something pertaining to
 the model that you want to test.  You can also edit things such as a
-more descriptive test case name.
+more descriptive test case name. 
 
-You also need to add a block into your CMakeLists.txt to get this test to
+You also need to add a block into your wscript to get this test to
 compile:
 
-.. sourcecode:: cmake
+.. sourcecode:: python
 
-    set(test_sources
-        test/router-test-suite.cc
-    )
+    module_test.source = [
+        'test/router-test-suite.cc',
+        ]
 
 Before you actually start making this do useful things, it may help
 to try to run the skeleton.  Make sure that ns-3 has been configured with
@@ -60,8 +60,8 @@ is called "router" such as here:
 
 ::
 
-  RouterTestSuite::RouterTestSuite()
-    : TestSuite("router", Type::UNIT)
+  RouterTestSuite::RouterTestSuite ()
+    : TestSuite ("router", UNIT)
 
 Try this command:
 
@@ -82,7 +82,7 @@ Test macros
 ***********
 
 There are a number of macros available for checking test program
-output with expected output.  These macros are defined in
+output with expected output.  These macros are defined in 
 ``src/core/model/test.h``.
 
 The main set of macros that are used include the following:
@@ -93,7 +93,7 @@ The main set of macros that are used include the following:
   NS_TEST_ASSERT_MSG_NE(actual, limit, msg)
   NS_TEST_ASSERT_MSG_LT(actual, limit, msg)
   NS_TEST_ASSERT_MSG_GT(actual, limit, msg)
-  NS_TEST_ASSERT_MSG_EQ_TOL(actual, limit, tol, msg)
+  NS_TEST_ASSERT_MSG_EQ_TOL(actual, limit, tol, msg)  
 
 The first argument ``actual`` is the value under test, the second value
 ``limit`` is the expected value (or the value to test against), and the
@@ -137,7 +137,7 @@ framework with a specialized ``TestSuite`` or ``TestCase`` class
 designed to run an example and compare the output with a specified
 known "good" reference file.  To use an example program as a test you
 need to create a test suite file and add it to the appropriate list in
-your module CMakeLists.txt file. The "good" output reference file needs to be
+your module wscript file. The "good" output reference file needs to be
 generated for detecting regressions.
 
 If you are thinking about using this class, strongly consider using a
@@ -154,8 +154,8 @@ which looks like this:
 ::
 
    #include "ns3/example-as-test.h"
-   static ns3::ExampleAsTestSuite g_modExampleOne("mymodule-example-mod-example-one", "mod-example", NS_TEST_SOURCEDIR, "--arg-one");
-   static ns3::ExampleAsTestSuite g_modExampleTwo("mymodule-example-mod-example-two", "mod-example", NS_TEST_SOURCEDIR, "--arg-two");
+   static ns3::ExampleAsTestSuite g_modExampleOne ("mymodule-example-mod-example-one", "mod-example", NS_TEST_SOURCEDIR, "--arg-one");
+   static ns3::ExampleAsTestSuite g_modExampleTwo ("mymodule-example-mod-example-two", "mod-example", NS_TEST_SOURCEDIR, "--arg-two");
 
 The arguments to the constructor are the name of the test suite, the
 example to run, the directory that contains the "good" reference file
@@ -164,25 +164,16 @@ and command line arguments for the example.  In the preceding code the
 same example is run twice with different arguments.
 
 You then need to add that newly created test suite file to the list of
-test sources in ``mymodule/CMakeLists.txt``.  Building of examples
+test sources in ``mymodule/wscript``.  Building of examples
 is an option so you need to guard the inclusion of the test suite:
 
-.. sourcecode:: cmake
+.. sourcecode:: python
 
-   set(example_as_test_suite)
-   if(${ENABLE_EXAMPLES})
-     set(example_as_test_suite
-         test/mymodule-examples-test-suite.cc
-     )
-   endif()
+   if (bld.env['ENABLE_EXAMPLES']):
+      module.source.append('model/mymodule-examples-test-suite.cc')
 
-and then later
-
-.. sourcecode:: cmake
-
-   set(test_sources
-      ${example_as_test_suite}
-
+Since you modified a wscript file you need to reconfigure and rebuild
+everything.
 
 You just added new tests so you will need to generate the "good"
 output reference files that will be used to verify the example:
@@ -223,41 +214,6 @@ keep up-to-date.  Output as little as needed for the example and
 include only behavioral state that is important for determining if the
 example has run correctly.
 
-Testing (de)serialization of Headers
-************************************
-Implementing serialization and deserialization of Headers is often prone to
-errors. A generic approach to test these operations is to start from a given
-Header, serialize the given header in a buffer, then create a new header by
-deserializing from the buffer and serialize the new header into a second buffer.
-If everything is correct, the two buffers have the same size and the same content.
-
-The ``HeaderSerializationTestCase`` class enables to perform such a test in an
-easy manner. Test cases willing to exploit such an approach have to inherit from
-``HeaderSerializationTestCase`` instead of ``TestCase`` and pass a Header object
-to the ``TestHeaderSerialization`` method (along with arguments that may be
-needed to construct the new header that is going to be deserialized).
-
-Note that such an approach is not restricted to Header subclasses, but it is
-available for all classes that provide (de)serialization operations, such as
-the wifi Information Elements.
-
-::
-
-   #include "ns3/header-serialization-test.h"
-   class BasicMultiLinkElementTest : public HeaderSerializationTestCase
-   {
-     ...
-   };
-   void
-   BasicMultiLinkElementTest::DoRun()
-   {
-     MultiLinkElement mle(WIFI_MAC_MGT_BEACON);
-     // Fill in the Multi-Link Element
-     TestHeaderSerialization(mle, WIFI_MAC_MGT_BEACON);
-   }
-
-Examples of this approach are found, e.g., in ``src/wifi/test/wifi-eht-info-elems-test.cc``
-
 Testing for boolean outcomes
 ****************************
 
@@ -275,3 +231,4 @@ Storing and referencing non-trivial output data
 
 Presenting your output test data
 ********************************
+

@@ -18,24 +18,26 @@ build_lib_example(
     ${libapplications}
 )
 
-build_lib_example(
-  NAME realtime-dummy-network
-  SOURCE_FILES realtime-dummy-network.cc
-  LIBRARIES_TO_LINK
-    ${libfd-net-device}
-    ${libinternet}
-    ${libapplications}
-    ${libinternet-apps}
-)
+if(${ENABLE_REALTIME})
+  build_lib_example(
+    NAME realtime-dummy-network
+    SOURCE_FILES realtime-dummy-network.cc
+    LIBRARIES_TO_LINK
+      ${libfd-net-device}
+      ${libinternet}
+      ${libapplications}
+      ${libinternet-apps}
+  )
 
-build_lib_example(
-  NAME realtime-fd2fd-onoff
-  SOURCE_FILES realtime-fd2fd-onoff.cc
-  LIBRARIES_TO_LINK
-    ${libfd-net-device}
-    ${libinternet}
-    ${libapplications}
-)
+  build_lib_example(
+    NAME realtime-fd2fd-onoff
+    SOURCE_FILES realtime-fd2fd-onoff.cc
+    LIBRARIES_TO_LINK
+      ${libfd-net-device}
+      ${libinternet}
+      ${libapplications}
+  )
+endif()
 
 if(${ENABLE_EMU})
   build_lib_example(

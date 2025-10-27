@@ -14,23 +14,13 @@ function(create_scratch source_files)
     file(READ ${source_file} source_file_contents)
     string(REGEX MATCHALL "main[(| (]" main_position "${source_file_contents}")
     if(CMAKE_MATCH_0)
-      list(APPEND scratch_src ${source_file})
+      set(scratch_src ${source_file})
     endif()
   endforeach()
 
-  list(LENGTH scratch_src scratch_src_len)
-
-  # If there is no main function, raise an error
-  if(${scratch_src_len} EQUAL 0)
-    message(FATAL_ERROR "The following scratch source files do not contain a main function: ${source_files}")
+  if(NOT scratch_src)
+    return()
   endif()
-
-  # If there are multiple main functions, raise an error
-  if(${scratch_src_len} GREATER 1)
-    message(FATAL_ERROR "The following scratch source files contain ${scratch_src_len} files with a main function: ${scratch_src}")
-  endif()
-
-  # If there is a single main function, continue normally
 
   # Get parent directory name
   get_filename_component(scratch_dirname ${scratch_src} DIRECTORY)
@@ -40,17 +30,7 @@ function(create_scratch source_files)
   string(REPLACE "/" "_" scratch_dirname "${scratch_dirname}")
 
   # Get source name
-  if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.14.0")
-    get_filename_component(scratch_name ${scratch_src} NAME_WLE)
-  else()
-    get_filename_component(scratch_name ${scratch_src} NAME)
-    string(FIND "${scratch_name}" "." ext_position REVERSE)
-    if(${ext_position} EQUAL -1)
-      message(FATAL_ERROR "Source file has no extension: ${scratch_src}")
-    else()
-      string(SUBSTRING "${scratch_name}" 0 ${ext_position} scratch_name)
-    endif()
-  endif()
+  get_filename_component(scratch_name ${scratch_src} NAME_WE)
 
   set(target_prefix scratch_)
   if(scratch_dirname)
@@ -64,24 +44,33 @@ function(create_scratch source_files)
   string(REPLACE "${PROJECT_SOURCE_DIR}" "${CMAKE_OUTPUT_DIRECTORY}"
                  scratch_directory ${scratch_absolute_directory}
   )
-  build_exec(
-          EXECNAME ${scratch_name}
-          EXECNAME_PREFIX ${target_prefix}
-          SOURCE_FILES "${source_files}"
-          LIBRARIES_TO_LINK "${ns3-libs}" "${ns3-contrib-libs}"
-          EXECUTABLE_DIRECTORY_PATH ${scratch_directory}/
+  add_executable(${target_prefix}${scratch_name} "${source_files}")
+  if(${NS3_STATIC})
+    target_link_libraries(
+      ${target_prefix}${scratch_name} ${LIB_AS_NEEDED_PRE_STATIC}
+      ${lib-ns3-static}
+    )
+  else()
+    target_link_libraries(
+      ${target_prefix}${scratch_name} "${ns3-libs}" "${ns3-contrib-libs}"
+      "${ns3-external-libs}"
+    )
+  endif()
+  set_runtime_outputdirectory(
+    ${scratch_name} ${scratch_directory}/ ${target_prefix}
   )
 endfunction()
 
 # Scan *.cc files in ns-3-dev/scratch and build a target for each
-file(GLOB single_source_file_scratches CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/[^.]*.cc)
+file(GLOB single_source_file_scratches CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cc)
 foreach(scratch_src ${single_source_file_scratches})
   create_scratch(${scratch_src})
 endforeach()
 
-# Scan ns-3-dev/scratch subdirectories
+# Scan *.cc files in ns-3-dev/scratch subdirectories and build a target for each
+# subdirectory
 file(
-  GLOB scratch_subdirectories
+  GLOB_RECURSE scratch_subdirectories
   CONFIGURE_DEPENDS
   LIST_DIRECTORIES true
   ${CMAKE_CURRENT_SOURCE_DIR}/**
@@ -93,7 +82,6 @@ foreach(entry ${scratch_subdirectories})
   endif()
 endforeach()
 
-# Build scratches per directory or following CMakeLists.txt instructions
 foreach(subdir ${scratch_subdirectories})
   if(EXISTS ${subdir}/CMakeLists.txt)
     # If the subdirectory contains a CMakeLists.txt file
@@ -105,7 +93,7 @@ foreach(subdir ${scratch_subdirectories})
   else()
     # Otherwise we pick all the files in the subdirectory
     # and create a scratch for them automatically
-    file(GLOB scratch_sources CONFIGURE_DEPENDS ${subdir}/[^.]*.cc)
+    file(GLOB scratch_sources CONFIGURE_DEPENDS ${subdir}/*.cc)
     create_scratch("${scratch_sources}")
   endif()
 endforeach()

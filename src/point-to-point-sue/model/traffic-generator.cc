@@ -109,7 +109,7 @@ TrafficGenerator::TrafficGenerator()
 }
 
 TrafficGenerator::~TrafficGenerator() {
-    if (m_generateEvent.IsPending()) {
+    if (m_generateEvent.IsRunning()) {
         Simulator::Cancel(m_generateEvent);
     }
 }
@@ -162,7 +162,7 @@ void TrafficGenerator::StopApplication(void) {
     NS_LOG_INFO("TrafficGenerator stopping for XPU" << m_localXpuId);
 
     // Cancel scheduled events
-    if (m_generateEvent.IsPending()) {
+    if (m_generateEvent.IsRunning()) {
         Simulator::Cancel(m_generateEvent);
     }
 }

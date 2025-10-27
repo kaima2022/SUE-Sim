@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2007,2008,2009 INRIA, UDCAST
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Amine Ismail <amine.ismail@sophia.inria.fr>
  *                      <amine.ismail@udcast.com>
@@ -11,103 +23,79 @@
 #ifndef UDP_CLIENT_H
 #define UDP_CLIENT_H
 
-#include "source-application.h"
-
-#include "ns3/deprecated.h"
+#include "ns3/application.h"
 #include "ns3/event-id.h"
-#include "ns3/ipv4-address.h"
 #include "ns3/ptr.h"
-#include "ns3/traced-callback.h"
+#include "ns3/ipv4-address.h"
 
-#include <optional>
-
-namespace ns3
-{
+namespace ns3 {
 
 class Socket;
 class Packet;
 
 /**
- * @ingroup udpclientserver
+ * \ingroup udpclientserver
  *
- * @brief A Udp client. Sends UDP packet carrying sequence number and time stamp
+ * \brief A Udp client. Sends UDP packet carrying sequence number and time stamp
  *  in their payloads
  *
  */
-class UdpClient : public SourceApplication
+class UdpClient : public Application
 {
-  public:
-    /**
-     * @brief Get the type ID.
-     * @return the object TypeId
-     */
-    static TypeId GetTypeId();
+public:
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
 
-    UdpClient();
-    ~UdpClient() override;
+  UdpClient ();
 
-    static constexpr uint16_t DEFAULT_PORT{100}; //!< default port
+  virtual ~UdpClient ();
 
-    /**
-     * @brief set the remote address and port
-     * @param ip remote IP address
-     * @param port remote port
-     */
-    NS_DEPRECATED_3_44("Use SetRemote without port parameter instead")
-    void SetRemote(const Address& ip, uint16_t port);
-    void SetRemote(const Address& addr) override;
+  /**
+   * \brief set the remote address and port
+   * \param ip remote IP address
+   * \param port remote port
+   */
+  void SetRemote (Address ip, uint16_t port);
+  /**
+   * \brief set the remote address
+   * \param addr remote address
+   */
+  void SetRemote (Address addr);
 
-    /**
-     * @return the total bytes sent by this app
-     */
-    uint64_t GetTotalTx() const;
+  /**
+   * \return the total bytes sent by this app
+   */
+  uint64_t GetTotalTx () const;
 
-  private:
-    void StartApplication() override;
-    void StopApplication() override;
+protected:
+  virtual void DoDispose (void);
 
-    /**
-     * @brief Send a packet
-     */
-    void Send();
+private:
 
-    /**
-     * @brief Set the remote port (temporary function until deprecated attributes are removed)
-     * @param port remote port
-     */
-    void SetPort(uint16_t port);
+  virtual void StartApplication (void);
+  virtual void StopApplication (void);
 
-    /**
-     * @brief Get the remote port (temporary function until deprecated attributes are removed)
-     * @return the remote port
-     */
-    uint16_t GetPort() const;
+  /**
+   * \brief Send a packet
+   */
+  void Send (void);
 
-    /**
-     * @brief Get the remote address (temporary function until deprecated attributes are removed)
-     * @return the remote address
-     */
-    Address GetRemote() const;
+  uint32_t m_count; //!< Maximum number of packets the application will send
+  Time m_interval; //!< Packet inter-send time
+  uint32_t m_size; //!< Size of the sent packet (including the SeqTsHeader)
 
-    /// Traced Callback: transmitted packets.
-    TracedCallback<Ptr<const Packet>> m_txTrace;
-
-    /// Callbacks for tracing the packet Tx events, includes source and destination addresses
-    TracedCallback<Ptr<const Packet>, const Address&, const Address&> m_txTraceWithAddresses;
-
-    uint32_t m_count; //!< Maximum number of packets the application will send
-    Time m_interval;  //!< Packet inter-send time
-    uint32_t m_size;  //!< Size of the sent packet (including the SeqTsHeader)
-
-    uint32_t m_sent;                    //!< Counter for sent packets
-    uint64_t m_totalTx;                 //!< Total bytes sent
-    Ptr<Socket> m_socket;               //!< Socket
-    std::optional<uint16_t> m_peerPort; //!< Remote peer port (deprecated) // NS_DEPRECATED_3_44
-    EventId m_sendEvent;                //!< Event to send the next packet
-
+  uint32_t m_sent; //!< Counter for sent packets
+  uint64_t m_totalTx; //!< Total bytes sent
+  Ptr<Socket> m_socket; //!< Socket
+  Address m_peerAddress; //!< Remote peer address
+  uint16_t m_peerPort; //!< Remote peer port
+  EventId m_sendEvent; //!< Event to send the next packet
 #ifdef NS3_LOG_ENABLE
-    std::string m_peerString; //!< Remote peer address string
-#endif                        // NS3_LOG_ENABLE
+  std::string m_peerAddressString; //!< Remote peer address string
+#endif // NS3_LOG_ENABLE
 };
 
 } // namespace ns3

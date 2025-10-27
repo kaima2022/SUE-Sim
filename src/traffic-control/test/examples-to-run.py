@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+## -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
 
 # A list of C++ examples to run in order to ensure that they remain
 # buildable and runnable over time.  Each tuple in the list contains
@@ -21,11 +22,7 @@ cpp_examples = [
     ("adaptive-red-tests --testNumber=13", "True", "True"),
     ("adaptive-red-tests --testNumber=14", "True", "True"),
     ("adaptive-red-tests --testNumber=15", "True", "True"),
-    (
-        "codel-vs-pfifo-asymmetric --routerWanQueueDiscType=PfifoFast --simDuration=10",
-        "True",
-        "True",
-    ),
+    ("codel-vs-pfifo-asymmetric --routerWanQueueDiscType=PfifoFast --simDuration=10", "True", "True"),
     ("codel-vs-pfifo-asymmetric --routerWanQueueDiscType=CoDel --simDuration=10", "True", "False"),
     ("codel-vs-pfifo-basic-test --queueDiscType=PfifoFast --simDuration=10", "True", "False"),
     ("codel-vs-pfifo-basic-test --queueDiscType=CoDel --simDuration=10", "True", "False"),

@@ -1,72 +1,80 @@
+/* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
  */
 
-#include "lte-rlc-sdu-status-tag.h"
+#include "ns3/lte-rlc-sdu-status-tag.h"
 
-namespace ns3
-{
+namespace ns3 {
 
-NS_OBJECT_ENSURE_REGISTERED(LteRlcSduStatusTag);
+NS_OBJECT_ENSURE_REGISTERED (LteRlcSduStatusTag);
 
-LteRlcSduStatusTag::LteRlcSduStatusTag()
+LteRlcSduStatusTag::LteRlcSduStatusTag ()
 {
 }
 
 void
-LteRlcSduStatusTag::SetStatus(uint8_t status)
+LteRlcSduStatusTag::SetStatus (uint8_t status)
 {
-    m_sduStatus = status;
+  m_sduStatus = status;
 }
 
 uint8_t
-LteRlcSduStatusTag::GetStatus() const
+LteRlcSduStatusTag::GetStatus (void) const
 {
-    return m_sduStatus;
+  return m_sduStatus;
 }
 
 TypeId
-LteRlcSduStatusTag::GetTypeId()
+LteRlcSduStatusTag::GetTypeId (void)
 {
-    static TypeId tid = TypeId("ns3::LteRlcSduStatusTag")
-                            .SetParent<Tag>()
-                            .SetGroupName("Lte")
-                            .AddConstructor<LteRlcSduStatusTag>();
-    return tid;
+  static TypeId tid = TypeId ("ns3::LteRlcSduStatusTag")
+    .SetParent<Tag> ()
+    .SetGroupName("Lte")
+    .AddConstructor<LteRlcSduStatusTag> ()
+  ;
+  return tid;
 }
-
 TypeId
-LteRlcSduStatusTag::GetInstanceTypeId() const
+LteRlcSduStatusTag::GetInstanceTypeId (void) const
 {
-    return GetTypeId();
+  return GetTypeId ();
 }
 
 uint32_t
-LteRlcSduStatusTag::GetSerializedSize() const
+LteRlcSduStatusTag::GetSerializedSize (void) const
 {
-    return 1;
+  return 1;
 }
-
 void
-LteRlcSduStatusTag::Serialize(TagBuffer i) const
+LteRlcSduStatusTag::Serialize (TagBuffer i) const
 {
-    i.WriteU8(m_sduStatus);
+  i.WriteU8 (m_sduStatus);
 }
-
 void
-LteRlcSduStatusTag::Deserialize(TagBuffer i)
+LteRlcSduStatusTag::Deserialize (TagBuffer i)
 {
-    m_sduStatus = i.ReadU8();
+  m_sduStatus = i.ReadU8 ();
 }
-
 void
-LteRlcSduStatusTag::Print(std::ostream& os) const
+LteRlcSduStatusTag::Print (std::ostream &os) const
 {
-    os << "SDU Status=" << (uint32_t)m_sduStatus;
+  os << "SDU Status=" << (uint32_t) m_sduStatus;
 }
 
 }; // namespace ns3

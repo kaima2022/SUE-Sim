@@ -1,235 +1,187 @@
+/* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2017 Sébastien Deronne
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
  *
- * Authors: Sébastien Deronne <sebastien.deronne@gmail.com>
- *          Stefano Avallone <stavallo@unina.it>
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Author: Sébastien Deronne <sebastien.deronne@gmail.com>
  */
 
 #include "he-operation.h"
 
-namespace ns3
-{
+namespace ns3 {
 
-HeOperation::HeOperation()
-    : m_basicHeMcsAndNssSet(0xffff),
-      m_6GHzOpInfo(m_heOpParams.m_6GHzOpPresent)
+HeOperation::HeOperation ()
+  : m_bssColor (0),
+    m_defaultPEDuration (0),
+    m_twtRequired (0),
+    m_heDurationBasedRtsThreshold (0),
+    m_partialBssColor (0),
+    m_maxBssidIndicator (0),
+    m_txBssidIndicator (0),
+    m_bssColorDisabled (0),
+    m_dualBeacon (0),
+    m_basicHeMcsAndNssSet (0),
+    m_heSupported (0)
 {
 }
 
 WifiInformationElementId
-HeOperation::ElementId() const
+HeOperation::ElementId () const
 {
-    return IE_EXTENSION;
+  return IE_EXTENSION;
 }
 
 WifiInformationElementId
-HeOperation::ElementIdExt() const
+HeOperation::ElementIdExt () const
 {
-    return IE_EXT_HE_OPERATION;
+  return IE_EXT_HE_OPERATION;
 }
 
 void
-HeOperation::HeOperationParams::Print(std::ostream& os) const
+HeOperation::SetHeSupported (uint8_t heSupported)
 {
-    os << "Default PE Duration: " << +m_defaultPeDuration << " TWT Required: " << +m_twtRequired
-       << " TXOP Duration RTS Threshold: " << m_txopDurRtsThresh
-       << " VHT Operation Information Present: " << +m_vhOpPresent
-       << " Co-Hosted BSS: " << +m_coHostedBss << " ER SU Disable: " << +m_erSuDisable
-       << " 6 GHz Operation Information Present: " << m_6GHzOpPresent;
+  m_heSupported = heSupported;
 }
 
-uint16_t
-HeOperation::HeOperationParams::GetSerializedSize() const
+uint8_t
+HeOperation::GetInformationFieldSize () const
 {
-    return 3;
-}
-
-void
-HeOperation::HeOperationParams::Serialize(Buffer::Iterator& start) const
-{
-    uint16_t twoBytes = m_defaultPeDuration | (m_twtRequired << 3) | (m_txopDurRtsThresh << 4) |
-                        (m_vhOpPresent << 14) | (m_coHostedBss << 15);
-    uint8_t oneByte = m_erSuDisable | ((m_6GHzOpPresent ? 1 : 0) << 1);
-    start.WriteHtolsbU16(twoBytes);
-    start.WriteU8(oneByte);
-}
-
-uint16_t
-HeOperation::HeOperationParams::Deserialize(Buffer::Iterator& start)
-{
-    Buffer::Iterator tmp = start;
-    uint16_t twoBytes = start.ReadLsbtohU16();
-    uint8_t oneByte = start.ReadU8();
-    m_defaultPeDuration = twoBytes & 0x07;
-    m_twtRequired = (twoBytes >> 3) & 0x01;
-    m_txopDurRtsThresh = (twoBytes >> 4) & 0x03ff;
-    m_vhOpPresent = (twoBytes >> 14) & 0x01;
-    m_coHostedBss = (twoBytes >> 15) & 0x01;
-    m_erSuDisable = oneByte & 0x01;
-    m_6GHzOpPresent = ((oneByte >> 1) & 0x01) == 1;
-    return start.GetDistanceFrom(tmp);
+  //we should not be here if he is not supported
+  NS_ASSERT (m_heSupported > 0);
+  return 7;
 }
 
 void
-HeOperation::BssColorInfo::Print(std::ostream& os) const
+HeOperation::SetHeOperationParameters (uint32_t ctrl)
 {
-    os << "BSS Color: " << +m_bssColor << " Partial BSS Color: " << +m_partialBssColor
-       << " BSS Color Disabled: " << +m_bssColorDisabled;
+  m_bssColor = ctrl & 0x3f;
+  m_defaultPEDuration = (ctrl >> 6) & 0x07;
+  m_twtRequired = (ctrl >> 9) & 0x01;
+  m_heDurationBasedRtsThreshold = (ctrl >> 10) & 0x03ff;
+  m_partialBssColor = (ctrl >> 20) & 0x01;
+  m_maxBssidIndicator = (ctrl >> 21) & 0xff;
+  m_txBssidIndicator = (ctrl >> 29) & 0x01;
+  m_bssColorDisabled = (ctrl >> 30) & 0x01;
+  m_dualBeacon = (ctrl >> 31) & 0x01;
 }
 
-uint16_t
-HeOperation::BssColorInfo::GetSerializedSize() const
+uint32_t
+HeOperation::GetHeOperationParameters () const
 {
-    return 1;
-}
-
-void
-HeOperation::BssColorInfo::Serialize(Buffer::Iterator& start) const
-{
-    uint8_t oneByte = m_bssColor | (m_partialBssColor << 6) | (m_bssColorDisabled << 7);
-    start.WriteU8(oneByte);
-}
-
-uint16_t
-HeOperation::BssColorInfo::Deserialize(Buffer::Iterator& start)
-{
-    Buffer::Iterator tmp = start;
-    uint8_t oneByte = start.ReadU8();
-    m_bssColor = oneByte & 0x3f;
-    m_partialBssColor = (oneByte >> 6) & 0x01;
-    m_bssColorDisabled = (oneByte >> 7) & 0x01;
-    return start.GetDistanceFrom(tmp);
-}
-
-void
-HeOperation::OpInfo6GHz::Print(std::ostream& os) const
-{
-    os << "Primary channel: " << +m_primCh << " Channel Width: " << +m_chWid
-       << " Duplicate Beacon: " << +m_dupBeacon << " Regulatory Info: " << +m_regInfo
-       << " Channel center frequency segment 0: " << +m_chCntrFreqSeg0
-       << " Channel center frequency segment 1: " << +m_chCntrFreqSeg1
-       << " Minimum Rate: " << +m_minRate;
-}
-
-uint16_t
-HeOperation::OpInfo6GHz::GetSerializedSize() const
-{
-    return 5;
+  uint32_t val = 0;
+  val |= m_bssColor & 0x3f;
+  val |= (m_defaultPEDuration & 0x07) << 6;
+  val |= (m_twtRequired & 0x01) << 9;
+  val |= (m_heDurationBasedRtsThreshold & 0x03ff) << 10;
+  val |= (m_partialBssColor & 0x01) << 20;
+  val |= (m_maxBssidIndicator & 0xff) << 21;
+  val |= (m_txBssidIndicator & 0x01) << 29;
+  val |= (m_bssColorDisabled & 0x01) << 30;
+  val |= (m_dualBeacon & 0x01) << 31;
+  return val;
 }
 
 void
-HeOperation::OpInfo6GHz::Serialize(Buffer::Iterator& start) const
+HeOperation::SetMaxHeMcsPerNss (uint8_t nss, uint8_t maxHeMcs)
 {
-    start.WriteU8(m_primCh);
-    uint8_t control = m_chWid | (m_dupBeacon << 2) | (m_regInfo << 3);
-    start.WriteU8(control);
-    start.WriteU8(m_chCntrFreqSeg0);
-    start.WriteU8(m_chCntrFreqSeg1);
-    start.WriteU8(m_minRate);
-}
-
-uint16_t
-HeOperation::OpInfo6GHz::Deserialize(Buffer::Iterator& start)
-{
-    Buffer::Iterator i = start;
-    m_primCh = i.ReadU8();
-    uint8_t control = i.ReadU8();
-    m_chWid = control & 0x03;
-    m_dupBeacon = (control >> 2) & 0x01;
-    m_regInfo = (control >> 3) & 0x07;
-    m_chCntrFreqSeg0 = i.ReadU8();
-    m_chCntrFreqSeg1 = i.ReadU8();
-    m_minRate = i.ReadU8();
-    return i.GetDistanceFrom(start);
-}
-
-void
-HeOperation::SetMaxHeMcsPerNss(uint8_t nss, uint8_t maxHeMcs)
-{
-    NS_ASSERT((maxHeMcs >= 7 && maxHeMcs <= 11) && (nss >= 1 && nss <= 8));
-
-    // IEEE 802.11ax-2021 9.4.2.248.4 Supported HE-MCS And NSS Set field
-    uint8_t val = 0x03; // not supported
-    if (maxHeMcs == 11) // MCS 0 - 11
+  NS_ASSERT ((maxHeMcs >= 7 && maxHeMcs <= 11) && (nss >= 1 && nss <= 8));
+  uint8_t val = 3; //3 means not supported
+  if (maxHeMcs > 9) //MCS 0 - 11
     {
-        val = 0x02;
+      val = 2;
     }
-    else if (maxHeMcs >= 9) // MCS 0 - 9
+  else if (maxHeMcs > 7) //MCS 0 - 9
     {
-        val = 0x01;
+      val = 1;
     }
-    else // MCS 0 - 7
+  else if (maxHeMcs == 7) //MCS 0 - 7
     {
-        val = 0x00;
+      val = 0;
     }
+  m_basicHeMcsAndNssSet |= ((val & 0x03) << ((nss - 1) * 2));
+}
 
-    // clear bits for that nss
-    const uint16_t mask = ~(0x03 << ((nss - 1) * 2));
-    m_basicHeMcsAndNssSet &= mask;
-
-    // update bits for that nss
-    m_basicHeMcsAndNssSet |= ((val & 0x03) << ((nss - 1) * 2));
+uint16_t
+HeOperation::GetBasicHeMcsAndNssSet (void) const
+{
+  return m_basicHeMcsAndNssSet;
 }
 
 void
-HeOperation::Print(std::ostream& os) const
+HeOperation::SetBssColor (uint8_t bssColor)
 {
-    os << "HE Operation=[HE Operation Parameters|";
-    m_heOpParams.Print(os);
-    os << "][BSS Color|";
-    m_bssColorInfo.Print(os);
-    os << "][Basic HE-MCS And NSS Set: " << m_basicHeMcsAndNssSet << "]";
-    if (m_6GHzOpInfo)
+  NS_ABORT_UNLESS (bssColor < 64); // 6 bits
+  m_bssColor = bssColor;
+  m_bssColorDisabled = 0;
+}
+
+uint8_t
+HeOperation::GetBssColor (void) const
+{
+  return m_bssColor;
+}
+
+Buffer::Iterator
+HeOperation::Serialize (Buffer::Iterator i) const
+{
+  if (m_heSupported < 1)
     {
-        os << "[6 GHz Operation Info|";
-        m_6GHzOpInfo->Print(os);
-        os << "]";
+      return i;
+    }
+  return WifiInformationElement::Serialize (i);
+}
+
+uint16_t
+HeOperation::GetSerializedSize () const
+{
+  if (m_heSupported < 1)
+    {
+      return 0;
+    }
+  return WifiInformationElement::GetSerializedSize ();
+}
+
+void
+HeOperation::SerializeInformationField (Buffer::Iterator start) const
+{
+  if (m_heSupported == 1)
+    {
+      //write the corresponding value for each bit
+      start.WriteHtolsbU32 (GetHeOperationParameters ());
+      start.WriteU16 (GetBasicHeMcsAndNssSet ());
+      //todo: VHT Operation Information (variable)
     }
 }
 
-uint16_t
-HeOperation::GetInformationFieldSize() const
+uint8_t
+HeOperation::DeserializeInformationField (Buffer::Iterator start, uint8_t length)
 {
-    uint16_t ret = 1 /* Element ID Ext */ + m_heOpParams.GetSerializedSize() +
-                   m_bssColorInfo.GetSerializedSize() + 2 /* Basic HE-MCS And NSS Set */;
-    if (m_6GHzOpInfo)
-    {
-        ret += m_6GHzOpInfo->GetSerializedSize();
-    }
-    return ret;
+  Buffer::Iterator i = start;
+  uint32_t heOperationParameters = i.ReadLsbtohU32 ();
+  m_basicHeMcsAndNssSet = i.ReadU16 ();
+  SetHeOperationParameters (heOperationParameters);
+  //todo: VHT Operation Information (variable)
+  return length;
 }
 
-void
-HeOperation::SerializeInformationField(Buffer::Iterator start) const
+std::ostream &
+operator << (std::ostream &os, const HeOperation &HeOperation)
 {
-    m_heOpParams.Serialize(start);
-    m_bssColorInfo.Serialize(start);
-    start.WriteHtolsbU16(m_basicHeMcsAndNssSet);
-    if (m_6GHzOpInfo)
-    {
-        m_6GHzOpInfo->Serialize(start);
-    }
-    // todo: VHT Operation Information (variable)
+  os << HeOperation.GetHeOperationParameters () << "|"
+     << HeOperation.GetBasicHeMcsAndNssSet ();
+  return os;
 }
 
-uint16_t
-HeOperation::DeserializeInformationField(Buffer::Iterator start, uint16_t length)
-{
-    Buffer::Iterator i = start;
-    m_heOpParams.Deserialize(i);
-    m_bssColorInfo.Deserialize(i);
-    m_basicHeMcsAndNssSet = i.ReadLsbtohU16();
-    if (m_heOpParams.m_6GHzOpPresent)
-    {
-        OpInfo6GHz opInfo6GHz;
-        opInfo6GHz.Deserialize(i);
-        m_6GHzOpInfo = opInfo6GHz;
-    }
-
-    // todo: VHT Operation Information (variable)
-    return i.GetDistanceFrom(start);
-}
-
-} // namespace ns3
+} //namespace ns3

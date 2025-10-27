@@ -1,23 +1,36 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2015 Alexander Krotov <ilabdsf@yandex.ru>
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
 
-#include "ns3/core-module.h"
-#include "ns3/internet-module.h"
-#include "ns3/network-module.h"
-#include "ns3/test.h"
-
 #include <iostream>
+
+#include "ns3/test.h"
+#include "ns3/core-module.h"
+#include "ns3/network-module.h"
+#include "ns3/internet-module.h"
 
 using namespace ns3;
 
 /**
- * @ingroup internet-test
+ * \ingroup internet-test
+ * \ingroup tests
  *
- * @brief Test for bug 2211.
+ * \brief Test for bug 2211.
  *
  * https://www.nsnam.org/bugzilla/show_bug.cgi?id=2211
  *
@@ -38,122 +51,120 @@ using namespace ns3;
  */
 class TcpEndPointBug2211Test : public TestCase
 {
-  public:
-    /**
-     * Constructor.
-     * @param desc Test description.
-     * @param ipVersion True to use IPv6.
-     */
-    TcpEndPointBug2211Test(std::string desc, bool ipVersion);
+public:
+  /**
+   * Constructor.
+   * \param desc Test description.
+   * \param ipVersion True to use IPv6.
+   */
+  TcpEndPointBug2211Test (std::string desc, bool ipVersion);
 
-    /**
-     * @brief Receive a packet.
-     * @param socket The receiving socket.
-     */
-    void Recv(Ptr<Socket> socket);
-    /**
-     * @brief Handle an incoming connection.
-     * @param s The receiving socket.
-     * @param from The other node IP address.
-     */
-    void HandleAccept(Ptr<Socket> s, const Address& from);
-    /**
-     * @brief Handle a connection establishment.
-     * @param socket The receiving socket.
-     */
-    void HandleConnect(Ptr<Socket> socket);
-    void DoRun() override;
-
-  private:
-    bool m_v6; //!< True to use IPv6.
+  /**
+   * \brief Receive a packet.
+   * \param socket The receiving socket.
+   */
+  void Recv (Ptr<Socket> socket);
+  /**
+   * \brief Handle an incoming connection.
+   * \param s The receiving socket.
+   * \param from The other node IP address.
+   */
+  void HandleAccept (Ptr<Socket> s, const Address &from);
+  /**
+   * \brief Handle a connection establishment.
+   * \param socket The receiving socket.
+   */
+  void HandleConnect (Ptr<Socket> socket);
+  virtual void DoRun ();
+private:
+  bool m_v6; //!< True to use IPv6.
 };
 
 void
-TcpEndPointBug2211Test::Recv(Ptr<Socket> socket)
+TcpEndPointBug2211Test::Recv (Ptr<Socket> socket)
 {
-    if (socket->GetRxAvailable() == 536 * 2)
+  if (socket->GetRxAvailable() == 536 * 2)
     {
-        socket->Close();
+      socket->Close();
     }
 }
 
 void
-TcpEndPointBug2211Test::HandleAccept(Ptr<Socket> s, const Address& from)
+TcpEndPointBug2211Test::HandleAccept (Ptr<Socket> s, const Address &from)
 {
-    s->SetRecvCallback(MakeCallback(&TcpEndPointBug2211Test::Recv, this));
+  s->SetRecvCallback (MakeCallback (&TcpEndPointBug2211Test::Recv, this));
 }
 
 void
-TcpEndPointBug2211Test::HandleConnect(Ptr<Socket> socket)
+TcpEndPointBug2211Test::HandleConnect (Ptr<Socket> socket)
 {
-    socket->Send(Create<Packet>(536));
-    socket->Send(Create<Packet>(536));
-    socket->Send(Create<Packet>(536));
-    socket->Close();
+  socket->Send (Create<Packet> (536));
+  socket->Send (Create<Packet> (536));
+  socket->Send (Create<Packet> (536));
+  socket->Close ();
 }
 
-TcpEndPointBug2211Test::TcpEndPointBug2211Test(std::string desc, bool ipVersion)
-    : TestCase(desc)
+TcpEndPointBug2211Test::TcpEndPointBug2211Test (std::string desc, bool ipVersion) : TestCase (desc)
 {
-    m_v6 = ipVersion;
+  m_v6 = ipVersion;
 }
 
 void
-TcpEndPointBug2211Test::DoRun()
+TcpEndPointBug2211Test::DoRun ()
 {
-    Ptr<Node> node = CreateObject<Node>();
+  Ptr<Node> node = CreateObject<Node> ();
 
-    InternetStackHelper internet;
-    internet.Install(node);
+  InternetStackHelper internet;
+  internet.Install (node);
 
-    TypeId tid = TcpSocketFactory::GetTypeId();
-    Ptr<Socket> sink = Socket::CreateSocket(node, tid);
-    if (!m_v6)
+  TypeId tid = TcpSocketFactory::GetTypeId ();
+  Ptr<Socket> sink = Socket::CreateSocket (node, tid);
+  if (m_v6 == false)
     {
-        sink->Bind(InetSocketAddress(Ipv4Address::GetAny(), 9));
+      sink->Bind (InetSocketAddress (Ipv4Address::GetAny (), 9));
     }
-    else
+  else
     {
-        sink->Bind(Inet6SocketAddress(Ipv6Address::GetAny(), 9));
+      sink->Bind (Inet6SocketAddress (Ipv6Address::GetAny (), 9));
     }
-    sink->Listen();
-    sink->SetAcceptCallback(MakeNullCallback<bool, Ptr<Socket>, const Address&>(),
-                            MakeCallback(&TcpEndPointBug2211Test::HandleAccept, this));
+  sink->Listen ();
+  sink->SetAcceptCallback (MakeNullCallback<bool, Ptr<Socket>, const Address &> (),
+                           MakeCallback (&TcpEndPointBug2211Test::HandleAccept, this));
 
-    Ptr<Socket> source = Socket::CreateSocket(node, tid);
-    source->Bind();
-    source->SetConnectCallback(MakeCallback(&TcpEndPointBug2211Test::HandleConnect, this),
-                               MakeNullCallback<void, Ptr<Socket>>());
-    if (!m_v6)
+  Ptr<Socket> source = Socket::CreateSocket (node, tid);
+  source->Bind ();
+  source->SetConnectCallback (MakeCallback (&TcpEndPointBug2211Test::HandleConnect, this),
+                              MakeNullCallback <void, Ptr<Socket> >());
+  if (m_v6 == false)
     {
-        source->Connect(InetSocketAddress(Ipv4Address::GetLoopback(), 9));
+      source->Connect (InetSocketAddress (Ipv4Address::GetLoopback (), 9));
     }
-    else
+  else
     {
-        source->Connect(Inet6SocketAddress(Ipv6Address::GetLoopback(), 9));
+      source->Connect (Inet6SocketAddress (Ipv6Address::GetLoopback (), 9));
     }
 
-    Simulator::Run();
-    Simulator::Destroy();
+  Simulator::Run ();
+  Simulator::Destroy ();
 }
 
 /**
- * @ingroup internet-test
+ * \ingroup internet-test
+ * \ingroup tests
  *
- * @brief TestSuite for bug 2211 - It must be used with valgrind.
+ * \brief TestSuite for bug 2211 - It must be used with valgrind.
  */
 class TcpEndpointBug2211TestSuite : public TestSuite
 {
-  public:
-    TcpEndpointBug2211TestSuite()
-        : TestSuite("tcp-endpoint-bug2211-test", Type::UNIT)
-    {
-        AddTestCase(new TcpEndPointBug2211Test("Bug 2211 testcase IPv4", false),
-                    TestCase::Duration::QUICK);
-        AddTestCase(new TcpEndPointBug2211Test("Bug 2211 testcase IPv6", true),
-                    TestCase::Duration::QUICK);
-    }
+public:
+  TcpEndpointBug2211TestSuite () : TestSuite ("tcp-endpoint-bug2211-test", UNIT)
+  {
+    AddTestCase (new TcpEndPointBug2211Test ("Bug 2211 testcase IPv4", false), TestCase::QUICK);
+    AddTestCase (new TcpEndPointBug2211Test ("Bug 2211 testcase IPv6", true), TestCase::QUICK);
+  }
 };
 
-static TcpEndpointBug2211TestSuite
-    g_TcpEndPoint2211TestSuite; //!< Static variable for test initialization
+static TcpEndpointBug2211TestSuite g_TcpEndPoint2211TestSuite; //!< Static variable for test initialization
+
+
+

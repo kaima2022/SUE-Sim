@@ -1,161 +1,159 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2020 Ritsumeikan University, Shiga, Japan
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Alberto Gallegos Ramonet <ramonet@fc.ritsumei.ac.jp>
  */
 
-#include "ns3/core-module.h"
-#include "ns3/internet-apps-module.h"
-#include "ns3/internet-module.h"
-#include "ns3/lr-wpan-module.h"
-#include "ns3/mobility-module.h"
-#include "ns3/propagation-module.h"
-#include "ns3/sixlowpan-module.h"
-#include "ns3/spectrum-module.h"
 
 #include <fstream>
+#include "ns3/core-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/internet-apps-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/spectrum-module.h"
+#include "ns3/propagation-module.h"
+#include "ns3/sixlowpan-module.h"
+#include "ns3/lr-wpan-module.h"
 
 using namespace ns3;
-using namespace ns3::lrwpan;
 
-static void
-DataSentMacConfirm(Ptr<LrWpanNetDevice> device, McpsDataConfirmParams params)
+
+static void dataSentMacConfirm (McpsDataConfirmParams params)
 {
-    // In the case of transmissions with the Ack flag activated, the transaction is only
-    // successful if the Ack was received.
-    if (params.m_status == MacStatus::SUCCESS)
+  // In the case of transmissions with the Ack flag activated, the transaction is only
+  // successful if the Ack was received.
+  if (params.m_status == LrWpanMcpsDataConfirmStatus::IEEE_802_15_4_SUCCESS)
     {
-        std::cout << Simulator::Now().As(Time::S) << " | Node " << device->GetNode()->GetId()
-                  << " | Transmission successfully sent\n";
+      NS_LOG_UNCOND ("**********" << Simulator::Now ().As (Time::S) << " | Transmission successfully sent");
     }
 }
 
-int
-main(int argc, char** argv)
+
+int main (int argc, char** argv)
 {
-    bool verbose = false;
 
-    CommandLine cmd(__FILE__);
-    cmd.AddValue("verbose", "turn on log components", verbose);
-    cmd.Parse(argc, argv);
+  bool verbose = false;
 
-    if (verbose)
+  CommandLine cmd (__FILE__);
+  cmd.AddValue ("verbose", "turn on log components", verbose);
+  cmd.Parse (argc, argv);
+
+  if (verbose)
     {
-        LogComponentEnableAll(LogLevel(LOG_PREFIX_TIME | LOG_PREFIX_FUNC | LOG_PREFIX_NODE));
-        LogComponentEnable("LrWpanMac", LOG_LEVEL_INFO);
-        LogComponentEnable("LrWpanCsmaCa", LOG_LEVEL_INFO);
-        LogComponentEnable("LrWpanHelper", LOG_LEVEL_ALL);
-        LogComponentEnable("Ping", LOG_LEVEL_INFO);
+      LogComponentEnableAll (LOG_PREFIX_TIME);
+      LogComponentEnableAll (LOG_PREFIX_FUNC);
+      LogComponentEnable ("LrWpanMac", LOG_LEVEL_INFO);
+      LogComponentEnable ("LrWpanCsmaCa", LOG_LEVEL_INFO);
+      LogComponentEnable ("LrWpanHelper", LOG_LEVEL_ALL);
+      LogComponentEnable ("Ping6Application", LOG_LEVEL_INFO);
     }
 
-    NodeContainer nodes;
-    nodes.Create(2);
 
-    MobilityHelper mobility;
-    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-    mobility.SetPositionAllocator("ns3::GridPositionAllocator",
-                                  "MinX",
-                                  DoubleValue(0.0),
-                                  "MinY",
-                                  DoubleValue(0.0),
-                                  "DeltaX",
-                                  DoubleValue(20),
-                                  "DeltaY",
-                                  DoubleValue(20),
-                                  "GridWidth",
-                                  UintegerValue(3),
-                                  "LayoutType",
-                                  StringValue("RowFirst"));
-    mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-    mobility.Install(nodes);
+  NodeContainer nodes;
+  nodes.Create (2);
 
-    LrWpanHelper lrWpanHelper;
-    lrWpanHelper.SetPropagationDelayModel("ns3::ConstantSpeedPropagationDelayModel");
-    lrWpanHelper.AddPropagationLossModel("ns3::LogDistancePropagationLossModel");
-    // Add and install the LrWpanNetDevice for each node
-    NetDeviceContainer lrwpanDevices = lrWpanHelper.Install(nodes);
+  MobilityHelper mobility;
+  mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
+                                 "MinX", DoubleValue (0.0),
+                                 "MinY", DoubleValue (0.0),
+                                 "DeltaX", DoubleValue (20),
+                                 "DeltaY", DoubleValue (20),
+                                 "GridWidth", UintegerValue (3),
+                                 "LayoutType", StringValue ("RowFirst"));
+  mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  mobility.Install (nodes);
 
-    Ptr<LrWpanNetDevice> dev1 = lrwpanDevices.Get(0)->GetObject<LrWpanNetDevice>();
-    Ptr<LrWpanNetDevice> dev2 = lrwpanDevices.Get(1)->GetObject<LrWpanNetDevice>();
+  LrWpanHelper lrWpanHelper;
+  // Add and install the LrWpanNetDevice for each node
+  NetDeviceContainer lrwpanDevices = lrWpanHelper.Install (nodes);
 
-    dev1->GetMac()->SetMcpsDataConfirmCallback(MakeBoundCallback(&DataSentMacConfirm, dev1));
+  Ptr<LrWpanNetDevice> dev1 = lrwpanDevices.Get (0)->GetObject<LrWpanNetDevice> ();
+  Ptr<LrWpanNetDevice> dev2 = lrwpanDevices.Get (1)->GetObject<LrWpanNetDevice> ();
 
-    dev2->GetMac()->SetMcpsDataConfirmCallback(MakeBoundCallback(&DataSentMacConfirm, dev2));
+  McpsDataConfirmCallback cb1;
+  cb1 = MakeCallback (&dataSentMacConfirm);
+  dev1->GetMac ()->SetMcpsDataConfirmCallback (cb1);
+  dev2->GetMac ()->SetMcpsDataConfirmCallback (cb1);
 
-    // Manual PAN association, coordinator assignment, short address assignment and initialization
-    // of beacon-enabled mode in 802.15.4-2011.
-    // Association using the MAC functions can also be used instead of a manual association.
 
-    // AssociateToBeaconPan (devices, PAN ID, Coordinator Address, Beacon Order, Superframe Order)
+  // Fake PAN association, coordinator assignment, short address assignment and initialization
+  // of beacon-enabled mode in 802.15.4-2011.
+  // This is needed because the lr-wpan module does not provide (yet)
+  // a full PAN association procedure.
 
-    // Must be careful not setting the beacon order (BO) and the superframe order (SO) too far apart
-    // or the ping reply (ICMPV6 echo reply) can time out during the inactive period of the
-    // superframe. A full time table of the BO/SO time equivalence can be found at the end of this
-    // document. The current configuration is BO = 14, SO = 13 :
+  // AssociateToBeaconPan (devices, PAN ID, Coordinator Address, Beacon Order, Superframe Order)
 
-    //           Contention Access Period (CAP)                           Inactive
-    //              (125.82912 secs)                                     (125.82088)
-    //   |---------------------------------------------|-------------------------------------------|
-    // Beacon Beacon
-    //                            Beacon Interval = 251.65 secs
-    //   |-----------------------------------------------------------------------------------------|
+  // Must be careful not setting the beacon order (BO) and the superframe order (SO) too far apart
+  // or the ping reply (ICMPV6 echo reply) can time out during the inactive period of the superframe.
+  // A full time table of the BO/SO time equivalence can be found at the end of this document.
+  // The current configuration is BO = 14, SO = 13 :
 
-    // Manually set an associated PAN, Pan id = 1 the first device (dev1) is used as coordinator
-    lrWpanHelper.CreateAssociatedPan(lrwpanDevices, 5);
+  //           Contention Access Period (CAP)                           Inactive
+  //              (125.82912 secs)                                     (125.82088)
+  //   |---------------------------------------------|-------------------------------------------|
+  // Beacon                                                                                   Beacon
+  //                            Beacon Interval = 251.65 secs
+  //   |-----------------------------------------------------------------------------------------|
 
-    // Start the beacon mode from the MAC layer of the coordinator (dev1)
-    MlmeStartRequestParams params;
-    params.m_panCoor = true;
-    params.m_PanId = 5;
-    params.m_bcnOrd = 14;
-    params.m_sfrmOrd = 13;
-    params.m_logCh = 11;
+  lrWpanHelper.AssociateToBeaconPan (lrwpanDevices, 0, Mac16Address ("00:01"), 14,13);
 
-    Simulator::ScheduleWithContext(dev1->GetNode()->GetId(),
-                                   Seconds(0),
-                                   &LrWpanMac::MlmeStartRequest,
-                                   dev1->GetMac(),
-                                   params);
 
-    InternetStackHelper internetv6;
-    internetv6.Install(nodes);
+  InternetStackHelper internetv6;
+  internetv6.Install (nodes);
 
-    SixLowPanHelper sixlowpan;
-    NetDeviceContainer devices = sixlowpan.Install(lrwpanDevices);
+  SixLowPanHelper sixlowpan;
+  NetDeviceContainer devices = sixlowpan.Install (lrwpanDevices);
 
-    Ipv6AddressHelper ipv6;
-    ipv6.SetBase(Ipv6Address("2001:2::"), Ipv6Prefix(64));
-    Ipv6InterfaceContainer deviceInterfaces;
-    deviceInterfaces = ipv6.Assign(devices);
+  Ipv6AddressHelper ipv6;
+  ipv6.SetBase (Ipv6Address ("2001:2::"), Ipv6Prefix (64));
+  Ipv6InterfaceContainer deviceInterfaces;
+  deviceInterfaces = ipv6.Assign (devices);
 
-    // Send ping packets after the 2nd second of the simulation during the
-    // first 8 seconds of the CAP in the incoming superframe
 
-    uint32_t packetSize = 16;
-    uint32_t maxPacketCount = 5;
-    Time interPacketInterval = Seconds(1);
-    PingHelper ping(deviceInterfaces.GetAddress(1, 1));
+  // Send ping packets after the 2nd second of the simulation during the
+  // first 8 seconds of the CAP in the incoming superframe
 
-    ping.SetAttribute("Count", UintegerValue(maxPacketCount));
-    ping.SetAttribute("Interval", TimeValue(interPacketInterval));
-    ping.SetAttribute("Size", UintegerValue(packetSize));
-    ApplicationContainer apps = ping.Install(nodes.Get(0));
+  uint32_t packetSize = 10;
+  uint32_t maxPacketCount = 5;
+  Time interPacketInterval = Seconds (1);
+  Ping6Helper ping6;
 
-    apps.Start(Seconds(2));
-    apps.Stop(Seconds(7));
+  ping6.SetLocal (deviceInterfaces.GetAddress (0, 1));
+  ping6.SetRemote (deviceInterfaces.GetAddress (1, 1));
 
-    AsciiTraceHelper ascii;
-    lrWpanHelper.EnableAsciiAll(ascii.CreateFileStream("Ping-6LoW-lr-wpan-beacon.tr"));
-    lrWpanHelper.EnablePcapAll(std::string("Ping-6LoW-lr-wpan-beacon"), true);
+  ping6.SetAttribute ("MaxPackets", UintegerValue (maxPacketCount));
+  ping6.SetAttribute ("Interval", TimeValue (interPacketInterval));
+  ping6.SetAttribute ("PacketSize", UintegerValue (packetSize));
+  ApplicationContainer apps = ping6.Install (nodes.Get (0));
 
-    Simulator::Stop(Seconds(7));
+  apps.Start (Seconds (2.0));
+  apps.Stop (Seconds (10.0));
 
-    Simulator::Run();
-    Simulator::Destroy();
+  AsciiTraceHelper ascii;
+  lrWpanHelper.EnableAsciiAll (ascii.CreateFileStream ("Ping-6LoW-lr-wpan-beacon.tr"));
+  lrWpanHelper.EnablePcapAll (std::string ("Ping-6LoW-lr-wpan-beacon"), true);
 
-    return 0;
+
+  Simulator::Stop (Seconds (600));
+
+  Simulator::Run ();
+  Simulator::Destroy ();
+
 }
 
 // BO/SO values to time equivalence

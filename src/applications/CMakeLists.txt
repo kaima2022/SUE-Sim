@@ -15,8 +15,6 @@ build_lib(
     model/seq-ts-echo-header.cc
     model/seq-ts-header.cc
     model/seq-ts-size-header.cc
-    model/sink-application.cc
-    model/source-application.cc
     model/three-gpp-http-client.cc
     model/three-gpp-http-header.cc
     model/three-gpp-http-server.cc
@@ -41,8 +39,6 @@ build_lib(
     model/seq-ts-echo-header.h
     model/seq-ts-header.h
     model/seq-ts-size-header.h
-    model/sink-application.h
-    model/source-application.h
     model/three-gpp-http-client.h
     model/three-gpp-http-header.h
     model/three-gpp-http-server.h
@@ -53,6 +49,7 @@ build_lib(
     model/udp-server.h
     model/udp-trace-client.h
   LIBRARIES_TO_LINK ${libinternet}
+                    ${libstats}
   TEST_SOURCES
     test/three-gpp-http-client-server-test.cc
     test/bulk-send-application-test-suite.cc

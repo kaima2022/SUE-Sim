@@ -9,4 +9,5 @@ build_lib(
     model/bridge-channel.h
     model/bridge-net-device.h
   LIBRARIES_TO_LINK ${libnetwork}
+  TEST_SOURCES ${test_sources}
 )

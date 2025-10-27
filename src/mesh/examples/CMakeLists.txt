@@ -1,6 +1,6 @@
 build_lib_example(
-  NAME mesh-example
-  SOURCE_FILES mesh-example.cc
+  NAME mesh
+  SOURCE_FILES mesh.cc
   LIBRARIES_TO_LINK
     ${libinternet}
     ${libmobility}

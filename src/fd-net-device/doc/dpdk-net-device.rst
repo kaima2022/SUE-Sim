@@ -13,7 +13,7 @@ DPDK NetDevice
 Data Plane Development Kit (DPDK) is a library hosted by The Linux Foundation
 to accelerate packet processing workloads (https://www.dpdk.org/).
 
-The ``DpdkNetDevice`` class provides the implementation of a network device which uses DPDK's fast packet processing abilities and bypasses the kernel. This class is included in the ``src/fd-net-device model``. The ``DpdkNetDevice`` class inherits the ``FdNetDevice`` class and overrides the functions which are required by |ns3| to interact with DPDK environment.
+The ``DpdkNetDevice`` class provides the implementation of a network device which uses DPDK’s fast packet processing abilities and bypasses the kernel. This class is included in the ``src/fd-net-device model``. The ``DpdkNetDevice`` class inherits the ``FdNetDevice`` class and overrides the functions which are required by |ns3| to interact with DPDK environment.
 
 The ``DpdkNetDevice`` for |ns3| [Patel2019]_ was developed by Harsh Patel,
 Hrishikesh Hiraskar and Mohit P. Tahiliani. They were supported by Intel
@@ -213,7 +213,7 @@ To check allocation of hugepages, run:
 
 You will see the number of hugepages allocated, they should be equal to the number you used above.
 
-Once the hugepage memory is reserved (at either runtime or boot time),
+Once the hugepage memory is reserved (at either runtime or boot time), 
 to make the memory available for DPDK use, perform the following steps:
 
 .. sourcecode:: text
@@ -271,14 +271,14 @@ Initialization of DPDK driver requires initialization of EAL. EAL requires PMD (
 
 .. sourcecode:: text
 
- DpdkNetDeviceHelper* dpdk = new DpdkNetDeviceHelper();
+ DpdkNetDeviceHelper* dpdk = new DpdkNetDeviceHelper ();
  dpdk->SetPmdLibrary("librte_pmd_e1000.so");
 
 Also, NIC should be bound to DPDK Driver in order to be used with EAL. The default driver used is ``uio_pci_generic`` which supports most of the NICs. You can change it using ``DpdkNetDeviceHelper::SetDpdkDriver``, as follows:
 
 .. sourcecode:: text
 
- DpdkNetDeviceHelper* dpdk = new DpdkNetDeviceHelper();
+ DpdkNetDeviceHelper* dpdk = new DpdkNetDeviceHelper ();
  dpdk->SetDpdkDriver("igb_uio");
 
 Attributes
@@ -306,4 +306,4 @@ Examples
 The following examples are provided:
 
 * ``fd-emu-ping.cc``: This example can be configured to use the ``DpdkNetDevice`` to send ICMP traffic bypassing the kernel over a real channel.
-* ``fd-emu-onoff.cc``: This example can be configured to measure the throughput of the ``DpdkNetDevice`` by sending traffic from the simulated node to a real device using the ``ns3::OnOffApplication`` while leveraging DPDK's fast packet processing abilities. This is achieved by saturating the channel with TCP/UDP traffic.
+* ``fd-emu-onoff.cc``: This example can be configured to measure the throughput of the ``DpdkNetDevice`` by sending traffic from the simulated node to a real device using the ``ns3::OnOffApplication`` while leveraging DPDK’s fast packet processing abilities. This is achieved by saturating the channel with TCP/UDP traffic.

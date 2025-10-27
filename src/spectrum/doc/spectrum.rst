@@ -69,14 +69,8 @@ information for a signal being transmitted/received by PHY devices:
 
 * the duration of the signal
 
-* the Power Spectral Density (PSD) of the signal, which is assumed to be constant for
-  the duration of the signal
-
-* the frequency domain 3D spectrum channel matrix that is needed for MIMO computations
-  when multiple streams are transmitted
-
-* the 3D precoding matrix that is needed for MIMO computations when multiple
-  streams are transmitted.
+* its Power Spectral Density (PSD) of the signal, which is assumed to be constant for
+  the duration of the signal.
 
 The PSD is represented as a set of discrete scalar values each
 corresponding to a certain subband in frequency. The set of frequency subbands
@@ -88,17 +82,6 @@ class provides several arithmetic operators to allow to perform calculations
 with PSD instances. Additionally, the ``SpectrumConverter`` class
 provides means for the conversion of ``SpectrumValue`` instances from
 one ``SpectrumModel`` to another.
-
-The frequency domain 3D channel matrix is needed in MIMO systems in which
-multiple transmit and receive antenna ports can exist, hence the PSD is multidimensional.
-The dimensions are: the number of receive antenna ports, the number of
-transmit antenna ports, and the number of subbands in frequency (or
-resource blocks).
-
-The 3D precoding matrix is also needed in MIMO systems to be able to correctly
-perform the calculations of the received signal and interference. The dimensions are:
-the number of transmit antenna ports, the number of transmit
-streams, and the number of subbands (or resource blocks).
 
 For a more formal mathematical description of the signal model just
 described, the reader is referred to [Baldo2009Spectrum]_.
@@ -153,11 +136,11 @@ both provide this functionality:
      a separate loss value is calculated and applied to each component
      of the power spectral density.
 
-   - you can plug models based on ``PhasedArraySpectrumPropagationLossModel``
+   - you can plug models based on ``PhasedArraySpectrumPropagationLossModel`` 
      on these channels. These models can have frequency-dependent loss, i.e.,
      a separate loss value is calculated and applied to each component
-     of the power spectral density. Additionally, these models support
-     the phased antenna array at the transmitter and the receiver, i.e.,
+     of the power spectral density. Additionally, these models support 
+     the phased antenna array at the transmitter and the receiver, i.e., 
      ns-3 antenna type ``PhasedArrayModel``.
 
 
@@ -194,7 +177,7 @@ of the available implementations:
    interference model (implemented in ``SpectrumInterference``)
    together with an error model based on Shannon capacity (described
    in [Baldo2009Spectrum]_ and implemented in ``SpectrumErrorModel``. This PHY
-   uses the ``GenericPhy`` interface. Its additional custom signal
+   uses the ``GenericPhy`` interface. Its addditional custom signal
    parameters are defined in ``HalfDuplexIdealPhySignalParameters``.
 
  * ``WifiSpectrumValueHelper`` is an helper object that makes it easy
@@ -280,7 +263,7 @@ Here are some notes on how the spectrum module is expected to be used.
    is one of the main features of the
    spectrum module, to support inter-technology interference. For
    example, if you implement a WifiSpectrumPhy and a
-   BluetoothSpectrumPhy, and plug both on a SpectrumChannel, then you'll
+   BluetoohSpectrumPhy, and plug both on a SpectrumChannel, then you'll
    be able to simulate interference between wifi and bluetooth and
    vice versa.
 
@@ -292,11 +275,7 @@ Here are some notes on how the spectrum module is expected to be used.
    type it can attempt to receive. If not, the signal is normally
    expected to be considered as interference.
 
-*  Many propagation loss and delay models can be added to these channels.
-   The base class ``SpectrumChannel`` provides an ``AssignStreams()`` method
-   to allow the deterministic configuration of random variable stream numbers
-   with a single API call.  See the ns-3 Manual chapter on random variables
-   for more information.
+
 
 
 Helpers
@@ -335,7 +314,7 @@ Output
  * Both ``SingleModelSpectrumChannel`` and
    ``MultiModelSpectrumChannel`` provide a trace source called
    ``PathLoss`` which is fired whenever a new path loss value is
-   calculated. **Note**: only single-frequency path loss is accounted
+   calclulated. **Note**: only single-frequency path loss is accounted
    for, see the attribute description.
 
  * The example implementations described in :ref:`sec-example-model-implementations` also provide some trace sources.
@@ -506,7 +485,7 @@ standard, COFDM (Coded Orthogonal Frequency Division Multiplexing) which is
 notably used in the DVB-T and ISDB-T digital television standards adopted by
 various countries around the world, and analog modulation which is a legacy
 technology but is still being used by some countries today. To accomplish
-realistic PSD models for these modulation types, the signals' PSDs were
+realistic PSD models for these modulation types, the signals’ PSDs were
 approximated from real standards and developed into models that are scalable by
 frequency and power. The COFDM PSD is approximated from Figure 12 (8k mode) of
 [KoppCOFDM]_, the 8-VSB PSD is approximated from Figure 3 of [Baron8VSB]_, and the
@@ -560,13 +539,13 @@ channel for each these regions are provided.
    :align: center
 
    Plot from MATLAB implementation of CreateRegionalTvTransmitters method in
-   ``TvSpectrumTransmitterHelper``. Shows 100 random points on Earth's surface
+   ``TvSpectrumTransmitterHelper``. Shows 100 random points on Earth’s surface
    (with altitude 0) corresponding to TV transmitter locations within a 2000 km
    radius of 35° latitude and -100° longitude.
 
 A method (CreateRegionalTvTransmitters) is provided that enables users to
 randomly generate multiple TV transmitters from a specified region with a given
-density within a chosen radius around a point on Earth's surface. The region,
+density within a chosen radius around a point on Earth’s surface. The region,
 which determines the channel frequencies of the generated TV transmitters, can
 be specified to be one of the three provided, while the density determines the
 amount of transmitters generated. The TV transmitters' antenna heights
@@ -615,8 +594,6 @@ the given geographic origin point, and is tested in the ``rand-cart-around-geo``
 test suite by verifying that the generated points do not exceed the given
 maximum distance radius from the origin point.
 
-.. _3gpp-fast-fading-model:
-
 3GPP TR 38.901 fast fading model
 ================================
 The framework described by TR 38.901 [TR38901]_ is a 3D statistical Spatial
@@ -630,7 +607,7 @@ antenna. H :sub:`u,s` :math:`(t,\tau)` is generated by the superposition of N di
 components, called clusters, each of which composed of M different rays.
 The channel matrix generation procedure accounts for large and small scale
 propagation phenomena. The classes ThreeGppSpectrumPropagationLossModel and
-ThreeGppChannelModel included in the spectrum module take care of the generation
+ThreeGppChannelModel included in the spectrum module takes care of the generation
 of the channel coefficients and the computation of the frequency-dependent
 propagation loss.
 
@@ -673,107 +650,82 @@ ThreeGppChannelModel and ThreeGppSpectrumPropagationLossModel.
 ThreeGppSpectrumPropagationLossModel
 ####################################
 
-The class ThreeGppSpectrumPropagationLossModel implements the
+The class ThreeGppSpectrumPropagationLossModel implements the 
 PhasedArraySpectrumPropagationLossModel interface and enables the modeling of frequency
-dependent propagation phenomena while taking into account the specific pair of the
-phased antenna array at the transmitter and the receiver. The main method is
-DoCalcRxPowerSpectralDensity, which takes as input the SpectrumSignalParameters
-structure, which contains, among others, the power spectral density (PSD) of the
-transmitted signal, and the precoding matrix of the transmitter which is needed
-for MIMO computations. Other input parameters are the mobility models of the
-transmitting and receiving node, and the phased antenna array of the
-transmitting and receiving node.
-DoCalcRxPowerSpectralDensity computes the PSD of the received signal
-(used in case of single stream transmission), and the frequency domain 3D
-channel matrix between receive and transmit antenna ports (needed for MIMO
-computations when multiple streams are transmitted).
-Finally, it returns the SpectrumSignalParameters which contains the
-received PSD and the frequency domain 3D spectrum channel matrix.
+dependent propagation phenomena while taking into account the specific pair of the 
+phased antenna array at the transmitter and the receiver. The main method is 
+DoCalcRxPowerSpectralDensity, which takes as input the power spectral density (PSD) 
+of the transmitted signal, the mobility models of the transmitting node and receiving node, 
+and the phased antenna array of the transmitting node, and of the receiving node. 
+Finally, it returns the PSD of the received signal.
 
-Procedure used to compute the PSD of the received signal and the frequency domain 3D
-spectrum channel matrix:
+Procedure used to compute the PSD of to compute the PSD of the received signal:
 
 1. Retrieve the beamforming vectors
 To account for the beamforming, ThreeGppSpectrumPropagationLossModel has to
 retrieve the beamforming vectors of the transmitting and receiving antennas.
-The method DoCalcRxPowerSpectralDensity uses the antenna objects
-that are passed as parameters for both the transmitting and receiving devices,
-and calls the method GetBeamformingVector to retrieve the beamforming vectors
+The method DoCalcRxPowerSpectralDensity uses the antenna objects 
+that are passed as parameters for both the transmitting and receiving devices, 
+and calls the method GetCurrentBeamformingVector to retrieve the beamforming vectors 
 of these antenna objects.
 
 2. Retrieve the channel matrix and the channel params
 The ThreeGppSpectrumPropagationLossModel relies on the ThreeGppChannelModel class
-to obtain the channel matrix and channel parameters.
+to obtain the channel matrix and channel parameters. 
 In particular, it makes use of the method GetChannel,
 which returns a ChannelMatrix object containing the channel
-matrix, the generation time, the node pair, and the phased antenna array pair among
+matrix, the generation time, the node pair, and the phased antenna array pair among 
 which is created this channel matrix.
-Additionally, it makes use of the method GetParams which
+Apart from the function GetChannel, there is a function called GetParams which 
 returns a ChannelParams object containing the channel parameters.
-Notice that the channel information is split into these two structures
-(ChannelMatrix and ChannelParams) to support multiple collocated phased antenna arrays at
-TX/RX node. ChannelParams (also its specialization ThreeGppChannelParams structure)
-contains parameters which are common for all the channels among
-the same RX/TX node pair, while ChannelMatrix contains the channel matrix for the specific pair
+Notice that the channel information is split into these two structures 
+(ChannelMatrix and ChannelParams) to support multiple collocate phased antenna arrays at 
+TX/RX node. ChannelParams (also its specialization ThreeGppChannelParams structure) 
+contains parameters which are common for all channels among 
+the same RX/TX node pair, while ChannelMatrix contains the channel matrix for the specific pair 
 of the phased antenna arrays of TX/RX nodes.
-For example, if the TX and the RX node have multiple collocated antenna arrays,
-then there will be multiple channel matrices among this pair of nodes for different pairs
+For example, if the TX and the RX node have multiple collocated antenna arrays, 
+then there will be multiple channel matrices among this pair of nodes for different pairs 
 of antenna arrays of the TX and the RX node.
-These channel matrices that are among the same pair of nodes have common channel parameters,
-i.e., they share the same channel condition, cluster powers, cluster delays,
+These channel matrices that are among the same pair of nodes have common channel parameters, 
+i.e., they share the same channel condition, cluster powers, cluster delays, 
 AoD, AoA, ZoD, ZoA, K_factor, delay spread, etc.
-On the other hand, each pair of TX and RX antenna arrays has a specific channel matrix
-and fading, which depends on the actual antenna element positions and field patterns of
-each pair of antenna array subpartitions.
+On the other hand, each pair of TX and RX antenna arrays has a specific channel matrix 
+and fading, which depends on the actual antenna element positions and field patterns of 
+each pair of antennas array subpartitions.
 The ThreeGppChannelModel instance is automatically
-created in the ThreeGppSpectrumPropagationLossModel constructor and it can
-be configured by using the method SetChannelModelAttribute.
+created in the the ThreeGppSpectrumPropagationLossModel constructor and it can
+be configured using the method SetChannelModelAttribute ().
 
-Notice that in MultiModelSpectrumChannel it is checked whether the TX/RX
-SpectrumPhy instances belong to different TX/RX nodes.
-This is needed to avoid pathloss models calculations among
-the phased antenna arrays of the same node, because there are no models yet
+Notice that in MultiModelSpectrumChannel in StartTx function we added a 
+condition that checks whether the TX/RX SpectrumPhy instances belong to different 
+TX/RX nodes. This is needed to avoid pathloss models calculations among 
+the phased antenna arrays of the same node, because there are no models yet 
 in ns-3 that support the calculation of this kind of interference.
 
 4. Compute the long term component
 The method GetLongTerm returns the long term component obtained by multiplying
-the channel matrix and the beamforming vectors. The function CalculateLongTermComponent
-calculates the long term component per RX and TX port pair. Finally, GetLongTerm
-returns a 3D long term channel matrix whose dimensions are the number of the
-receive antenna ports, the number transmit antenna ports, and
-the number of clusters. When multiple ports are being configured note that
-the sub-array partition model is adopted for TXRU virtualization, as described
-in Section 5.2.2 of 3GPP TR 36.897 [TR36897]_, and so equal beam weights are used for all the ports.
-Support of the full-connection model for TXRU virtualization would need extensions.
-To reduce the computational load, the long term
-components associated to the different channels are stored in the m_longTermMap
-and recomputed only if the associated channel matrix is updated or if the
-transmitting and/or receiving beamforming vectors have changed. Given the channel
-reciprocity assumption, for each node pair a single long term component is saved in the map.
+the channel matrix and the beamforming vectors. To reduce the computational
+load, the long term components associated to the different channels are
+stored in the m_longTermMap and recomputed only if the associated channel
+matrix is updated or if the transmitting and/or receiving beamforming vectors
+have changed. Given the channel reciprocity assumption, for each node pair a
+single long term component is saved in the map.
 
-5. Apply the small scale fading, calculate the channel gain, generate the
-frequency domain 3D spectrum channel matrix, and finally compute the received PSD
+5. Apply the small scale fading and compute the channel gain
 The method CalcBeamformingGain computes the channel gain in each sub-band and
 applies it to the PSD of the transmitted signal to obtain the received PSD.
 To compute the sub-band gain, it accounts for the Doppler phenomenon and the
 time dispersion effect on each cluster.
 In order to reduce the computational load, the Doppler component of each
-cluster is computed considering only the central ray.
-Also, as specified :ref:`here <sec-3gpp-v2v-ff>`, it is possible to account for
-the effect of environmental scattering following the model described in Sec. 6.2.3
-of 3GPP TR 37.885.
-This is done by deviating the Doppler frequency by a random value, whose
-distribution depends on the parameter :math:`v_{scatt}`.
-The value of :math:`v_{scatt}` can be configured using the attribute "vScatt"
-(by default it is set to 0, so that the scattering effect is not considered).
-Function GenSpectrumChannelMatrix generates the received PSD for each pair of
-the transmit and receive antenna ports. It creates a frequency domain 3D spectrum
-channel matrix whose dimensions are the number of receive antenna ports,
-the number of transmit antenna ports, and the number of resource blocks.
-Finally, the frequency domain 3D spectrum channel matrix is used to obtain the
-received PSD. In case of multiple ports at the transmitter the PSD is calculated
-by summing per each RB the real parts of the diagonal elements of the (H*P)^h * (H*P),
-where H is the frequency domain spectrum channel matrix and P is the precoding matrix.
+cluster is computed considering only the central ray. 
+Also, as specified :ref:`here <sec-3gpp-v2v-ff>`, it is possible to account for 
+the effect of environmental scattering following the model described in Sec. 6.2.3 
+of 3GPP TR 37.885. 
+This is done by deviating the Doppler frequency by a random value, whose 
+distribution depends on the parameter :math:`v_{scatt}`. 
+The value of :math:`v_{scatt}` can be configured using the attribute "vScatt" 
+(by default it is set to 0, so that the scattering effect is not considered). 
 
 
 ThreeGppChannelModel
@@ -797,7 +749,8 @@ and returns a ChannelMatrix object containing:
 
 * other channel parameters
 
-The ChannelMatrix objects are saved in the map m_channelMap and updated when the coherence time
+The ChannelMatrix objects are saved
+in the map m_channelMap and updated when the coherence time
 expires, or in case the LOS/NLOS channel condition changes.
 The coherence time can be configured through
 the attribute "UpdatePeriod", and should be chosen by taking into account all the
@@ -813,8 +766,8 @@ presence of obstacles, such as trees, cars or humans, at the level
 of a single cluster. This differs from a complete blockage, which
 would result in an LOS to NLOS transition. Therefore, when this
 feature is enabled, an additional attenuation is added to certain
-clusters, depending on their angle of arrival. There are two possible
-methods for the computation of the additional attenuation, i.e.,
+clusters, depending on their angle of arrival. There are two possi-
+ble methods for the computation of the additional attenuation, i.e.,
 stochastic (Model A) and geometric (Model B). In this work, we
 used the implementation provided by [Zhang]_, which
 uses the stochastic method. In particular, the model is implemented by the
@@ -825,7 +778,7 @@ to configure the model.
 
 Testing
 #######
-The test suite ThreeGppChannelTestSuite includes five test cases:
+The test suite ThreeGppChannelTestSuite includes three test cases:
 
 * ThreeGppChannelMatrixComputationTest checks if the channel matrix has the
   correct dimensions and if it correctly normalized
@@ -844,11 +797,6 @@ The test suite ThreeGppChannelTestSuite includes five test cases:
        the beamforming vectors,
     3. Checks if the long term is updated when changing the channel matrix
 
-* ThreeGppCalcLongTermMultiPortTest, which tests that the channel matrices are
-  correctly generated when multiple transmit and receive antenna ports are used.
-
-* ThreeGppMimoPolarizationTest, which tests that the channel matrices are
-  correctly generated when dual-polarized antennas are being used.
 
 **Note:** TR 38.901 includes a calibration procedure that can be used to validate
 the model, but it requires some additional features which are not currently
@@ -884,258 +832,3 @@ References
    Sandra Lagen, Michele Zorzi. "Implementation of a Spatial Channel Model for
    ns-3". Submitted to the Workshop on ns-3 (WNS3 '20). 2020.
    Available: https://arxiv.org/abs/2002.09341
-
-.. [TR36897] 3GPP. 2015. TR 36.897. Study on elevation beamforming / Full-Dimension (FD)
-   Multiple Input Multiple Output (MIMO) for LTE. V13.0.0. (2015-06)
-
-
-Two-Ray fading model
-====================
-The model aims to provide a performance-oriented alternative to the 3GPP TR 38.901
-framework [TR38901]_ which is implemented in the ``ThreeGppSpectrumPropagationLossModel`` and
-``ThreeGppChannelModel`` classes and whose implementation is described in [Zugno2020]_.
-The overall design described in [Pagin2023]_ follows the general approach of [Polese2018]_, with aim of providing
-the means for computing a 3GPP TR 38.901-like end-to-end channel gain by combining
-several statistical terms. The frequency range of applicability is the same as
-that of [TR38901]_, i.e., 0.5 - 100 GHz.
-
-Use-cases
-#########
-The use-cases for this channel model comprise large-scale MIMO simulations involving a high
-number of nodes (100+), such as multi-cell LTE and 5G deployments in dense urban areas, for which
-the full 3GPP TR 38.901 does not represent a viable option.
-
-Implementation - ``TwoRaySpectrumPropagationLossModel``
-#######################################################
-The computation of the channel gain is taken care of by the ``TwoRaySpectrumPropagationLossModel``
-class. In particular, the latter samples a statistical term which combines:
-
-* The array and beamforming gain, computed as outlined in [Rebato2018]_ using the
-  ``CalcBeamformingGain`` function. This term supports the presence of multiple
-  antenna elements both at the transmitter and at the receiver and arbitrary antenna
-  radiation patterns. Specifically, the array gain is compute as:
-
-.. math::
-
-  G_{\mathrm{AA}}(\theta, \varphi)=\left|\boldsymbol{a}^{\mathrm{T}}(\theta, \varphi)
-  \boldsymbol{w}\left(\theta_0, \varphi_0\right)\right|^2=\left|\mathrm{AF}_{\mathrm{v}}(\theta,
-  \varphi)\right|^2\left|\mathrm{AF}_{\mathrm{h}}(\theta, \varphi)\right|^2 G(\theta, \varphi),
-..
-
-where:
-
-.. math::
-
-  \operatorname{AF}_{\mathrm{v}}(\theta, \varphi)=\frac{1}{\sqrt{N_{\mathrm{v}}}}
-  \sum_{m=0}^{N_{\mathrm{v}}-1} e^{j k d_{\mathrm{v}} m\left(\cos \theta-\cos \theta_0\right)}
-..
-
-and:
-
-.. math::
-
-  \operatorname{AF}_{\mathrm{h}}(\theta, \varphi)=\frac{1}{\sqrt{N_{\mathrm{h}}}}
-  \sum_{n=0}^{N_{\mathrm{h}}-1} e^{j k d_{\mathrm{h}} n\left(\sin \theta
-  \sin \varphi-\sin \theta_0 \sin \varphi_0\right)}
-..
-
-In turn, :math:`N_h`, :math:`N_v` are the number of horizontal and vertical antenna
-elements respectively, :math:`d_h`, :math:`d_v` are the element spacing in the
-horizontal and vertical direction respectively. The figures below depict the resulting
-array radiation pattern versus the relative azimuth of transmitter and receiver, for antenna
-arrays featuring 3GPP TR 38.901 (``ThreeGppAntennaModel``, top) and isotropic
-(``IsotropicAntennaModel``, bottom) antenna elements, respectively.
-These figures match the corresponding plots of [Asplund]_.
-
-.. _fig-two-ray-spectrum-loss-model-3gpp-radiation-pattern:
-
-.. figure:: figures/two-ray-spectrum-loss-model-3gpp-radiation-pattern.*
-   :width: 400
-   :align: center
-
-   Radiation pattern produced by the ``CalcBeamformingGain`` method when using
-   antenna arrays featuring ``ThreeGppAntennaModel`` antenna elements, for various
-   Uniform Planar Array (UPA) configurations.
-
-.. _fig-two-ray-spectrum-loss-model-iso-radiation-pattern:
-
-.. figure:: figures/two-ray-spectrum-loss-model-iso-radiation-pattern.*
-   :width: 400
-   :align: center
-
-   Radiation pattern produced by the ``CalcBeamformingGain`` method when using
-   antenna arrays featuring ``IsotropicAntennaModel`` antenna elements, for various
-   Uniform Planar Array (UPA) configurations.
-
-Whenever the link is in NLOS, a penalty factor is introduced, to account for beam
-misalignment due to the lack of a dominant multipath component [Kulkarni]_.
-
-
-* A fast fading term, sampled using the Fluctuating Two Ray (FTR) model distribution [Romero]_.
-  The latter is a fading model which is more general than typical ones, taking into account two
-  dominant specular components and a mixture of scattered paths. As, a consequence it has
-  been shown to provide a better fit to fading phenomena at mmWaves. The model parameters
-  are automatically picked once the simulation scenario is set, using a lookup table which
-  associates the simulation parameters (such as carrier frequency and LOS condition) to the
-  FTR parameters providing the best fit to the corresponding TR 38.901 channel statistics.
-  As a consequence, this channel model can be used for all the frequencies which are
-  supported by the 38.901 model, i.e., 0.5-100 GHz. The calibration has been done by
-  first obtaining the statistics of the channel gain due to the small-scale fading in
-  the 3GPP model, using an ad hoc simulation script
-  (``src/spectrum/examples/three-gpp-two-ray-channel-calibration.cc``). Then, this information
-  has been used as a reference to estimate the FTR parameters yielding the closest
-  (in a goodness-of-fit sense) fading realizations, using a custom Python script
-  (``src/spectrum/utils/two-ray-to-three-gpp-ch-calibration.py``).
-
-**Note:**
-
-  * To then obtain a full channel model characterization, the model is intended to be
-    used in conjunction of the path loss and shadowing capability provided by the
-    ``ThreeGppPropagationLossModel`` class.
-    Indeed, the goal of this model is to provide channel realizations which are as close
-    as possible to ones of [TR38901]_, but at a fraction of the complexity. Since the
-    path loss and shadowing terms are not computationally demanding anyway, the ones of
-    [Zugno2020]_ have been kept;
-
-  * Currently, the value of NLoS beamforming factor penalty factor is taken from
-    the preliminary work of [Kulkarni]_ and it is scenario-independent; As future
-    work, the possibility of using scenario-dependent penalty factors will be
-    investigated.
-
-Calibration
-###########
-The purpose of the calibration procedures is to compute offline a look-up table which
-associates the FTR fading model parameters with the simulation parameters.
-In particular, the [TR38901]_ fading distributions depend on:
-
-* The scenario (RMa, UMa, UMi-StreetCanyon, InH-OfficeOpen, InH-OfficeMixed);
-
-* The LOS condition (LoS/NLoS); and
-
-* The carrier frequency.
-
-As a consequence, the calibration output is a map which associates LoS condition and
-scenario to a list of carrier frequency-FTR parameters values. The latter represent the
-FTR parameters yielding channel realizations which exhibit the closest statistics to [TR38901]_.
-
-The actual calibration is a two-step procedure which:
-
-1. First generates reference channel gain curves using the
-``src/spectrum/examples/three-gpp-two-ray-channel-calibration.cc`` simulation script.
-Specifically, the script samples ``numRealizations`` channel realizations and computes for each of them
-the end-to-end channel gain by setting the speed of the TX and RX pair to :math:`0`, disabling the shadowing
-and fixing the LOS condition. In such a way, any variation around the mean is due to the small-scale fading only.
-The channel gain samples are produced, and returned on output conditioned on the value of
-``enableOutput``, for each combination of LoS condition, channel model scenario and carrier frequency. The
-latter cover the whole [TR38901]_ frequency range of 0.5 - 100 GHz with a relatively sparse resolution
-(500 MHz), since the dependency of the fading distribution with respect to the carrier frequency is actually
-relatively weak.
-
-.. _fig-three-gpp-gain-reference-gain-vs-fc:
-
-.. figure:: figures/three-gpp-gain-reference-gain-vs-fc.*
-   :width: 400
-   :align: center
-
-   Empirical CDF of the reference channel gains obtained using the  ``three-gpp-two-ray-channel-calibration``
-   simulation script when keeping a fixed LoS condition and channel scenario and varying the carrier
-   frequency only.
-
-2. Then, the output of the above script is parsed by the ``two-ray-to-three-gpp-ch-calibration.py``
-Python companion script. In particular, reference ECDFs are obtained from the channel gains sampled using the
-model of [TR38901]_. In turn, the reference ECDFs (one for each LoS condition, channel model scenario
-and carrier frequency combination) are compared to FTR distributions ECDFs obtained using different values
-of the parameters. Finally, the parameters which provide the best fit (in a goodness-of-fit sense) for
-the specific scenario, LOS condition and carrier frequency are found. The parameters to test are picked initially
-by performing an exhaustive search within a discrete grid of possible values, and then by iteratively refining
-the previous search runs by scanning the neighborhood of the most recent identified values.
-In such regard, the Anderson-Darling statistical test is used to rank the various FTR distributions
-and eventually pick the one providing the closest approximation to the reference statistics.
-
-Testing
-#######
-The test suite ``TwoRaySplmTestSuite`` includes three test cases:
-
-* ``FtrFadingModelAverageTest``, which checks that the average of the Fluctuating Two Ray (FTR)
-  fading model realizations is consistent with the theoretical value provided in [Romero]_.
-
-* ``ArrayResponseTest``, which checks that the overall array response at boresight computed by the ù
-  ``CalcBeamformingGain`` function coincides with the expected theoretical values.
-
-* ``OverallGainAverageTest``, which checks that the average overall channel gain obtained using the
-  ``DoCalcRxPowerSpectralDensity`` method of the ``TwoRaySpectrumPropagationLossModel`` class is close
-  (it is, after all, a simplified and performance-oriented model) to the one obtained using
-  the ``ThreeGppSpectrumPropagationLossModel`` and ``ThreeGppChannelModel`` classes.
-
-
-References
-##########
-
-.. [Pagin2023] Pagin, Matteo, Sandra Lagen, Biljana Bojovic, Michele Polese,
-   Michele Zorzi. 2023. "Improving the Efficiency of MIMO Simulations in ns-3"
-   In Proceedings of the 2023 Workshop on ns-3, pp. 1–9. 2023
-
-.. [Zugno2020] Zugno, Tommaso, Michele Polese, Natale Patriciello, Biljana Bojović,
-   Sandra Lagen, Michele Zorzi. "Implementation of a spatial channel model for ns-3."
-   In Proceedings of the 2020 Workshop on ns-3, pp. 49-56. 2020.
-
-.. [Polese2018] Michele Polese, Michele Zorzi. “Impact of channel models on
-   the end-to-end performance of mmwave cellular networks”. In: 2018 IEEE 19th
-   International Workshop on Signal Processing Advances in Wireless Communications
-   (SPAWC).
-
-.. [Rebato2018] Rebato, Mattia, Laura Resteghini, Christian Mazzucco, Michele Zorzi.
-   “Study of realistic antenna patterns in 5G mmWave cellular scenarios”. In: 2018
-   IEEE International Conference on Communications (ICC).
-
-.. [Romero] Romero-Jerez, Juan M., F. Javier Lopez-Martinez, José F. Paris,
-   Andrea J. Goldsmith. “The fluctuating two-ray fading model: Statistical
-   characterization and performance analysis”. In: IEEE Transactions on Wireless
-   Communications 16.7 (2017).
-
-.. [Kulkarni] Kulkarni, Mandar N., Eugene Visotsky, Jeffrey G. Andrews. "Correction
-   factor for analysis of MIMO wireless networks with highly directional beamforming.",
-   IEEE Wireless Communications Letters, 2018
-
-.. [Asplund] Asplund, Henrik, David Astely, Peter von Butovitsch, Thomas Chapman,
-   Mattias Frenne, Farshid Ghasemzadeh, Måns Hagström et al. Advanced Antenna Systems
-   for 5G Network Deployments: Bridging the Gap Between Theory and Practice.
-   Academic Press, 2020.
-
-
-3GPP TR 38.811 Non-Terrestrial Networks
-=======================================
-3GPP with [3GPPTR38811]_ has extended the channel model presented in [3GPPTR38901]_ to support the so called Non-Terrestrial Networks
-(NTN), i.e. communication scenarios where the propagation of the signal travels through the atmosphere.
-The channel spectrum estimation procedure is the same as the one described in [3GPPTR38901]_, with a new set of parameters.
-
-
-Use-cases
-#########
-The use-cases for this channel model include simulations in 3D/vertical environments with communicating nodes placed
-in different types of orbit, in the atmosphere and/or on the ground.
-
-Implementation
-##############
-The channel spectrum estimation procedure is already implemented (as described in [ns3Zugno]_ ) into the classes
-ThreeGppChannelModel and ThreeGppSpectrumPropagationLossModel, that have been extended to support NTN through the
-introduction of the appropriate parameters.
-3GPP considers two frequencies of interest: S-band (2GHz) and Ka-band (20/30GHz). Many channel parameters are dependent
-on the frequency band in use, but no specific range of frequencies of these bands has been given by 3GPP. Hence, this
-implementation considers S-band anything below 13GHz, and Ka-band anything above it.
-Four propagation scenarios are identified, in decreasing order of building height and density: Dense Urban, Urban,
-Suburban and Rural. Channel estimation parameters are scenario-dependent.
-**Note**: For satellite, the parameters that describe the departure angle spread are 0. Thus, in the logarithmic scale
-at which these parameters are represented is :math:`-\infty`.
-
-References
-##########
-
-.. [ns3Zugno] Zugno Tommaso, Michele Polese, Natale Patriciello, Biljana Bojović,
-   Sandra Lagen, Michele Zorzi. "Implementation of a spatial channel model for ns-3."
-   In Proceedings of the 2020 Workshop on ns-3, pp. 49-56. 2020.
-
-.. [3GPPTR38901] 3GPP. 2018. TR 38.901. Study on channel for frequencies from 0.5 to
-   100 GHz. V.15.0.0. (2018-06).
-
-.. [3GPPTR38811] 3GPP. 2018. TR 38.811, Study on New Radio (NR) to support non-terrestrial networks, V15.4.0. (2020-09).

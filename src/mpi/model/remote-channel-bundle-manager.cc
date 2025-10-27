@@ -1,104 +1,118 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  *  Copyright 2013. Lawrence Livermore National Security, LLC.
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Steven Smith <smith84@llnl.gov>
  *
  */
 
 /**
- * @file
- * @ingroup mpi
+ * \file
+ * \ingroup mpi
  * Implementation of class ns3::RemoteChannelBundleManager.
  */
 
 #include "remote-channel-bundle-manager.h"
 
-#include "null-message-simulator-impl.h"
 #include "remote-channel-bundle.h"
+#include "null-message-simulator-impl.h"
 
 #include "ns3/simulator.h"
 
-namespace ns3
-{
+namespace ns3 {
 
 bool ns3::RemoteChannelBundleManager::g_initialized = false;
-ns3::RemoteChannelBundleManager::RemoteChannelMap
-    ns3::RemoteChannelBundleManager::g_remoteChannelBundles;
+ns3::RemoteChannelBundleManager::RemoteChannelMap ns3::RemoteChannelBundleManager::g_remoteChannelBundles;
 
 Ptr<RemoteChannelBundle>
-RemoteChannelBundleManager::Find(uint32_t systemId)
+RemoteChannelBundleManager::Find (uint32_t systemId)
 {
-    auto kv = g_remoteChannelBundles.find(systemId);
+  ns3::RemoteChannelBundleManager::RemoteChannelMap::iterator kv = g_remoteChannelBundles.find (systemId);
 
-    if (kv == g_remoteChannelBundles.end())
+  if ( kv == g_remoteChannelBundles.end ())
     {
-        return nullptr;
+      return 0;
     }
-    else
+  else
     {
-        return kv->second;
+      return kv->second;
     }
 }
 
 Ptr<RemoteChannelBundle>
-RemoteChannelBundleManager::Add(uint32_t systemId)
+RemoteChannelBundleManager::Add (uint32_t systemId)
 {
-    NS_ASSERT(!g_initialized);
-    NS_ASSERT(g_remoteChannelBundles.find(systemId) == g_remoteChannelBundles.end());
+  NS_ASSERT (!g_initialized);
+  NS_ASSERT (g_remoteChannelBundles.find (systemId) == g_remoteChannelBundles.end ());
 
-    Ptr<RemoteChannelBundle> remoteChannelBundle = Create<RemoteChannelBundle>(systemId);
+  Ptr<RemoteChannelBundle> remoteChannelBundle = Create<RemoteChannelBundle> (systemId);
 
-    g_remoteChannelBundles[systemId] = remoteChannelBundle;
+  g_remoteChannelBundles[systemId] = remoteChannelBundle;
 
-    return remoteChannelBundle;
+  return remoteChannelBundle;
 }
 
 std::size_t
-RemoteChannelBundleManager::Size()
+RemoteChannelBundleManager::Size (void) 
 {
-    return g_remoteChannelBundles.size();
+  return g_remoteChannelBundles.size();
 }
 
 void
-RemoteChannelBundleManager::InitializeNullMessageEvents()
+RemoteChannelBundleManager::InitializeNullMessageEvents (void)
 {
-    NS_ASSERT(!g_initialized);
+  NS_ASSERT (!g_initialized);
 
-    for (auto iter = g_remoteChannelBundles.begin(); iter != g_remoteChannelBundles.end(); ++iter)
+  for ( RemoteChannelMap::const_iterator iter = g_remoteChannelBundles.begin ();
+        iter != g_remoteChannelBundles.end ();
+        ++iter )
     {
-        Ptr<RemoteChannelBundle> bundle = iter->second;
-        bundle->Send(bundle->GetDelay());
+      Ptr<RemoteChannelBundle> bundle = iter->second;
+      bundle->Send (bundle->GetDelay ());
 
-        NullMessageSimulatorImpl::GetInstance()->ScheduleNullMessageEvent(bundle);
+      NullMessageSimulatorImpl::GetInstance ()->ScheduleNullMessageEvent (bundle);
     }
 
-    g_initialized = true;
+  g_initialized = true;
 }
 
 Time
-RemoteChannelBundleManager::GetSafeTime()
+RemoteChannelBundleManager::GetSafeTime (void)
 {
-    NS_ASSERT(g_initialized);
+  NS_ASSERT (g_initialized);
 
-    Time safeTime = Simulator::GetMaximumSimulationTime();
+  Time safeTime = Simulator::GetMaximumSimulationTime ();
 
-    for (auto kv = g_remoteChannelBundles.begin(); kv != g_remoteChannelBundles.end(); ++kv)
+  for (RemoteChannelMap::const_iterator kv = g_remoteChannelBundles.begin ();
+       kv != g_remoteChannelBundles.end ();
+       ++kv)
     {
-        safeTime = Min(safeTime, kv->second->GetGuaranteeTime());
+      safeTime = Min (safeTime, kv->second->GetGuaranteeTime ());
     }
 
-    return safeTime;
+  return safeTime;
 }
 
 void
-RemoteChannelBundleManager::Destroy()
+RemoteChannelBundleManager::Destroy (void)
 {
-    NS_ASSERT(g_initialized);
+  NS_ASSERT (g_initialized);
 
-    g_remoteChannelBundles.clear();
-    g_initialized = false;
+  g_remoteChannelBundles.clear();
+  g_initialized = false;
 }
 
 } // namespace ns3

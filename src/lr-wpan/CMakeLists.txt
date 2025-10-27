@@ -10,7 +10,6 @@ build_lib(
     model/lr-wpan-mac-header.cc
     model/lr-wpan-mac-pl-headers.cc
     model/lr-wpan-mac-trailer.cc
-    model/lr-wpan-mac-base.cc
     model/lr-wpan-mac.cc
     model/lr-wpan-net-device.cc
     model/lr-wpan-phy.cc
@@ -18,7 +17,6 @@ build_lib(
     model/lr-wpan-spectrum-value-helper.cc
   HEADER_FILES
     helper/lr-wpan-helper.h
-    model/lr-wpan-constants.h
     model/lr-wpan-csmaca.h
     model/lr-wpan-error-model.h
     model/lr-wpan-fields.h
@@ -27,13 +25,17 @@ build_lib(
     model/lr-wpan-mac-header.h
     model/lr-wpan-mac-pl-headers.h
     model/lr-wpan-mac-trailer.h
-    model/lr-wpan-mac-base.h
     model/lr-wpan-mac.h
     model/lr-wpan-net-device.h
     model/lr-wpan-phy.h
     model/lr-wpan-spectrum-signal-parameters.h
     model/lr-wpan-spectrum-value-helper.h
-  LIBRARIES_TO_LINK ${libspectrum}
+  LIBRARIES_TO_LINK
+    ${libnetwork}
+    ${libcore}
+    ${libmobility}
+    ${libspectrum}
+    ${libpropagation}
   TEST_SOURCES
     test/lr-wpan-ack-test.cc
     test/lr-wpan-cca-test.cc
@@ -45,5 +47,4 @@ build_lib(
     test/lr-wpan-spectrum-value-helper-test.cc
     test/lr-wpan-ifs-test.cc
     test/lr-wpan-slotted-csmaca-test.cc
-    test/lr-wpan-mac-test.cc
 )

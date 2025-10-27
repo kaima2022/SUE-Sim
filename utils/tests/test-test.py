@@ -1,16 +1,28 @@
 #! /usr/bin/env python3
+## -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
 #
 # Copyright (c) 2014 Siddharth Santurkar
 #
-# SPDX-License-Identifier: GPL-2.0-only
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation;
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 
-# NOTE: Run this script with the Python3 interpreter if the python3 compatibility
+# NOTE: Run this script with the Python3 interpreter if the python3 compatibility 
 #       of the ns-3 unit test runner needs to be tested.
 
-#   The following options of test.py are being tested for portability by this script.
+#   The following options of test.py are being tested for poratability by this script.
 #   To see the options supported by this script, run with the -h option on the command line
-#
+#      
 #   -h, --help            show this help message and exit
 #   -b BUILDPATH, --buildpath=BUILDPATH
 #                         specify the path where ns-3 was built (defaults to the
@@ -50,67 +62,60 @@
 #                         write detailed test results into XML-FILE.xml
 
 
+
 from __future__ import print_function
-
-import sys
-
 from TestBase import TestBaseClass
-
+import sys
 
 def main(argv):
     """
-    Prepares test cases and executes
+        Prepares test cases and executes
     """
     test_cases = [
-        "",
-        "-h",
-        "--help",
-        "-b build/",
-        "--buildpath=build/",
-        "-c performance",
-        "--constrain=performance",
-        "-d",
-        "--duration",
-        "-e socket-options-ipv6",
-        "--example=socket-options-ipv6",
-        "-u",
-        "--update-data",
-        "-f EXTENSIVE",
-        "--fullness=EXTENSIVE",
-        "-g",
-        "--grind",
-        "-l",
-        "--list",
-        "-m",
-        "--multiple",
-        "-n",
-        "--no-build",
-        "-p first",
-        "--pyexample=first",
-        "-r",
-        "--retain",
-        "-s ns3-tcp-state",
-        "--suite=ns3-tcp-state",
-        "-t t_opt.txt",
-        "--text=t_opt.txt && rm t_opt.txt",
-        "-v",
-        "--verbose",
-        "-w t_opt.html && rm t_opt.html",
-        "--web=t_opt.html && rm t_opt.html",
-        "--html=t_opt.html && rm t_opt.html",
-        "-x t_opt.xml && rm t_opt.xml",
-        "--xml=t_opt.xml && rm t_opt.xml",
+      '',
+      '-h',
+      '--help',
+      '-b build/',
+      '--buildpath=build/',
+      '-c performance',
+      '--constrain=performance',
+      '-d',
+      '--duration',
+      '-e socket-options-ipv6',
+      '--example=socket-options-ipv6',
+      '-u',
+      '--update-data',
+      '-f EXTENSIVE --fullness=EXTENSIVE'
+      '-g',
+      '--grind',
+      '-l',
+      '--list',
+      '-m',
+      '--multiple',
+      '-n',
+      '--no-build',
+      '-p first',
+      '--pyexample=first',
+      '-r',
+      '--retain',
+      '-s ns3-tcp-interoperability',
+      '--suite=ns3-tcp-interoperability',
+      '-t t_opt.txt',
+      '--text=t_opt.txt && rm -rf t_opt.txt',
+      '-v',
+      '--verbose',
+      '-w t_opt.html && rm -rf t_opt.html',
+      '--web=t_opt.html && rm -rf t_opt.html',
+      '--html=t_opt.html && rm -rf t_opt.html',
+      '-x t_opt.xml && rm -rf t_opt.xml',
+      '--xml=t_opt.xml && rm -rf t_opt.xml',
     ]
 
-    configure_string = sys.executable + " ns3 configure --enable-tests --enable-examples"
-    clean_string = sys.executable + " ns3 clean"
-    cmd_execute_list = [
-        "%s && %s test.py %s && %s" % (configure_string, sys.executable, option, clean_string)
-        for option in test_cases
-    ]
-    runner = TestBaseClass(argv[1:], "Test suite for the ns-3 unit test runner", "test-py")
+    configure_string = sys.executable + ' ns3 configure --enable-tests --enable-examples'
+    clean_string = sys.executable + ' ns3 clean'
+    cmd_execute_list = [ '%s && %s test.py %s && %s' % (configure_string, sys.executable, option, clean_string) for option in test_cases]
+    runner = TestBaseClass(argv[1:], "Test suite for the ns-3 unit test runner" , 'test-py')
     return runner.runtests(cmd_execute_list)
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main(sys.argv))

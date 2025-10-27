@@ -1,86 +1,99 @@
+/* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
  *
- * Author: Manuel Requena <manuel.requena@cttc.es>
- * (Based on lte-ue-phy code)
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Author: Manuel Requena <manuel.requena@cttc.es> : Based on lte-ue-phy code
  */
 
 #ifndef LTE_TEST_UE_PHY_H
 #define LTE_TEST_UE_PHY_H
 
-#include "ns3/lte-control-messages.h"
 #include "ns3/lte-phy.h"
 
-namespace ns3
-{
+#include "ns3/lte-control-messages.h"
+
+namespace ns3 {
 
 /**
- * @ingroup lte-test
+ * \ingroup lte-test
+ * \ingroup tests
  *
- * @brief Defines a simplified LtePhy class that is used for testing purposes
+ * \brief Defines a simplified LtePhy class that is used for testing purposes
  * of downlink and uplink SINR generation. Used in LteDownlinkDataSinrTestCase
  * and LteUplinkDataSinrTestCase as simplified LTE PHY.
  */
 class LteTestUePhy : public LtePhy
 {
-  public:
-    /**
-     * @warning the default constructor should not be used
-     */
-    LteTestUePhy();
+public:
+  /**
+   * @warning the default constructor should not be used
+   */
+  LteTestUePhy ();
 
-    /**
-     * @param dlPhy the downlink LteSpectrumPhy instance
-     * @param ulPhy the uplink LteSpectrumPhy instance
-     */
-    LteTestUePhy(Ptr<LteSpectrumPhy> dlPhy, Ptr<LteSpectrumPhy> ulPhy);
+  /**
+   * \param dlPhy the downlink LteSpectrumPhy instance
+   * \param ulPhy the uplink LteSpectrumPhy instance
+   */
+  LteTestUePhy (Ptr<LteSpectrumPhy> dlPhy, Ptr<LteSpectrumPhy> ulPhy);
 
-    ~LteTestUePhy() override;
+  virtual ~LteTestUePhy ();
 
-    void DoDispose() override;
-    /**
-     * @brief Get the type ID.
-     * @return the object TypeId
-     */
-    static TypeId GetTypeId();
+  virtual void DoDispose ();
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
 
-    /**
-     * @brief Queue the MAC PDU to be sent
-     * @param p the MAC PDU to sent
-     */
-    void DoSendMacPdu(Ptr<Packet> p) override;
+  /**
+   * \brief Queue the MAC PDU to be sent
+   * \param p the MAC PDU to sent
+   */
+  virtual void DoSendMacPdu (Ptr<Packet> p);
 
-    /**
-     * @brief Create the PSD for the TX
-     * @return the pointer to the PSD
-     */
-    Ptr<SpectrumValue> CreateTxPowerSpectralDensity() override;
+  /**
+   * \brief Create the PSD for the TX
+   * \return the pointer to the PSD
+   */
+  virtual Ptr<SpectrumValue> CreateTxPowerSpectralDensity ();
 
-    void GenerateCtrlCqiReport(const SpectrumValue& sinr) override;
+  virtual void GenerateCtrlCqiReport (const SpectrumValue& sinr);
+  
+  virtual void GenerateDataCqiReport (const SpectrumValue& sinr);
 
-    void GenerateDataCqiReport(const SpectrumValue& sinr) override;
+  virtual void ReportInterference (const SpectrumValue& interf);
 
-    void ReportInterference(const SpectrumValue& interf) override;
+  virtual void ReportRsReceivedPower (const SpectrumValue& power);
 
-    void ReportRsReceivedPower(const SpectrumValue& power) override;
+  /**
+   * \brief Reeive LTE Control Message
+   * \param msg the control message
+   */
+  virtual void ReceiveLteControlMessage (Ptr<LteControlMessage> msg);
 
-    /**
-     * @brief Reeive LTE Control Message
-     * @param msg the control message
-     */
-    virtual void ReceiveLteControlMessage(Ptr<LteControlMessage> msg);
+  /**
+   * \brief Get the SINR
+   * \return the SINR
+   */
+  SpectrumValue GetSinr ();
 
-    /**
-     * @brief Get the SINR
-     * @return the SINR
-     */
-    SpectrumValue GetSinr();
-
-  private:
-    SpectrumValue m_sinr; ///< the SINR
+private:
+  SpectrumValue m_sinr; ///< the SINR
 };
+
 
 } // namespace ns3
 

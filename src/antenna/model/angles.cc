@@ -1,21 +1,32 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011, 2012 CTTC
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
  */
 
+
+#include <ns3/log.h>
+#include <cmath>
 #include "angles.h"
 
-#include "ns3/log.h"
 
-#include <cmath>
+namespace ns3 {
 
-namespace ns3
-{
-
-NS_LOG_COMPONENT_DEFINE("Angles");
+NS_LOG_COMPONENT_DEFINE ("Angles");
 
 bool Angles::m_printDeg = false;
 
@@ -24,247 +35,235 @@ const double DEG_TO_RAD = M_PI / 180.0;
 /// Radians to Degrees conversion constant
 const double RAD_TO_DEG = 180.0 / M_PI;
 
-double
-DegreesToRadians(double degrees)
-{
-    return degrees * DEG_TO_RAD;
-}
 
 double
-RadiansToDegrees(double radians)
+DegreesToRadians (double degrees)
 {
-    return radians * RAD_TO_DEG;
+  return degrees * DEG_TO_RAD;
 }
+
+
+double
+RadiansToDegrees (double radians)
+{
+  return radians * RAD_TO_DEG;
+}
+
 
 std::vector<double>
-DegreesToRadians(const std::vector<double>& degrees)
+DegreesToRadians (const std::vector<double> &degrees)
 {
-    std::vector<double> radians;
-    radians.reserve(degrees.size());
-    for (size_t i = 0; i < degrees.size(); i++)
+  std::vector<double> radians;
+  radians.reserve (degrees.size ());
+  for (size_t i = 0; i < degrees.size (); i++)
     {
-        radians.push_back(DegreesToRadians(degrees[i]));
+      radians.push_back (DegreesToRadians (degrees[i]));
     }
-    return radians;
+  return radians;
+
 }
+
 
 std::vector<double>
-RadiansToDegrees(const std::vector<double>& radians)
+RadiansToDegrees (const std::vector<double> &radians)
 {
-    std::vector<double> degrees;
-    degrees.reserve(radians.size());
-    for (size_t i = 0; i < radians.size(); i++)
+  std::vector<double> degrees;
+  degrees.reserve (radians.size ());
+  for (size_t i = 0; i < radians.size (); i++)
     {
-        degrees.push_back(RadiansToDegrees(radians[i]));
+      degrees.push_back (RadiansToDegrees (radians[i]));
     }
-    return degrees;
+  return degrees;
 }
 
-double
-WrapTo360(double a)
-{
-    static constexpr int64_t INT_RANGE = 100000000000;
-    // Divide the input by 360.
-    // Multiply it by INT_RANGE and store into an integer.
-    int64_t b(a / (360.0) * INT_RANGE);
-    // Clamp it between [-INT_RANGE / 2, INT_RANGE / 2)
-    b = b % INT_RANGE;
-    if (b < 0)
-    {
-        b += INT_RANGE;
-    }
-    else if (b >= INT_RANGE)
-    {
-        b -= INT_RANGE;
-    }
-    // Divide by INT_RANGE and multiply by 360.
-    return b * (360.0) / INT_RANGE;
-}
 
 double
-WrapTo180(double a)
+WrapTo360 (double a)
 {
-    static constexpr int64_t INT_RANGE = 100000000000;
-    // Divide the input by 360.
-    // Multiply it by INT_RANGE and store into an integer.
-    int64_t b(a / (360.0) * INT_RANGE);
-    // Clamp it between [-INT_RANGE / 2, INT_RANGE / 2)
-    b = b % INT_RANGE;
-    if (b < -INT_RANGE / 2)
+  a = fmod (a, 360);
+  if (a < 0)
     {
-        b += INT_RANGE;
+      a += 360;
     }
-    else if (b >= INT_RANGE / 2)
-    {
-        b -= INT_RANGE;
-    }
-    // Divide by INT_RANGE and multiply by 360.
-    return b * (360.0) / INT_RANGE;
+
+  NS_ASSERT_MSG (0 <= a && a < 360, "Invalid wrap, a=" << a);
+  return a;
 }
 
-double
-WrapTo2Pi(double a)
-{
-    static constexpr int64_t INT_RANGE = 100000000000;
-    // Divide the input by 2*M_PI.
-    // Multiply it by INT_RANGE and store into an integer.
-    int64_t b(a / (2 * M_PI) * INT_RANGE);
-    // Clamp it between [-INT_RANGE / 2, INT_RANGE / 2)
-    b = b % INT_RANGE;
-    if (b < 0)
-    {
-        b += INT_RANGE;
-    }
-    else if (b >= INT_RANGE)
-    {
-        b -= INT_RANGE;
-    }
-    // Divide by INT_RANGE and multiply by 2*M_PI.
-    return b * (2 * M_PI) / INT_RANGE;
-}
 
 double
-WrapToPi(double a)
+WrapTo180 (double a)
 {
-    static constexpr int64_t INT_RANGE = 100000000000;
-    // Divide the input by 2*M_PI.
-    // Multiply it by INT_RANGE and store into an integer.
-    int64_t b(a / (2 * M_PI) * INT_RANGE);
-    // Clamp it between [-INT_RANGE / 2, INT_RANGE / 2)
-    b = b % INT_RANGE;
-    if (b < -INT_RANGE / 2)
+  a = fmod (a + 180, 360);
+  if (a < 0)
     {
-        b += INT_RANGE;
+      a += 360;
     }
-    else if (b >= INT_RANGE / 2)
-    {
-        b -= INT_RANGE;
-    }
-    // Divide by INT_RANGE and multiply by 2*M_PI.
-    return b * (2 * M_PI) / INT_RANGE;
+  a -= 180;
+
+  NS_ASSERT_MSG (-180 <= a && a < 180, "Invalid wrap, a=" << a);
+  return a;
 }
+
+
+double
+WrapTo2Pi (double a)
+{
+  a = fmod (a, 2 * M_PI);
+  if (a < 0)
+    {
+      a += 2 * M_PI;
+    }
+
+  NS_ASSERT_MSG (0 <= a && a < 2 * M_PI, "Invalid wrap, a=" << a);
+  return a;
+}
+
+
+double
+WrapToPi (double a)
+{
+  a = fmod (a + M_PI, 2 * M_PI);
+  if (a < 0)
+    {
+      a += 2 * M_PI;
+    }
+  a -= M_PI;
+
+  NS_ASSERT_MSG (-M_PI <= a && a < M_PI, "Invalid wrap, a=" << a);
+  return a;
+}
+
 
 std::ostream&
-operator<<(std::ostream& os, const Angles& a)
+operator<< (std::ostream& os, const Angles& a)
 {
-    double azim;
-    double incl;
-    std::string unit;
+  double azim, incl;
+  std::string unit;
 
-    if (Angles::m_printDeg)
+  if (a.m_printDeg)
     {
-        azim = RadiansToDegrees(a.m_azimuth);
-        incl = RadiansToDegrees(a.m_inclination);
-        unit = "deg";
+      azim = RadiansToDegrees (a.m_azimuth);
+      incl = RadiansToDegrees (a.m_inclination);
+      unit = "deg";
     }
-    else
+  else
     {
-        azim = a.m_azimuth;
-        incl = a.m_inclination;
-        unit = "rad";
+      azim = a.m_azimuth;
+      incl = a.m_inclination;
+      unit = "rad";
     }
 
-    os << "(" << azim << ", " << incl << ") " << unit;
-    return os;
+  os << "(" << azim << ", " << incl << ") " << unit;
+  return os;
 }
 
 std::istream&
-operator>>(std::istream& is, Angles& a)
+operator>> (std::istream& is, Angles& a)
 {
-    char c;
-    is >> a.m_azimuth >> c >> a.m_inclination;
-    if (c != ':')
+  char c;
+  is >> a.m_azimuth >> c >> a.m_inclination;
+  if (c != ':')
     {
-        is.setstate(std::ios_base::failbit);
+      is.setstate (std::ios_base::failbit);
     }
-    return is;
+  return is;
 }
 
-Angles::Angles()
-    : Angles(NAN, NAN)
+
+Angles::Angles ()
+  : Angles (NAN, NAN)
+{}
+
+
+Angles::Angles (double azimuth, double inclination)
+  : m_azimuth (azimuth),
+    m_inclination (inclination)
 {
+  NormalizeAngles ();
 }
 
-Angles::Angles(double azimuth, double inclination)
-    : m_azimuth(azimuth),
-      m_inclination(inclination)
-{
-    NormalizeAngles();
-}
 
-Angles::Angles(Vector v)
-    : m_azimuth(std::atan2(v.y, v.x)),
-      m_inclination(std::acos(v.z / v.GetLength()))
+Angles::Angles (Vector v)
+  : m_azimuth (std::atan2 (v.y, v.x)),
+    m_inclination (std::acos (v.z / v.GetLength ()))
 {
-    // azimuth and inclination angles for zero-length vectors are not defined
-    if (v.x == 0.0 && v.y == 0.0 && v.z == 0.0)
+  // azimuth and inclination angles for zero-length vectors are not defined
+  if (v.x == 0.0 && v.y == 0.0 && v.z == 0.0)
     {
-        // assume x and length equals to 1 mm to avoid nans
-        m_azimuth = std::atan2(v.y, 0.001);
-        m_inclination = std::acos(v.z / 0.001);
+      m_azimuth = NAN;
+      m_inclination = NAN;
     }
 
-    NormalizeAngles();
+  NormalizeAngles ();
 }
 
-Angles::Angles(Vector v, Vector o)
-    : Angles(v - o)
-{
-}
+Angles::Angles (Vector v, Vector o)
+  : Angles (v - o)
+{}
+
+
 
 void
-Angles::SetAzimuth(double azimuth)
+Angles::SetAzimuth (double azimuth)
 {
-    m_azimuth = azimuth;
-    NormalizeAngles();
+  m_azimuth = azimuth;
+  NormalizeAngles ();
 }
 
+
 void
-Angles::SetInclination(double inclination)
+Angles::SetInclination (double inclination)
 {
-    m_inclination = inclination;
-    NormalizeAngles();
+  m_inclination = inclination;
+  NormalizeAngles ();
 }
+
 
 double
-Angles::GetAzimuth() const
+Angles::GetAzimuth (void) const
 {
-    return m_azimuth;
+  return m_azimuth;
 }
+
 
 double
-Angles::GetInclination() const
+Angles::GetInclination (void) const
 {
-    return m_inclination;
+  return m_inclination;
 }
+
 
 void
-Angles::NormalizeAngles()
+Angles::NormalizeAngles (void)
 {
-    CheckIfValid();
+  CheckIfValid ();
 
-    // Normalize azimuth angle
-    if (std::isnan(m_azimuth))
+  // Normalize azimuth angle
+  if (std::isnan (m_azimuth))
     {
-        return;
+      return;
     }
 
-    m_azimuth = WrapToPi(m_azimuth);
+  m_azimuth = WrapToPi (m_azimuth);
 }
+
 
 void
-Angles::CheckIfValid() const
+Angles::CheckIfValid (void) const
 {
-    if (std::isfinite(m_inclination) || std::isfinite(m_azimuth))
+  if (std::isfinite (m_inclination) || std::isfinite (m_azimuth))
     {
-        NS_ASSERT_MSG(0.0 <= m_inclination && m_inclination <= M_PI,
-                      "m_inclination=" << m_inclination << " not valid, should be in [0, pi] rad");
+      NS_ASSERT_MSG (0.0 <= m_inclination && m_inclination <= M_PI,
+                     "m_inclination=" << m_inclination << " not valid, should be in [0, pi] rad");
     }
-    else
+  else
     {
-        // infinite or nan inclination or azimuth angle
-        NS_LOG_WARN("Undefined angle: " << *this);
+      // infinite or nan inclination or azimuth angle
+      NS_LOG_WARN ("Undefined angle: " << *this);
     }
+
 }
 
-} // namespace ns3
+}
+

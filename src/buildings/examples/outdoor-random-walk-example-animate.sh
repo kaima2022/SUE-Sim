@@ -3,7 +3,18 @@
 # Copyright (c) 2019, University of Padova, Dep. of Information Engineering, SIGNET lab
 # Copyright (c) 2021, University of Washington: animation extensions
 #
-# SPDX-License-Identifier: GPL-2.0-only
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation;
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 # Authors: Michele Polese <michele.polese@gmail.com>
 #          Tom Henderson <tomhend@uw.edu> (animation extensions)
@@ -21,7 +32,7 @@
 # 'buildings.txt' file are present in the same directory.  The script
 # will create a subdirectory named 'outdoor-random-walk-animation' and
 # will generate 820 PNG files into that subdirectory.
-#
+# 
 # The PNGs are named in increasing numerical order from '0000.png' to
 # '0819.png'.  The images can be assembled into an animated gif file
 # using a tool such as ImageMagick's convert utility, such as:
@@ -51,7 +62,7 @@ set style circle radius 5
 plot "<echo '$p'" with circles lc rgb "blue"
 EOL
     gnuplot buildings.txt plotcmds
-    rm plotcmds
+    rm plotcmds 
     mv $basename.png outdoor-random-walk-animation
     (( n++ ))
 done < mobility-trace-reduced.txt

@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2016 Universita' degli Studi di Napoli Federico II
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Authors: Pasquale Imputato <p.imputato@gmail.com>
  *          Stefano Avallone <stefano.avallone@unina.it>
@@ -15,17 +27,14 @@
 #define DYNAMIC_QUEUE_LIMITS_H
 
 #include "queue-limits.h"
-
 #include "ns3/nstime.h"
 #include "ns3/traced-value.h"
-
 #include <limits.h>
 
-namespace ns3
-{
+namespace ns3 {
 
 /**
- * @ingroup network
+ * \ingroup network
  *
  * DynamicQueueLimits would be used in conjunction with a producer/consumer
  * type queue (possibly a netdevice queue).
@@ -51,53 +60,52 @@ namespace ns3
  *
  */
 
-class DynamicQueueLimits : public QueueLimits
-{
-  public:
-    /**
-     * @brief Get the type ID.
-     * @return the object TypeId
-     */
-    static TypeId GetTypeId();
+class DynamicQueueLimits : public QueueLimits {
+public:
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
 
-    DynamicQueueLimits();
-    ~DynamicQueueLimits() override;
+  DynamicQueueLimits ();
+  virtual ~DynamicQueueLimits ();
 
-    void Reset() override;
-    void Completed(uint32_t count) override;
-    int32_t Available() const override;
-    void Queued(uint32_t count) override;
+  virtual void Reset ();
+  virtual void Completed (uint32_t count);
+  virtual int32_t Available () const;
+  virtual void Queued (uint32_t count);
 
-  private:
-    /**
-     * Calculates the difference between the two operators and
-     * returns the number if positive, zero otherwise.
-     * @param a First operator.
-     * @param b Second operator.
-     * @returns the difference between a and b if positive, zero otherwise.
-     */
-    int32_t Posdiff(int32_t a, int32_t b);
+private:
+  /**
+   * Calculates the difference between the two operators and
+   * returns the number if positive, zero otherwise.
+   * \param a First operator.
+   * \param b Second operator.
+   * \returns the difference between a and b if positive, zero otherwise.
+   */
+  int32_t Posdiff (int32_t a, int32_t b);
 
-    // Fields accessed in enqueue path
-    uint32_t m_numQueued{0};  //!< Total ever queued
-    uint32_t m_adjLimit{0};   //!< limit + num_completed
-    uint32_t m_lastObjCnt{0}; //!< Count at last queuing
+  // Fields accessed in enqueue path
+  uint32_t m_numQueued {0};                 //!< Total ever queued
+  uint32_t m_adjLimit {0};                  //!< limit + num_completed
+  uint32_t m_lastObjCnt {0};                //!< Count at last queuing
 
-    // Fields accessed only by completion path
-    TracedValue<uint32_t> m_limit; //!< Current limit
-    uint32_t m_numCompleted{0};    //!< Total ever completed
+  // Fields accessed only by completion path
+  TracedValue<uint32_t> m_limit;            //!< Current limit
+  uint32_t m_numCompleted {0};              //!< Total ever completed
 
-    uint32_t m_prevOvlimit{0};    //!< Previous over limit
-    uint32_t m_prevNumQueued{0};  //!< Previous queue total
-    uint32_t m_prevLastObjCnt{0}; //!< Previous queuing cnt
+  uint32_t m_prevOvlimit {0};               //!< Previous over limit
+  uint32_t m_prevNumQueued {0};             //!< Previous queue total
+  uint32_t m_prevLastObjCnt {0};            //!< Previous queuing cnt
 
-    uint32_t m_lowestSlack{std::numeric_limits<uint32_t>::max()}; //!< Lowest slack found
-    Time m_slackStartTime{Seconds(0)};                            //!< Time slacks seen
+  uint32_t m_lowestSlack {std::numeric_limits<uint32_t>::max ()};  //!< Lowest slack found
+  Time m_slackStartTime {Seconds (0)};      //!< Time slacks seen
 
-    // Configuration
-    uint32_t m_maxLimit;  //!< Max limit
-    uint32_t m_minLimit;  //!< Minimum limit
-    Time m_slackHoldTime; //!< Time to measure slack
+  // Configuration
+  uint32_t m_maxLimit;                      //!< Max limit
+  uint32_t m_minLimit;                      //!< Minimum limit
+  Time m_slackHoldTime;                     //!< Time to measure slack
 };
 
 } // namespace ns3

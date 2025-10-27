@@ -1,219 +1,247 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2010 Gustavo Carneiro
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Gustavo Carneiro <gjcarneiro@gmail.com> <gjc@inescporto.pt>
  */
 #include <Python.h>
+#undef HAVE_PTHREAD_H
 #undef HAVE_SYS_STAT_H
 #include "visual-simulator-impl.h"
-
 #include "ns3/default-simulator-impl.h"
 #include "ns3/log.h"
 #include "ns3/packet-metadata.h"
 
-namespace ns3
-{
+namespace ns3 {
 
-NS_LOG_COMPONENT_DEFINE("VisualSimulatorImpl");
+NS_LOG_COMPONENT_DEFINE ("VisualSimulatorImpl");
 
-NS_OBJECT_ENSURE_REGISTERED(VisualSimulatorImpl);
+NS_OBJECT_ENSURE_REGISTERED (VisualSimulatorImpl);
 
 namespace
 {
 /**
  * Get an object factory configured to the default simulator implementation
- * @return an object factory.
+ * \return an object factory.
  */
 ObjectFactory
-GetDefaultSimulatorImplFactory()
+GetDefaultSimulatorImplFactory ()
 {
-    ObjectFactory factory;
-    factory.SetTypeId(DefaultSimulatorImpl::GetTypeId());
-    return factory;
+  ObjectFactory factory;
+  factory.SetTypeId (DefaultSimulatorImpl::GetTypeId ());
+  return factory;
 }
-} // namespace
+}
+
 
 TypeId
-VisualSimulatorImpl::GetTypeId()
+VisualSimulatorImpl::GetTypeId (void)
 {
-    static TypeId tid =
-        TypeId("ns3::VisualSimulatorImpl")
-            .SetParent<SimulatorImpl>()
-            .SetGroupName("Visualizer")
-            .AddConstructor<VisualSimulatorImpl>()
-            .AddAttribute(
-                "SimulatorImplFactory",
-                "Factory for the underlying simulator implementation used by the visualizer.",
-                ObjectFactoryValue(GetDefaultSimulatorImplFactory()),
-                MakeObjectFactoryAccessor(&VisualSimulatorImpl::m_simulatorImplFactory),
-                MakeObjectFactoryChecker());
-    return tid;
+  static TypeId tid = TypeId ("ns3::VisualSimulatorImpl")
+    .SetParent<SimulatorImpl> ()
+    .SetGroupName ("Visualizer")
+    .AddConstructor<VisualSimulatorImpl> ()
+    .AddAttribute ("SimulatorImplFactory",
+                   "Factory for the underlying simulator implementation used by the visualizer.",
+                   ObjectFactoryValue (GetDefaultSimulatorImplFactory ()),
+                   MakeObjectFactoryAccessor (&VisualSimulatorImpl::m_simulatorImplFactory),
+                   MakeObjectFactoryChecker ())
+  ;
+  return tid;
 }
 
-VisualSimulatorImpl::VisualSimulatorImpl()
+
+VisualSimulatorImpl::VisualSimulatorImpl ()
 {
-    PacketMetadata::Enable();
+  PacketMetadata::Enable ();
 }
 
-VisualSimulatorImpl::~VisualSimulatorImpl()
+VisualSimulatorImpl::~VisualSimulatorImpl ()
 {
 }
 
 void
-VisualSimulatorImpl::DoDispose()
+VisualSimulatorImpl::DoDispose (void)
 {
-    if (m_simulator)
+  if (m_simulator)
     {
-        m_simulator->Dispose();
-        m_simulator = nullptr;
+      m_simulator->Dispose ();
+      m_simulator = NULL;
     }
-    SimulatorImpl::DoDispose();
+  SimulatorImpl::DoDispose ();
 }
 
 void
-VisualSimulatorImpl::NotifyConstructionCompleted()
+VisualSimulatorImpl::NotifyConstructionCompleted ()
 {
-    m_simulator = m_simulatorImplFactory.Create<SimulatorImpl>();
+  m_simulator = m_simulatorImplFactory.Create<SimulatorImpl> ();
+}
+
+
+void
+VisualSimulatorImpl::Destroy ()
+{
+  m_simulator->Destroy ();
 }
 
 void
-VisualSimulatorImpl::Destroy()
+VisualSimulatorImpl::SetScheduler (ObjectFactory schedulerFactory)
 {
-    m_simulator->Destroy();
-}
-
-void
-VisualSimulatorImpl::SetScheduler(ObjectFactory schedulerFactory)
-{
-    m_simulator->SetScheduler(schedulerFactory);
+  m_simulator->SetScheduler (schedulerFactory);
 }
 
 // System ID for non-distributed simulation is always zero
-uint32_t
-VisualSimulatorImpl::GetSystemId() const
+uint32_t 
+VisualSimulatorImpl::GetSystemId (void) const
 {
-    return m_simulator->GetSystemId();
+  return m_simulator->GetSystemId ();
 }
 
-bool
-VisualSimulatorImpl::IsFinished() const
+bool 
+VisualSimulatorImpl::IsFinished (void) const
 {
-    return m_simulator->IsFinished();
-}
-
-void
-VisualSimulatorImpl::Run()
-{
-    if (!Py_IsInitialized())
-    {
-        Py_Initialize();
-        PyRun_SimpleString("import visualizer\n"
-                           "visualizer.start();\n");
-    }
-    else
-    {
-        PyGILState_STATE __py_gil_state = PyGILState_Ensure();
-
-        PyRun_SimpleString("import visualizer\n"
-                           "visualizer.start();\n");
-
-        PyGILState_Release(__py_gil_state);
-    }
+  return m_simulator->IsFinished ();
 }
 
 void
-VisualSimulatorImpl::Stop()
+VisualSimulatorImpl::Run (void)
 {
-    m_simulator->Stop();
+  if (!Py_IsInitialized ())
+    {
+      #if PY_MAJOR_VERSION >= 3
+        const wchar_t *argv[] = { L"python", NULL};
+        Py_Initialize ();
+        PySys_SetArgv (1, (wchar_t**) argv);
+      #else
+        const char *argv[] = { "python", NULL};
+        Py_Initialize ();
+        PySys_SetArgv (1, (char**) argv);
+      #endif
+      PyRun_SimpleString (
+                          "import visualizer\n"
+                          "visualizer.start();\n"
+                          );
+    }
+  else
+    {
+      PyGILState_STATE __py_gil_state = PyGILState_Ensure ();
+    
+      PyRun_SimpleString (
+                          "import visualizer\n"
+                          "visualizer.start();\n"
+                          );
+
+      PyGILState_Release (__py_gil_state);
+    }
 }
 
-EventId
-VisualSimulatorImpl::Stop(const Time& delay)
+void 
+VisualSimulatorImpl::Stop (void)
 {
-    return m_simulator->Stop(delay);
+  m_simulator->Stop ();
+}
+
+void 
+VisualSimulatorImpl::Stop (Time const &delay)
+{
+  m_simulator->Stop (delay);
 }
 
 //
 // Schedule an event for a _relative_ time in the future.
 //
 EventId
-VisualSimulatorImpl::Schedule(const Time& delay, EventImpl* event)
+VisualSimulatorImpl::Schedule (Time const &delay, EventImpl *event)
 {
-    return m_simulator->Schedule(delay, event);
+  return m_simulator->Schedule (delay, event);
 }
 
 void
-VisualSimulatorImpl::ScheduleWithContext(uint32_t context, const Time& delay, EventImpl* event)
+VisualSimulatorImpl::ScheduleWithContext (uint32_t context, Time const &delay, EventImpl *event)
 {
-    m_simulator->ScheduleWithContext(context, delay, event);
+  m_simulator->ScheduleWithContext (context, delay, event);
 }
 
 EventId
-VisualSimulatorImpl::ScheduleNow(EventImpl* event)
+VisualSimulatorImpl::ScheduleNow (EventImpl *event)
 {
-    return m_simulator->ScheduleNow(event);
+  return m_simulator->ScheduleNow (event);
 }
 
 EventId
-VisualSimulatorImpl::ScheduleDestroy(EventImpl* event)
+VisualSimulatorImpl::ScheduleDestroy (EventImpl *event)
 {
-    return m_simulator->ScheduleDestroy(event);
+  return m_simulator->ScheduleDestroy (event);
 }
 
 Time
-VisualSimulatorImpl::Now() const
+VisualSimulatorImpl::Now (void) const
 {
-    return m_simulator->Now();
+  return m_simulator->Now ();
 }
 
-Time
-VisualSimulatorImpl::GetDelayLeft(const EventId& id) const
+Time 
+VisualSimulatorImpl::GetDelayLeft (const EventId &id) const
 {
-    return m_simulator->GetDelayLeft(id);
-}
-
-void
-VisualSimulatorImpl::Remove(const EventId& id)
-{
-    m_simulator->Remove(id);
+  return m_simulator->GetDelayLeft (id);
 }
 
 void
-VisualSimulatorImpl::Cancel(const EventId& id)
+VisualSimulatorImpl::Remove (const EventId &id)
 {
-    m_simulator->Cancel(id);
+  m_simulator->Remove (id);
+}
+
+void
+VisualSimulatorImpl::Cancel (const EventId &id)
+{
+  m_simulator->Cancel (id);
 }
 
 bool
-VisualSimulatorImpl::IsExpired(const EventId& id) const
+VisualSimulatorImpl::IsExpired (const EventId &id) const
 {
-    return m_simulator->IsExpired(id);
+  return m_simulator->IsExpired (id);
 }
 
-Time
-VisualSimulatorImpl::GetMaximumSimulationTime() const
+Time 
+VisualSimulatorImpl::GetMaximumSimulationTime (void) const
 {
-    return m_simulator->GetMaximumSimulationTime();
+  return m_simulator->GetMaximumSimulationTime ();
 }
 
 uint32_t
-VisualSimulatorImpl::GetContext() const
+VisualSimulatorImpl::GetContext (void) const
 {
-    return m_simulator->GetContext();
+  return m_simulator->GetContext ();
 }
 
 uint64_t
-VisualSimulatorImpl::GetEventCount() const
+VisualSimulatorImpl::GetEventCount (void) const
 {
-    return m_simulator->GetEventCount();
+  return m_simulator->GetEventCount ();
 }
 
 void
-VisualSimulatorImpl::RunRealSimulator()
+VisualSimulatorImpl::RunRealSimulator (void)
 {
-    m_simulator->Run();
+  m_simulator->Run ();
 }
 
+
 } // namespace ns3
+
+

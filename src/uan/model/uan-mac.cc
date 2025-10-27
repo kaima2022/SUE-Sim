@@ -1,59 +1,73 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 University of Washington
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Mitch Watrous <watrous@u.washington.edu>
  */
 
 #include "uan-mac.h"
 
-namespace ns3
+namespace ns3 {
+
+NS_OBJECT_ENSURE_REGISTERED (UanMac);
+
+UanMac::UanMac ()
+  : m_txModeIndex (0)
 {
 
-NS_OBJECT_ENSURE_REGISTERED(UanMac);
-
-UanMac::UanMac()
-    : m_txModeIndex(0)
-{
 }
 
-TypeId
-UanMac::GetTypeId()
+TypeId UanMac::GetTypeId (void)
 {
-    static TypeId tid = TypeId("ns3::UanMac").SetParent<Object>().SetGroupName("Uan");
-    return tid;
+  static TypeId tid = TypeId ("ns3::UanMac")
+    .SetParent<Object> ()
+    .SetGroupName ("Uan")
+  ;
+  return tid;
 }
 
 void
-UanMac::SetTxModeIndex(uint32_t txModeIndex)
+UanMac::SetTxModeIndex (uint32_t txModeIndex)
 {
-    m_txModeIndex = txModeIndex;
+  m_txModeIndex = txModeIndex;
 }
 
 uint32_t
-UanMac::GetTxModeIndex() const
+UanMac::GetTxModeIndex ()
 {
-    return m_txModeIndex;
+  return m_txModeIndex;
 }
 
 Address
-UanMac::GetAddress()
+UanMac::GetAddress (void)
 {
-    return m_address;
+  return m_address;
 }
 
 void
-UanMac::SetAddress(Mac8Address addr)
+UanMac::SetAddress (Mac8Address addr)
 {
-    m_address = addr;
+  m_address=addr;
 }
 
 Address
-UanMac::GetBroadcast() const
+UanMac::GetBroadcast (void) const
 {
-    Mac8Address broadcast = Mac8Address(255);
-    return broadcast;
+  Mac8Address broadcast = Mac8Address (255);
+  return broadcast;
 }
 
 } // namespace ns3

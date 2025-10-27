@@ -1,419 +1,390 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2005,2006,2007 INRIA
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Mathieu Lacage <mathieu.lacage@sophia.inria.fr>
  */
 
 #include "ipv4-interface.h"
-
-#include "arp-cache.h"
-#include "arp-l3-protocol.h"
+#include "loopback-net-device.h"
 #include "ipv4-l3-protocol.h"
 #include "ipv4-queue-disc-item.h"
-#include "loopback-net-device.h"
-
-#include "ns3/log.h"
+#include "arp-l3-protocol.h"
+#include "arp-cache.h"
 #include "ns3/net-device.h"
-#include "ns3/node.h"
+#include "ns3/log.h"
 #include "ns3/packet.h"
+#include "ns3/node.h"
 #include "ns3/pointer.h"
 #include "ns3/traffic-control-layer.h"
 
-namespace ns3
+
+namespace ns3 {
+
+NS_LOG_COMPONENT_DEFINE ("Ipv4Interface");
+
+NS_OBJECT_ENSURE_REGISTERED (Ipv4Interface);
+
+TypeId 
+Ipv4Interface::GetTypeId (void)
 {
-
-NS_LOG_COMPONENT_DEFINE("Ipv4Interface");
-
-NS_OBJECT_ENSURE_REGISTERED(Ipv4Interface);
-
-TypeId
-Ipv4Interface::GetTypeId()
-{
-    static TypeId tid = TypeId("ns3::Ipv4Interface")
-                            .SetParent<Object>()
-                            .SetGroupName("Internet")
-                            .AddAttribute("ArpCache",
-                                          "The arp cache for this ipv4 interface",
-                                          PointerValue(nullptr),
-                                          MakePointerAccessor(&Ipv4Interface::SetArpCache,
-                                                              &Ipv4Interface::GetArpCache),
-                                          MakePointerChecker<ArpCache>());
-    ;
-    return tid;
+  static TypeId tid = TypeId ("ns3::Ipv4Interface")
+    .SetParent<Object> ()
+    .SetGroupName ("Internet")
+    .AddAttribute ("ArpCache",
+                   "The arp cache for this ipv4 interface",
+                   PointerValue (0),
+                   MakePointerAccessor (&Ipv4Interface::SetArpCache, 
+                                        &Ipv4Interface::GetArpCache),
+                   MakePointerChecker<ArpCache> ())
+  ;
+  ;
+  return tid;
 }
 
-/**
+/** 
  * By default, Ipv4 interface are created in the "down" state
- *  with no IP addresses.  Before becoming usable, the user must
+ *  with no IP addresses.  Before becoming usable, the user must 
  * invoke SetUp on them once an Ipv4 address and mask have been set.
  */
-Ipv4Interface::Ipv4Interface()
-    : m_ifup(false),
-      m_forwarding(true),
-      m_metric(1),
-      m_node(nullptr),
-      m_device(nullptr),
-      m_tc(nullptr),
-      m_cache(nullptr)
+Ipv4Interface::Ipv4Interface () 
+  : m_ifup (false),
+    m_forwarding (true),
+    m_metric (1),
+    m_node (0), 
+    m_device (0),
+    m_tc (0),
+    m_cache (0)
 {
-    NS_LOG_FUNCTION(this);
+  NS_LOG_FUNCTION (this);
 }
 
-Ipv4Interface::~Ipv4Interface()
+Ipv4Interface::~Ipv4Interface ()
 {
-    NS_LOG_FUNCTION(this);
-}
-
-void
-Ipv4Interface::DoDispose()
-{
-    NS_LOG_FUNCTION(this);
-    m_node = nullptr;
-    m_device = nullptr;
-    m_tc = nullptr;
-    m_cache = nullptr;
-    Object::DoDispose();
+  NS_LOG_FUNCTION (this);
 }
 
 void
-Ipv4Interface::SetNode(Ptr<Node> node)
+Ipv4Interface::DoDispose (void)
 {
-    NS_LOG_FUNCTION(this << node);
-    m_node = node;
-    DoSetup();
+  NS_LOG_FUNCTION (this);
+  m_node = 0;
+  m_device = 0;
+  m_tc = 0;
+  m_cache = 0;
+  Object::DoDispose ();
+}
+
+void 
+Ipv4Interface::SetNode (Ptr<Node> node)
+{
+  NS_LOG_FUNCTION (this << node);
+  m_node = node;
+  DoSetup ();
+}
+
+void 
+Ipv4Interface::SetDevice (Ptr<NetDevice> device)
+{
+  NS_LOG_FUNCTION (this << device);
+  m_device = device;
+  DoSetup ();
 }
 
 void
-Ipv4Interface::SetDevice(Ptr<NetDevice> device)
+Ipv4Interface::SetTrafficControl (Ptr<TrafficControlLayer> tc)
 {
-    NS_LOG_FUNCTION(this << device);
-    m_device = device;
-    DoSetup();
+  NS_LOG_FUNCTION (this << tc);
+  m_tc = tc;
 }
 
 void
-Ipv4Interface::SetTrafficControl(Ptr<TrafficControlLayer> tc)
+Ipv4Interface::DoSetup (void)
 {
-    NS_LOG_FUNCTION(this << tc);
-    m_tc = tc;
-}
-
-void
-Ipv4Interface::DoSetup()
-{
-    NS_LOG_FUNCTION(this);
-    if (!m_node || !m_device)
+  NS_LOG_FUNCTION (this);
+  if (m_node == 0 || m_device == 0)
     {
-        return;
+      return;
     }
-    if (!m_device->NeedsArp())
+  if (!m_device->NeedsArp ())
     {
-        return;
+      return;
     }
-    Ptr<ArpL3Protocol> arp = m_node->GetObject<ArpL3Protocol>();
-    m_cache = arp->CreateCache(m_device, this);
+  Ptr<ArpL3Protocol> arp = m_node->GetObject<ArpL3Protocol> ();
+  m_cache = arp->CreateCache (m_device, this);
 }
 
 Ptr<NetDevice>
-Ipv4Interface::GetDevice() const
+Ipv4Interface::GetDevice (void) const
 {
-    NS_LOG_FUNCTION(this);
-    return m_device;
+  NS_LOG_FUNCTION (this);
+  return m_device;
 }
 
 void
-Ipv4Interface::SetMetric(uint16_t metric)
+Ipv4Interface::SetMetric (uint16_t metric)
 {
-    NS_LOG_FUNCTION(this << metric);
-    m_metric = metric;
+  NS_LOG_FUNCTION (this << metric);
+  m_metric = metric;
 }
 
 uint16_t
-Ipv4Interface::GetMetric() const
+Ipv4Interface::GetMetric (void) const
 {
-    NS_LOG_FUNCTION(this);
-    return m_metric;
+  NS_LOG_FUNCTION (this);
+  return m_metric;
 }
 
 void
-Ipv4Interface::SetArpCache(Ptr<ArpCache> a)
+Ipv4Interface::SetArpCache (Ptr<ArpCache> a)
 {
-    NS_LOG_FUNCTION(this << a);
-    m_cache = a;
+  NS_LOG_FUNCTION (this << a);
+  m_cache = a;
 }
 
 Ptr<ArpCache>
-Ipv4Interface::GetArpCache() const
+Ipv4Interface::GetArpCache () const
 {
-    NS_LOG_FUNCTION(this);
-    return m_cache;
+  NS_LOG_FUNCTION (this);
+  return m_cache;
 }
 
 /**
- * These are IP interface states and may be distinct from
+ * These are IP interface states and may be distinct from 
  * NetDevice states, such as found in real implementations
  * (where the device may be down but IP interface state is still up).
  */
-bool
-Ipv4Interface::IsUp() const
+bool 
+Ipv4Interface::IsUp (void) const
 {
-    NS_LOG_FUNCTION(this);
-    return m_ifup;
+  NS_LOG_FUNCTION (this);
+  return m_ifup;
 }
 
-bool
-Ipv4Interface::IsDown() const
+bool 
+Ipv4Interface::IsDown (void) const
 {
-    NS_LOG_FUNCTION(this);
-    return !m_ifup;
+  NS_LOG_FUNCTION (this);
+  return !m_ifup;
+}
+
+void 
+Ipv4Interface::SetUp (void)
+{
+  NS_LOG_FUNCTION (this);
+  m_ifup = true;
+}
+
+void 
+Ipv4Interface::SetDown (void)
+{
+  NS_LOG_FUNCTION (this);
+  m_ifup = false;
+}
+
+bool 
+Ipv4Interface::IsForwarding (void) const
+{
+  NS_LOG_FUNCTION (this);
+  return m_forwarding;
+}
+
+void 
+Ipv4Interface::SetForwarding (bool val)
+{
+  NS_LOG_FUNCTION (this << val);
+  m_forwarding = val;
 }
 
 void
-Ipv4Interface::SetUp()
+Ipv4Interface::Send (Ptr<Packet> p, const Ipv4Header & hdr, Ipv4Address dest)
 {
-    NS_LOG_FUNCTION(this);
-    m_ifup = true;
-}
-
-void
-Ipv4Interface::SetDown()
-{
-    NS_LOG_FUNCTION(this);
-    m_ifup = false;
-}
-
-bool
-Ipv4Interface::IsForwarding() const
-{
-    NS_LOG_FUNCTION(this);
-    return m_forwarding;
-}
-
-void
-Ipv4Interface::SetForwarding(bool val)
-{
-    NS_LOG_FUNCTION(this << val);
-    m_forwarding = val;
-}
-
-void
-Ipv4Interface::Send(Ptr<Packet> p, const Ipv4Header& hdr, Ipv4Address dest)
-{
-    NS_LOG_FUNCTION(this << *p << dest);
-    if (!IsUp())
+  NS_LOG_FUNCTION (this << *p << dest);
+  if (!IsUp ())
     {
-        return;
+      return;
     }
 
-    // Check for a loopback device, if it's the case we don't pass through
-    // traffic control layer
-    if (DynamicCast<LoopbackNetDevice>(m_device))
+  // Check for a loopback device, if it's the case we don't pass through
+  // traffic control layer
+  if (DynamicCast<LoopbackNetDevice> (m_device))
     {
-        /// @todo additional checks needed here (such as whether multicast
-        /// goes to loopback)?
-        p->AddHeader(hdr);
-        m_device->Send(p, m_device->GetBroadcast(), Ipv4L3Protocol::PROT_NUMBER);
-        return;
-    }
+      /// \todo additional checks needed here (such as whether multicast
+      /// goes to loopback)?
+      p->AddHeader (hdr);
+      m_device->Send (p, m_device->GetBroadcast (), Ipv4L3Protocol::PROT_NUMBER);
+      return;
+    } 
 
-    NS_ASSERT(m_tc);
+  NS_ASSERT (m_tc != 0);
 
-    // is this packet aimed at a local interface ?
-    for (auto i = m_ifaddrs.begin(); i != m_ifaddrs.end(); ++i)
+  // is this packet aimed at a local interface ?
+  for (Ipv4InterfaceAddressListCI i = m_ifaddrs.begin (); i != m_ifaddrs.end (); ++i)
     {
-        if (dest == (*i).GetLocal())
+      if (dest == (*i).GetLocal ())
         {
-            p->AddHeader(hdr);
-            Simulator::ScheduleNow(&TrafficControlLayer::Receive,
-                                   m_tc,
-                                   m_device,
-                                   p,
-                                   Ipv4L3Protocol::PROT_NUMBER,
-                                   m_device->GetBroadcast(),
-                                   m_device->GetBroadcast(),
-                                   NetDevice::PACKET_HOST);
-            return;
+          p->AddHeader (hdr);
+          m_tc->Receive (m_device, p, Ipv4L3Protocol::PROT_NUMBER,
+                         m_device->GetBroadcast (),
+                         m_device->GetBroadcast (),
+                         NetDevice::PACKET_HOST);
+          return;
         }
     }
-    if (m_device->NeedsArp())
+  if (m_device->NeedsArp ())
     {
-        NS_LOG_LOGIC("Needs ARP"
-                     << " " << dest);
-        Ptr<ArpL3Protocol> arp = m_node->GetObject<ArpL3Protocol>();
-        Address hardwareDestination;
-        bool found = false;
-        if (dest.IsBroadcast())
+      NS_LOG_LOGIC ("Needs ARP" << " " << dest);
+      Ptr<ArpL3Protocol> arp = m_node->GetObject<ArpL3Protocol> ();
+      Address hardwareDestination;
+      bool found = false;
+      if (dest.IsBroadcast ())
         {
-            NS_LOG_LOGIC("All-network Broadcast");
-            hardwareDestination = m_device->GetBroadcast();
-            found = true;
+          NS_LOG_LOGIC ("All-network Broadcast");
+          hardwareDestination = m_device->GetBroadcast ();
+          found = true;
         }
-        else if (dest.IsMulticast())
+      else if (dest.IsMulticast ())
         {
-            NS_LOG_LOGIC("IsMulticast");
-            NS_ASSERT_MSG(m_device->IsMulticast(),
-                          "ArpIpv4Interface::SendTo (): Sending multicast packet over "
-                          "non-multicast device");
+          NS_LOG_LOGIC ("IsMulticast");
+          NS_ASSERT_MSG (m_device->IsMulticast (),
+                         "ArpIpv4Interface::SendTo (): Sending multicast packet over "
+                         "non-multicast device");
 
-            hardwareDestination = m_device->GetMulticast(dest);
-            found = true;
+          hardwareDestination = m_device->GetMulticast (dest);
+          found = true;
         }
-        else
+      else
         {
-            for (auto i = m_ifaddrs.begin(); i != m_ifaddrs.end(); ++i)
+          for (Ipv4InterfaceAddressListCI i = m_ifaddrs.begin (); i != m_ifaddrs.end (); ++i)
             {
-                if (dest.IsSubnetDirectedBroadcast((*i).GetMask()))
+              if (dest.IsSubnetDirectedBroadcast ((*i).GetMask ()))
                 {
-                    NS_LOG_LOGIC("Subnetwork Broadcast");
-                    hardwareDestination = m_device->GetBroadcast();
-                    found = true;
-                    break;
+                  NS_LOG_LOGIC ("Subnetwork Broadcast");
+                  hardwareDestination = m_device->GetBroadcast ();
+                  found = true;
+                  break;
                 }
             }
-            if (!found)
+          if (!found)
             {
-                NS_LOG_LOGIC("ARP Lookup");
-                found = arp->Lookup(p, hdr, dest, m_device, m_cache, &hardwareDestination);
+              NS_LOG_LOGIC ("ARP Lookup");
+              found = arp->Lookup (p, hdr, dest, m_device, m_cache, &hardwareDestination);
             }
         }
 
-        if (found)
+      if (found)
         {
-            NS_LOG_LOGIC("Address Resolved.  Send.");
-            m_tc->Send(m_device,
-                       Create<Ipv4QueueDiscItem>(p,
-                                                 hardwareDestination,
-                                                 Ipv4L3Protocol::PROT_NUMBER,
-                                                 hdr));
+          NS_LOG_LOGIC ("Address Resolved.  Send.");
+          m_tc->Send (m_device, Create<Ipv4QueueDiscItem> (p, hardwareDestination, Ipv4L3Protocol::PROT_NUMBER, hdr));
         }
     }
-    else
+  else
     {
-        NS_LOG_LOGIC("Doesn't need ARP");
-        m_tc->Send(m_device,
-                   Create<Ipv4QueueDiscItem>(p,
-                                             m_device->GetBroadcast(),
-                                             Ipv4L3Protocol::PROT_NUMBER,
-                                             hdr));
+      NS_LOG_LOGIC ("Doesn't need ARP");
+      m_tc->Send (m_device, Create<Ipv4QueueDiscItem> (p, m_device->GetBroadcast (), Ipv4L3Protocol::PROT_NUMBER, hdr));
     }
 }
 
 uint32_t
-Ipv4Interface::GetNAddresses() const
+Ipv4Interface::GetNAddresses (void) const
 {
-    NS_LOG_FUNCTION(this);
-    return m_ifaddrs.size();
+  NS_LOG_FUNCTION (this);
+  return m_ifaddrs.size ();
 }
 
 bool
-Ipv4Interface::AddAddress(Ipv4InterfaceAddress addr)
+Ipv4Interface::AddAddress (Ipv4InterfaceAddress addr)
 {
-    NS_LOG_FUNCTION(this << addr);
-    m_ifaddrs.push_back(addr);
-    if (!m_addAddressCallback.IsNull())
-    {
-        m_addAddressCallback(this, addr);
-    }
-    return true;
+  NS_LOG_FUNCTION (this << addr);
+  m_ifaddrs.push_back (addr);
+  return true;
 }
 
 Ipv4InterfaceAddress
-Ipv4Interface::GetAddress(uint32_t index) const
+Ipv4Interface::GetAddress (uint32_t index) const
 {
-    NS_LOG_FUNCTION(this << index);
-    if (index >= m_ifaddrs.size())
+  NS_LOG_FUNCTION (this << index);
+  if (index < m_ifaddrs.size ())
     {
-        NS_FATAL_ERROR("index " << index << " out of bounds");
-    }
-
-    uint32_t tmp = 0;
-    for (auto i = m_ifaddrs.begin(); i != m_ifaddrs.end(); i++)
-    {
-        if (tmp == index)
+      uint32_t tmp = 0;
+      for (Ipv4InterfaceAddressListCI i = m_ifaddrs.begin (); i!= m_ifaddrs.end (); i++)
         {
-            return *i;
-        }
-        ++tmp;
-    }
-
-    return {}; // quiet compiler
-}
-
-Ipv4InterfaceAddress
-Ipv4Interface::RemoveAddress(uint32_t index)
-{
-    NS_LOG_FUNCTION(this << index);
-    if (index >= m_ifaddrs.size())
-    {
-        NS_FATAL_ERROR("Bug in Ipv4Interface::RemoveAddress");
-    }
-
-    uint32_t tmp = 0;
-    for (auto it = m_ifaddrs.begin(); it != m_ifaddrs.end(); it++)
-    {
-        if (tmp == index)
-        {
-            // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
-            Ipv4InterfaceAddress addr = *it;
-
-            m_ifaddrs.erase(it);
-            if (!m_removeAddressCallback.IsNull())
+          if (tmp  == index)
             {
-                m_removeAddressCallback(this, addr);
+              return *i;
             }
-            return addr;
+          ++tmp;
         }
-        ++tmp;
     }
-    NS_FATAL_ERROR("Address " << index << " not found");
-    return {}; // quiet compiler
+  else
+    {
+      NS_FATAL_ERROR ("index " << index << " out of bounds");  
+    }
+  Ipv4InterfaceAddress addr;
+  return (addr);  // quiet compiler
+}
+
+Ipv4InterfaceAddress
+Ipv4Interface::RemoveAddress (uint32_t index)
+{
+  NS_LOG_FUNCTION (this << index);
+  if (index >= m_ifaddrs.size ())
+    {
+      NS_FATAL_ERROR ("Bug in Ipv4Interface::RemoveAddress");
+    }
+  Ipv4InterfaceAddressListI i = m_ifaddrs.begin ();
+  uint32_t tmp = 0;
+  while (i != m_ifaddrs.end ())
+    {
+      if (tmp  == index)
+        {
+          Ipv4InterfaceAddress addr = *i;
+          m_ifaddrs.erase (i);
+          return addr;
+        }
+      ++tmp;
+      ++i;
+    }
+  NS_FATAL_ERROR ("Address " << index << " not found");
+  Ipv4InterfaceAddress addr;
+  return (addr);  // quiet compiler
 }
 
 Ipv4InterfaceAddress
 Ipv4Interface::RemoveAddress(Ipv4Address address)
 {
-    NS_LOG_FUNCTION(this << address);
+  NS_LOG_FUNCTION(this << address);
 
-    if (address == Ipv4Address::GetLoopback())
+  if (address == address.GetLoopback())
     {
-        NS_LOG_WARN("Cannot remove loopback address.");
-        return Ipv4InterfaceAddress();
+      NS_LOG_WARN ("Cannot remove loopback address.");
+      return Ipv4InterfaceAddress();
     }
 
-    for (auto it = m_ifaddrs.begin(); it != m_ifaddrs.end(); it++)
+  for(Ipv4InterfaceAddressListI it = m_ifaddrs.begin(); it != m_ifaddrs.end(); it++)
     {
-        if ((*it).GetLocal() == address)
+      if((*it).GetLocal() == address)
         {
-            // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
-            Ipv4InterfaceAddress ifAddr = *it;
-
-            m_ifaddrs.erase(it);
-            if (!m_removeAddressCallback.IsNull())
-            {
-                m_removeAddressCallback(this, ifAddr);
-            }
-            return ifAddr;
+          Ipv4InterfaceAddress ifAddr = *it;
+          m_ifaddrs.erase(it);
+          return ifAddr;
         }
     }
-    return {};
-}
-
-void
-Ipv4Interface::RemoveAddressCallback(
-    Callback<void, Ptr<Ipv4Interface>, Ipv4InterfaceAddress> removeAddressCallback)
-{
-    NS_LOG_FUNCTION(this << &removeAddressCallback);
-    m_removeAddressCallback = removeAddressCallback;
-}
-
-void
-Ipv4Interface::AddAddressCallback(
-    Callback<void, Ptr<Ipv4Interface>, Ipv4InterfaceAddress> addAddressCallback)
-{
-    NS_LOG_FUNCTION(this << &addAddressCallback);
-    m_addAddressCallback = addAddressCallback;
+  return Ipv4InterfaceAddress();
 }
 
 } // namespace ns3
+

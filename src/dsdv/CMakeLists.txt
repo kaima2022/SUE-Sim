@@ -12,7 +12,6 @@ build_lib(
     model/dsdv-packet.h
     model/dsdv-routing-protocol.h
     model/dsdv-rtable.h
-  LIBRARIES_TO_LINK ${libmesh}
-                    ${libinternet-apps}
+  LIBRARIES_TO_LINK ${libinternet}
   TEST_SOURCES test/dsdv-testcase.cc
 )

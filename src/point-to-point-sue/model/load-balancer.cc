@@ -58,10 +58,15 @@ LoadBalancer::GetTypeId (void)
                    MakeUintegerChecker<uint32_t> ())
     .AddAttribute ("LoadBalanceAlgorithm",
                    "The load balancing algorithm to use",
-                   EnumValue (ENHANCED_HASH),
-                   MakeUintegerAccessor (&LoadBalancer::SetLoadBalanceAlgorithmUinteger,
-                                        &LoadBalancer::GetLoadBalanceAlgorithmUinteger),
-                   MakeUintegerChecker<uint32_t> ())
+                   EnumValue (LoadBalanceAlgorithm::ENHANCED_HASH),
+                   MakeEnumAccessor (&LoadBalancer::SetLoadBalanceAlgorithm,
+                                   &LoadBalancer::GetLoadBalanceAlgorithm),
+                   MakeEnumChecker (LoadBalanceAlgorithm::SIMPLE_MOD, "SimpleMod",
+                                     LoadBalanceAlgorithm::MOD_WITH_SEED, "ModWithSeed",
+                                     LoadBalanceAlgorithm::PRIME_HASH, "PrimeHash",
+                                     LoadBalanceAlgorithm::ENHANCED_HASH, "EnhancedHash",
+                                     LoadBalanceAlgorithm::ROUND_ROBIN, "RoundRobin",
+                                     LoadBalanceAlgorithm::CONSISTENT_HASH, "ConsistentHash"))
     .AddAttribute ("Prime1",
                    "First prime number for hash algorithms",
                    UintegerValue (7919),

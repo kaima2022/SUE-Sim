@@ -3,7 +3,18 @@
 #  * Copyright (c) 2005,2006,2007 INRIA
 #  * Copyright (c) 2009 INESC Porto
 #  *
-#  * SPDX-License-Identifier: GPL-2.0-only
+#  * This program is free software; you can redistribute it and/or modify
+#  * it under the terms of the GNU General Public License version 2 as
+#  * published by the Free Software Foundation;
+#  *
+#  * This program is distributed in the hope that it will be useful,
+#  * but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  * GNU General Public License for more details.
+#  *
+#  * You should have received a copy of the GNU General Public License
+#  * along with this program; if not, write to the Free Software
+#  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #  *
 #  * Authors: Mathieu Lacage <mathieu.lacage@sophia.inria.fr>
 #  *          Gustavo Carneiro <gjc@inescporto.pt>
@@ -11,14 +22,13 @@
 
 import sys
 
-try:
-    from ns import ns
-except ModuleNotFoundError:
-    raise SystemExit(
-        "Error: ns3 Python module not found;"
-        " Python bindings may not be enabled"
-        " or your PYTHONPATH might not be properly configured"
-    )
+import ns.applications
+import ns.core
+import ns.internet
+import ns.mobility
+import ns.network
+import ns.point_to_point
+import ns.wifi
 
 # void
 # DevTxTrace (std::string context, Ptr<const Packet> p, Mac48Address address)
@@ -66,32 +76,35 @@ except ModuleNotFoundError:
 #   std::cout << " start="<<start<<" duration="<<duration<<std::endl;
 # }
 
-ns.cppyy.cppdef(
-    """
-    using namespace ns3;
-    void AdvancePosition(Ptr<Node> node){
-        Ptr<MobilityModel> mob = node->GetObject<MobilityModel>();
-        Vector pos = mob->GetPosition();
-        pos.x += 5.0;
-        if (pos.x >= 210.0)
-            return;
-        mob->SetPosition(pos);
-        Simulator::Schedule(Seconds(1), AdvancePosition, node);
-    }"""
-)
+def SetPosition(node, position):
+    mobility = node.GetObject(ns.mobility.MobilityModel.GetTypeId())
+    mobility.SetPosition(position)
+
+
+def GetPosition(node):
+    mobility = node.GetObject(ns.mobility.MobilityModel.GetTypeId())
+    return mobility.GetPosition()
+
+def AdvancePosition(node):
+    pos = GetPosition(node);
+    pos.x += 5.0
+    if pos.x >= 210.0:
+      return
+    SetPosition(node, pos)
+    ns.core.Simulator.Schedule(ns.core.Seconds(1.0), AdvancePosition, node)
 
 
 def main(argv):
-    ns.CommandLine().Parse(argv)
+    ns.core.CommandLine().Parse(argv)
 
-    ns.Packet.EnablePrinting()
+    ns.network.Packet.EnablePrinting();
 
-    wifi = ns.WifiHelper()
-    mobility = ns.MobilityHelper()
-    stas = ns.NodeContainer()
-    ap = ns.NodeContainer()
-    # NetDeviceContainer staDevs;
-    packetSocket = ns.PacketSocketHelper()
+    wifi = ns.wifi.WifiHelper()
+    mobility = ns.mobility.MobilityHelper()
+    stas = ns.network.NodeContainer()
+    ap = ns.network.NodeContainer()
+    #NetDeviceContainer staDevs;
+    packetSocket = ns.network.PacketSocketHelper()
 
     stas.Create(2)
     ap.Create(1)
@@ -100,58 +113,56 @@ def main(argv):
     packetSocket.Install(stas)
     packetSocket.Install(ap)
 
-    wifiPhy = ns.YansWifiPhyHelper()
-    wifiChannel = ns.YansWifiChannelHelper.Default()
+    wifiPhy = ns.wifi.YansWifiPhyHelper()
+    wifiChannel = ns.wifi.YansWifiChannelHelper.Default()
     wifiPhy.SetChannel(wifiChannel.Create())
 
-    ssid = ns.Ssid("wifi-default")
-    wifiMac = ns.WifiMacHelper()
+    ssid = ns.wifi.Ssid("wifi-default")
+    wifiMac = ns.wifi.WifiMacHelper()
 
     # setup stas.
-    wifiMac.SetType(
-        "ns3::StaWifiMac",
-        "ActiveProbing",
-        ns.BooleanValue(True),
-        "Ssid",
-        ns.SsidValue(ssid),
-    )
+    wifiMac.SetType("ns3::StaWifiMac",
+                    "Ssid", ns.wifi.SsidValue(ssid))
     staDevs = wifi.Install(wifiPhy, wifiMac, stas)
     # setup ap.
-    wifiMac.SetType("ns3::ApWifiMac", "Ssid", ns.SsidValue(ssid))
+    wifiMac.SetType("ns3::ApWifiMac",
+                    "Ssid", ns.wifi.SsidValue(ssid))
     wifi.Install(wifiPhy, wifiMac, ap)
 
     # mobility.
     mobility.Install(stas)
     mobility.Install(ap)
 
-    ns.Simulator.Schedule(ns.Seconds(1), ns.cppyy.gbl.AdvancePosition, ap.Get(0))
+    ns.core.Simulator.Schedule(ns.core.Seconds(1.0), AdvancePosition, ap.Get(0))
 
-    socket = ns.PacketSocketAddress()
+    socket = ns.network.PacketSocketAddress()
     socket.SetSingleDevice(staDevs.Get(0).GetIfIndex())
     socket.SetPhysicalAddress(staDevs.Get(1).GetAddress())
     socket.SetProtocol(1)
 
-    onoff = ns.OnOffHelper("ns3::PacketSocketFactory", socket.ConvertTo())
-    onoff.SetConstantRate(ns.DataRate("500kb/s"))
+    onoff = ns.applications.OnOffHelper("ns3::PacketSocketFactory", ns.network.Address(socket))
+    onoff.SetConstantRate (ns.network.DataRate ("500kb/s"))
 
-    apps = onoff.Install(ns.NodeContainer(stas.Get(0)))
-    apps.Start(ns.Seconds(0.5))
-    apps.Stop(ns.Seconds(43))
+    apps = onoff.Install(ns.network.NodeContainer(stas.Get(0)))
+    apps.Start(ns.core.Seconds(0.5))
+    apps.Stop(ns.core.Seconds(43.0))
 
-    ns.Simulator.Stop(ns.Seconds(44))
+    ns.core.Simulator.Stop(ns.core.Seconds(44.0))
 
-    #   Config::Connect("/NodeList/*/DeviceList/*/Tx", MakeCallback(&DevTxTrace));
-    #   Config::Connect("/NodeList/*/DeviceList/*/Rx", MakeCallback(&DevRxTrace));
-    #   Config::Connect("/NodeList/*/DeviceList/*/Phy/RxOk", MakeCallback(&PhyRxOkTrace));
-    #   Config::Connect("/NodeList/*/DeviceList/*/Phy/RxError", MakeCallback(&PhyRxErrorTrace));
-    #   Config::Connect("/NodeList/*/DeviceList/*/Phy/Tx", MakeCallback(&PhyTxTrace));
-    #   Config::Connect("/NodeList/*/DeviceList/*/Phy/State", MakeCallback(&PhyStateTrace));
+  #   Config::Connect("/NodeList/*/DeviceList/*/Tx", MakeCallback(&DevTxTrace));
+  #   Config::Connect("/NodeList/*/DeviceList/*/Rx", MakeCallback(&DevRxTrace));
+  #   Config::Connect("/NodeList/*/DeviceList/*/Phy/RxOk", MakeCallback(&PhyRxOkTrace));
+  #   Config::Connect("/NodeList/*/DeviceList/*/Phy/RxError", MakeCallback(&PhyRxErrorTrace));
+  #   Config::Connect("/NodeList/*/DeviceList/*/Phy/Tx", MakeCallback(&PhyTxTrace));
+  #   Config::Connect("/NodeList/*/DeviceList/*/Phy/State", MakeCallback(&PhyStateTrace));
 
-    ns.Simulator.Run()
-    ns.Simulator.Destroy()
+
+    ns.core.Simulator.Run()
+    ns.core.Simulator.Destroy()
 
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main(sys.argv))
+

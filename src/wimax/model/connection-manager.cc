@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2007,2008,2009 INRIA, UDcast
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Authors: Jahanzeb Farooq <jahanzeb.farooq@sophia.inria.fr>
  *          Mohamed Amine Ismail <amine.ismail@sophia.inria.fr>
@@ -9,233 +21,240 @@
  */
 
 #include "connection-manager.h"
-
-#include "bs-net-device.h"
+#include "ns3/log.h"
 #include "cid-factory.h"
+#include "ss-record.h"
 #include "mac-messages.h"
+#include "ns3/pointer.h"
+#include "ns3/enum.h"
 #include "service-flow.h"
 #include "ss-net-device.h"
-#include "ss-record.h"
+#include "bs-net-device.h"
 
-#include "ns3/enum.h"
-#include "ns3/log.h"
-#include "ns3/pointer.h"
+namespace ns3 {
 
-namespace ns3
+NS_LOG_COMPONENT_DEFINE ("ConnectionManager");
+
+NS_OBJECT_ENSURE_REGISTERED (ConnectionManager);
+
+TypeId ConnectionManager::GetTypeId (void)
 {
-
-NS_LOG_COMPONENT_DEFINE("ConnectionManager");
-
-NS_OBJECT_ENSURE_REGISTERED(ConnectionManager);
-
-TypeId
-ConnectionManager::GetTypeId()
-{
-    static TypeId tid = TypeId("ns3::ConnectionManager").SetParent<Object>().SetGroupName("Wimax");
-    return tid;
+  static TypeId tid = TypeId ("ns3::ConnectionManager")
+    .SetParent<Object> ()
+    .SetGroupName("Wimax");
+  return tid;
 }
 
-ConnectionManager::ConnectionManager()
-    : m_cidFactory(nullptr)
+ConnectionManager::ConnectionManager (void)
+  : m_cidFactory (0)
 {
 }
 
 void
-ConnectionManager::DoDispose()
+ConnectionManager::DoDispose (void)
 {
 }
 
-ConnectionManager::~ConnectionManager()
+ConnectionManager::~ConnectionManager (void)
 {
-}
-
-void
-ConnectionManager::SetCidFactory(CidFactory* cidFactory)
-{
-    m_cidFactory = cidFactory;
 }
 
 void
-ConnectionManager::AllocateManagementConnections(SSRecord* ssRecord, RngRsp* rngrsp)
+ConnectionManager::SetCidFactory (CidFactory *cidFactory)
 {
-    Ptr<WimaxConnection> basicConnection = CreateConnection(Cid::BASIC);
-    ssRecord->SetBasicCid(basicConnection->GetCid());
+  m_cidFactory = cidFactory;
+}
 
-    Ptr<WimaxConnection> primaryConnection = CreateConnection(Cid::PRIMARY);
-    ssRecord->SetPrimaryCid(primaryConnection->GetCid());
+void
+ConnectionManager::AllocateManagementConnections (SSRecord *ssRecord, RngRsp *rngrsp)
+{
+  Ptr<WimaxConnection> basicConnection = CreateConnection (Cid::BASIC);
+  ssRecord->SetBasicCid (basicConnection->GetCid ());
 
-    rngrsp->SetBasicCid(basicConnection->GetCid());
-    rngrsp->SetPrimaryCid(primaryConnection->GetCid());
+  Ptr<WimaxConnection> primaryConnection = CreateConnection (Cid::PRIMARY);
+  ssRecord->SetPrimaryCid (primaryConnection->GetCid ());
+
+  rngrsp->SetBasicCid (basicConnection->GetCid ());
+  rngrsp->SetPrimaryCid (primaryConnection->GetCid ());
 }
 
 Ptr<WimaxConnection>
-ConnectionManager::CreateConnection(Cid::Type type)
+ConnectionManager::CreateConnection (Cid::Type type)
 {
-    Cid cid;
-    switch (type)
+  Cid cid;
+  switch (type)
     {
     case Cid::BASIC:
     case Cid::MULTICAST:
     case Cid::PRIMARY:
-        cid = m_cidFactory->Allocate(type);
-        break;
+      cid = m_cidFactory->Allocate (type);
+      break;
     case Cid::TRANSPORT:
-        cid = m_cidFactory->AllocateTransportOrSecondary();
-        break;
+      cid = m_cidFactory->AllocateTransportOrSecondary ();
+      break;
     default:
-        NS_FATAL_ERROR("Invalid connection type");
-        break;
+      NS_FATAL_ERROR ("Invalid connection type");
+      break;
     }
-    Ptr<WimaxConnection> connection = CreateObject<WimaxConnection>(cid, type);
-    AddConnection(connection, type);
-    return connection;
+  Ptr<WimaxConnection> connection = CreateObject<WimaxConnection> (cid, type);
+  AddConnection (connection, type);
+  return connection;
 }
 
 void
-ConnectionManager::AddConnection(Ptr<WimaxConnection> connection, Cid::Type type)
+ConnectionManager::AddConnection (Ptr<WimaxConnection> connection, Cid::Type type)
 {
-    switch (type)
+  switch (type)
     {
     case Cid::BASIC:
-        m_basicConnections.push_back(connection);
-        break;
+      m_basicConnections.push_back (connection);
+      break;
     case Cid::PRIMARY:
-        m_primaryConnections.push_back(connection);
-        break;
+      m_primaryConnections.push_back (connection);
+      break;
     case Cid::TRANSPORT:
-        m_transportConnections.push_back(connection);
-        break;
+      m_transportConnections.push_back (connection);
+      break;
     case Cid::MULTICAST:
-        m_multicastConnections.push_back(connection);
-        break;
+      m_multicastConnections.push_back (connection);
+      break;
     default:
-        NS_FATAL_ERROR("Invalid connection type");
-        break;
+      NS_FATAL_ERROR ("Invalid connection type");
+      break;
     }
 }
 
 Ptr<WimaxConnection>
-ConnectionManager::GetConnection(Cid cid)
+ConnectionManager::GetConnection (Cid cid)
 {
-    for (auto iter = m_basicConnections.begin(); iter != m_basicConnections.end(); ++iter)
+  std::vector<Ptr<WimaxConnection> >::const_iterator iter;
+
+  for (iter = m_basicConnections.begin (); iter != m_basicConnections.end (); ++iter)
     {
-        if ((*iter)->GetCid() == cid)
+      if ((*iter)->GetCid () == cid)
         {
-            return *iter;
+          return *iter;
         }
     }
 
-    for (auto iter = m_primaryConnections.begin(); iter != m_primaryConnections.end(); ++iter)
+  for (iter = m_primaryConnections.begin (); iter != m_primaryConnections.end (); ++iter)
     {
-        if ((*iter)->GetCid() == cid)
+      if ((*iter)->GetCid () == cid)
         {
-            return *iter;
+          return *iter;
         }
     }
 
-    for (auto iter = m_transportConnections.begin(); iter != m_transportConnections.end(); ++iter)
+  for (iter = m_transportConnections.begin (); iter != m_transportConnections.end (); ++iter)
     {
-        if ((*iter)->GetCid() == cid)
+      if ((*iter)->GetCid () == cid)
         {
-            return *iter;
+          return *iter;
         }
     }
 
-    return nullptr;
+  return 0;
 }
 
-std::vector<Ptr<WimaxConnection>>
-ConnectionManager::GetConnections(Cid::Type type) const
+std::vector<Ptr<WimaxConnection> >
+ConnectionManager::GetConnections (Cid::Type type) const
 {
-    std::vector<Ptr<WimaxConnection>> connections;
+  std::vector<Ptr<WimaxConnection> > connections;
 
-    switch (type)
+  switch (type)
     {
     case Cid::BASIC:
-        connections = m_basicConnections;
-        break;
+      connections = m_basicConnections;
+      break;
     case Cid::PRIMARY:
-        connections = m_primaryConnections;
-        break;
+      connections = m_primaryConnections;
+      break;
     case Cid::TRANSPORT:
-        connections = m_transportConnections;
-        break;
+      connections = m_transportConnections;
+      break;
     default:
-        NS_FATAL_ERROR("Invalid connection type");
-        break;
+      NS_FATAL_ERROR ("Invalid connection type");
+      break;
     }
 
-    return connections;
+  return connections;
 }
 
 uint32_t
-ConnectionManager::GetNPackets(Cid::Type type, ServiceFlow::SchedulingType schedulingType) const
+ConnectionManager::GetNPackets (Cid::Type type, ServiceFlow::SchedulingType schedulingType) const
 {
-    uint32_t nrPackets = 0;
+  uint32_t nrPackets = 0;
 
-    switch (type)
+  switch (type)
     {
-    case Cid::BASIC: {
-        for (auto iter = m_basicConnections.begin(); iter != m_basicConnections.end(); ++iter)
-        {
-            nrPackets += (*iter)->GetQueue()->GetSize();
-        }
+    case Cid::BASIC:
+      {
+        for (std::vector<Ptr<WimaxConnection> >::const_iterator iter = m_basicConnections.begin (); iter
+             != m_basicConnections.end (); ++iter)
+          {
+            nrPackets += (*iter)->GetQueue ()->GetSize ();
+          }
         break;
-    }
-    case Cid::PRIMARY: {
-        for (auto iter = m_primaryConnections.begin(); iter != m_primaryConnections.end(); ++iter)
-        {
-            nrPackets += (*iter)->GetQueue()->GetSize();
-        }
+      }
+    case Cid::PRIMARY:
+      {
+        for (std::vector<Ptr<WimaxConnection> >::const_iterator iter = m_primaryConnections.begin (); iter
+             != m_primaryConnections.end (); ++iter)
+          {
+            nrPackets += (*iter)->GetQueue ()->GetSize ();
+          }
         break;
-    }
-    case Cid::TRANSPORT: {
-        for (auto iter = m_transportConnections.begin(); iter != m_transportConnections.end();
-             ++iter)
-        {
-            if (schedulingType == ServiceFlow::SF_TYPE_ALL ||
-                (*iter)->GetSchedulingType() == schedulingType)
-            {
-                nrPackets += (*iter)->GetQueue()->GetSize();
-            }
-        }
+      }
+    case Cid::TRANSPORT:
+      {
+        for (std::vector<Ptr<WimaxConnection> >::const_iterator iter = m_transportConnections.begin (); iter
+             != m_transportConnections.end (); ++iter)
+          {
+            if (schedulingType == ServiceFlow::SF_TYPE_ALL || (*iter)->GetSchedulingType () == schedulingType)
+              {
+                nrPackets += (*iter)->GetQueue ()->GetSize ();
+              }
+          }
         break;
-    }
+      }
     default:
-        NS_FATAL_ERROR("Invalid connection type");
-        break;
+      NS_FATAL_ERROR ("Invalid connection type");
+      break;
     }
 
-    return nrPackets;
+  return nrPackets;
 }
 
 bool
-ConnectionManager::HasPackets() const
+ConnectionManager::HasPackets (void) const
 {
-    for (auto iter = m_basicConnections.begin(); iter != m_basicConnections.end(); ++iter)
+  std::vector<Ptr<WimaxConnection> >::const_iterator iter;
+  for (iter = m_basicConnections.begin (); iter != m_basicConnections.end (); ++iter)
     {
-        if ((*iter)->HasPackets())
+      if ((*iter)->HasPackets ())
         {
-            return true;
+          return true;
         }
     }
 
-    for (auto iter = m_primaryConnections.begin(); iter != m_primaryConnections.end(); ++iter)
+  for (iter = m_primaryConnections.begin (); iter != m_primaryConnections.end (); ++iter)
     {
-        if ((*iter)->HasPackets())
+      if ((*iter)->HasPackets ())
         {
-            return true;
+          return true;
         }
     }
 
-    for (auto iter = m_transportConnections.begin(); iter != m_transportConnections.end(); ++iter)
+  for (iter = m_transportConnections.begin (); iter != m_transportConnections.end (); ++iter)
     {
-        if ((*iter)->HasPackets())
+      if ((*iter)->HasPackets ())
         {
-            return true;
+          return true;
         }
     }
 
-    return false;
+  return false;
 }
 } // namespace ns3
+
+

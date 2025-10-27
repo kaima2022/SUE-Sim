@@ -11,4 +11,5 @@ build_lib(
     model/csma-channel.h
     model/csma-net-device.h
   LIBRARIES_TO_LINK ${libnetwork}
+  TEST_SOURCES ${test_sources}
 )

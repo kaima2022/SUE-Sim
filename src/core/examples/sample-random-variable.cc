@@ -1,17 +1,28 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
-#include "ns3/command-line.h"
-#include "ns3/nstime.h"
-#include "ns3/random-variable-stream.h"
 #include "ns3/simulator.h"
-
+#include "ns3/nstime.h"
+#include "ns3/command-line.h"
+#include "ns3/random-variable-stream.h"
 #include <iostream>
 
 /**
- * @file
- * @ingroup core-examples
- * @ingroup randomvariable
+ * \file
+ * \ingroup core-examples
+ * \ingroup randomvariable
  * Example program illustrating use of ns3::RandomVariable
  */
 
@@ -46,17 +57,15 @@ using namespace ns3;
  * random number generator
  */
 
-int
-main(int argc, char* argv[])
+int main (int argc, char *argv[])
 {
-    CommandLine cmd(__FILE__);
-    cmd.Parse(argc, argv);
+  CommandLine cmd (__FILE__);
+  cmd.Parse (argc, argv);
 
-    // SeedManager::SetRun (3);
+  // SeedManager::SetRun (3);
 
-    Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable>();
+  Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable> ();
 
-    std::cout << uv->GetValue() << std::endl;
+  std::cout << uv->GetValue () << std::endl;
 
-    return 0;
 }

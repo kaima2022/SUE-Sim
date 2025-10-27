@@ -1,54 +1,67 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2007 University of Washington
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 #ifndef DROPTAIL_H
 #define DROPTAIL_H
 
-#include "queue.h"
+#include "ns3/queue.h"
 
-namespace ns3
-{
+namespace ns3 {
 
 /**
- * @ingroup queue
+ * \ingroup queue
  *
- * @brief A FIFO packet queue that drops tail-end packets on overflow
+ * \brief A FIFO packet queue that drops tail-end packets on overflow
  */
 template <typename Item>
 class DropTailQueue : public Queue<Item>
 {
-  public:
-    /**
-     * @brief Get the type ID.
-     * @return the object TypeId
-     */
-    static TypeId GetTypeId();
-    /**
-     * @brief DropTailQueue Constructor
-     *
-     * Creates a droptail queue with a maximum size of 100 packets by default
-     */
-    DropTailQueue();
+public:
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
+  /**
+   * \brief DropTailQueue Constructor
+   *
+   * Creates a droptail queue with a maximum size of 100 packets by default
+   */
+  DropTailQueue ();
 
-    ~DropTailQueue() override;
+  virtual ~DropTailQueue ();
 
-    bool Enqueue(Ptr<Item> item) override;
-    Ptr<Item> Dequeue() override;
-    Ptr<Item> Remove() override;
-    Ptr<const Item> Peek() const override;
+  virtual bool Enqueue (Ptr<Item> item);
+  virtual Ptr<Item> Dequeue (void);
+  virtual Ptr<Item> Remove (void);
+  virtual Ptr<const Item> Peek (void) const;
 
-  private:
-    using Queue<Item>::GetContainer;
-    using Queue<Item>::DoEnqueue;
-    using Queue<Item>::DoDequeue;
-    using Queue<Item>::DoRemove;
-    using Queue<Item>::DoPeek;
+private:
+  using Queue<Item>::begin;
+  using Queue<Item>::end;
+  using Queue<Item>::DoEnqueue;
+  using Queue<Item>::DoDequeue;
+  using Queue<Item>::DoRemove;
+  using Queue<Item>::DoPeek;
 
-    NS_LOG_TEMPLATE_DECLARE; //!< redefinition of the log component
+  NS_LOG_TEMPLATE_DECLARE;     //!< redefinition of the log component
 };
+
 
 /**
  * Implementation of the templates declared above.
@@ -56,77 +69,78 @@ class DropTailQueue : public Queue<Item>
 
 template <typename Item>
 TypeId
-DropTailQueue<Item>::GetTypeId()
+DropTailQueue<Item>::GetTypeId (void)
 {
-    static TypeId tid =
-        TypeId(GetTemplateClassName<DropTailQueue<Item>>())
-            .SetParent<Queue<Item>>()
-            .SetGroupName("Network")
-            .template AddConstructor<DropTailQueue<Item>>()
-            .AddAttribute("MaxSize",
-                          "The max queue size",
-                          QueueSizeValue(QueueSize("100p")),
-                          MakeQueueSizeAccessor(&QueueBase::SetMaxSize, &QueueBase::GetMaxSize),
-                          MakeQueueSizeChecker());
-    return tid;
+  static TypeId tid = TypeId ("ns3::DropTailQueue<" + GetTypeParamName<DropTailQueue<Item> > () + ">")
+    .SetParent<Queue<Item> > ()
+    .SetGroupName ("Network")
+    .template AddConstructor<DropTailQueue<Item> > ()
+    .AddAttribute ("MaxSize",
+                   "The max queue size",
+                   QueueSizeValue (QueueSize ("100p")),
+                   MakeQueueSizeAccessor (&QueueBase::SetMaxSize,
+                                          &QueueBase::GetMaxSize),
+                   MakeQueueSizeChecker ())
+  ;
+  return tid;
 }
 
 template <typename Item>
-DropTailQueue<Item>::DropTailQueue()
-    : Queue<Item>(),
-      NS_LOG_TEMPLATE_DEFINE("DropTailQueue")
+DropTailQueue<Item>::DropTailQueue () :
+  Queue<Item> (),
+  NS_LOG_TEMPLATE_DEFINE ("DropTailQueue")
 {
-    NS_LOG_FUNCTION(this);
+  NS_LOG_FUNCTION (this);
 }
 
 template <typename Item>
-DropTailQueue<Item>::~DropTailQueue()
+DropTailQueue<Item>::~DropTailQueue ()
 {
-    NS_LOG_FUNCTION(this);
+  NS_LOG_FUNCTION (this);
 }
 
 template <typename Item>
 bool
-DropTailQueue<Item>::Enqueue(Ptr<Item> item)
+DropTailQueue<Item>::Enqueue (Ptr<Item> item)
 {
-    NS_LOG_FUNCTION(this << item);
+  NS_LOG_FUNCTION (this << item);
 
-    return DoEnqueue(GetContainer().end(), item);
+  return DoEnqueue (end (), item);
 }
 
 template <typename Item>
 Ptr<Item>
-DropTailQueue<Item>::Dequeue()
+DropTailQueue<Item>::Dequeue (void)
 {
-    NS_LOG_FUNCTION(this);
+  NS_LOG_FUNCTION (this);
 
-    Ptr<Item> item = DoDequeue(GetContainer().begin());
+  Ptr<Item> item = DoDequeue (begin ());
 
-    NS_LOG_LOGIC("Popped " << item);
+  NS_LOG_LOGIC ("Popped " << item);
 
-    return item;
+  return item;
 }
 
 template <typename Item>
 Ptr<Item>
-DropTailQueue<Item>::Remove()
+DropTailQueue<Item>::Remove (void)
 {
-    NS_LOG_FUNCTION(this);
+  NS_LOG_FUNCTION (this);
 
-    Ptr<Item> item = DoRemove(GetContainer().begin());
+  Ptr<Item> item = DoRemove (begin ());
 
-    NS_LOG_LOGIC("Removed " << item);
+  NS_LOG_LOGIC ("Removed " << item);
 
-    return item;
+  return item;
 }
 
 template <typename Item>
 Ptr<const Item>
-DropTailQueue<Item>::Peek() const
+DropTailQueue<Item>::Peek (void) const
 {
-    NS_LOG_FUNCTION(this);
+  NS_LOG_FUNCTION (this);
 
-    return DoPeek(GetContainer().begin());
+  return DoPeek (begin ());
 }
 
 // The following explicit template instantiation declarations prevent all the

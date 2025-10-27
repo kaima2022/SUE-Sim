@@ -3,7 +3,18 @@
 # Copyright (c) 2019, University of Padova, Dep. of Information Engineering, SIGNET lab
 # Copyright (c) 2021, University of Washington: animation extensions
 #
-# SPDX-License-Identifier: GPL-2.0-only
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation;
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 # Authors: Michele Polese <michele.polese@gmail.com>
 #          Tom Henderson <tomhend@uw.edu>
@@ -25,15 +36,15 @@
 #
 # $ convert -delay 10 -loop 0 *.png rpgm-animation.gif
 #
-# and the output file 'rpgm-animation.gif' can be viewed by an image viewer.
+# and the output file 'rpgm-animation.gif' can be viewed by an image viewer. 
 #
 # Because this file generates many PNG files, it is recommended to move
-# this script and the generated time-series mobility file
+# this script and the generated time-series mobility file 
 # named 'reference-point-time-series.mob' to a subdirectory, and then
 # run:
 # $ ./reference-point-group-mobility-animation.sh
 # $ convert -delay 10 -loop 0 *.png rpgm-animation.gif
-#
+#  
 
 # The script first checks and enforces that only three nodes are present
 num_nodes=`cat reference-point-time-series.mob | awk '{ print $2 }' | sort -n | uniq | wc -l`

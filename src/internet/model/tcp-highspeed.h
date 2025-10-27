@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2014 Natale Patriciello, <natale.patriciello@gmail.com>
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
 
@@ -10,15 +22,14 @@
 
 #include "tcp-congestion-ops.h"
 
-namespace ns3
-{
+namespace ns3 {
 
 class TcpSocketState;
 
 /**
- * @ingroup congestionOps
+ * \ingroup congestionOps
  *
- * @brief An implementation of TCP HighSpeed
+ * \brief An implementation of TCP HighSpeed
  *
  * TCP HighSpeed is designed for high-capacity channels or, in general, for
  * TCP connections with large congestion windows.
@@ -37,54 +48,55 @@ class TcpSocketState;
  */
 class TcpHighSpeed : public TcpNewReno
 {
-  public:
-    /**
-     * @brief Get the type ID.
-     * @return the object TypeId
-     */
-    static TypeId GetTypeId();
+public:
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
 
-    /**
-     * Create an unbound tcp socket.
-     */
-    TcpHighSpeed();
+  /**
+   * Create an unbound tcp socket.
+   */
+  TcpHighSpeed (void);
 
-    /**
-     * @brief Copy constructor
-     * @param sock the object to copy
-     */
-    TcpHighSpeed(const TcpHighSpeed& sock);
-    ~TcpHighSpeed() override;
+  /**
+   * \brief Copy constructor
+   * \param sock the object to copy
+   */
+  TcpHighSpeed (const TcpHighSpeed& sock);
+  virtual ~TcpHighSpeed (void);
 
-    std::string GetName() const override;
+  virtual std::string GetName () const;
 
-    uint32_t GetSsThresh(Ptr<const TcpSocketState> tcb, uint32_t bytesInFlight) override;
+  virtual uint32_t GetSsThresh (Ptr<const TcpSocketState> tcb,
+                                uint32_t bytesInFlight);
 
-    Ptr<TcpCongestionOps> Fork() override;
+  virtual Ptr<TcpCongestionOps> Fork ();
 
-    /**
-     * @brief Lookup table for the coefficient a (from RFC 3649)
-     *
-     * @param w Window value (in packets)
-     *
-     * @return the coefficient a
-     */
-    static uint32_t TableLookupA(uint32_t w);
+  /**
+   * \brief Lookup table for the coefficient a (from RFC 3649)
+   *
+   * \param w Window value (in packets)
+   *
+   * \return the coefficient a
+   */
+  static uint32_t  TableLookupA (uint32_t w);
 
-    /**
-     * @brief Lookup table for the coefficient b (from RFC 3649)
-     *
-     * @param w Window value (in packets)
-     *
-     * @return the coefficient b
-     */
-    static double TableLookupB(uint32_t w);
+  /**
+   * \brief Lookup table for the coefficient b (from RFC 3649)
+   *
+   * \param w Window value (in packets)
+   *
+   * \return the coefficient b
+   */
+  static double    TableLookupB (uint32_t w);
 
-  protected:
-    void CongestionAvoidance(Ptr<TcpSocketState> tcb, uint32_t segmentsAcked) override;
+protected:
+  virtual void CongestionAvoidance (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked);
 
-  private:
-    uint32_t m_ackCnt; //!< Number of received ACK, corrected with the coefficient a
+private:
+  uint32_t m_ackCnt; //!< Number of received ACK, corrected with the coefficient a
 };
 
 } // namespace ns3

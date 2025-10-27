@@ -1,16 +1,7 @@
 # Set lib core link dependencies
-set(libraries_to_link)
-
-set(config_headers
-    ${CMAKE_HEADER_OUTPUT_DIRECTORY}/core-config.h
+set(libraries_to_link
+    ${CMAKE_THREAD_LIBS_INIT}
 )
-if(${ENABLE_BUILD_VERSION})
-  list(
-    APPEND
-    config_headers
-    ${CMAKE_HEADER_OUTPUT_DIRECTORY}/version-defines.h
-  )
-endif()
 
 set(gsl_test_sources)
 if(${GSL_FOUND})
@@ -25,12 +16,38 @@ if(${GSL_FOUND})
 endif()
 
 # Check for dependencies and add sources accordingly
-check_include_files(
-  "boost/units/quantity.hpp;boost/units/systems/si.hpp"
-  HAVE_BOOST_UNITS
-  LANGUAGE
-  CXX
+if(${CMAKE_VERSION}
+   VERSION_LESS
+   "3.11.0"
 )
+  check_include_file_cxx(
+    boost/units/quantity.hpp
+    HAVE_BOOST_UNITS_QUANTITY
+  )
+  check_include_file_cxx(
+    boost/units/systems/si.hpp
+    HAVE_BOOST_UNITS_SI
+  )
+  if(${HAVE_BOOST_UNITS_QUANTITY}
+     AND ${HAVE_BOOST_UNITS_SI}
+  )
+    set(HAVE_BOOST_UNITS
+        TRUE
+    )
+  else()
+    set(HAVE_BOOST_UNITS
+        FALSE
+    )
+  endif()
+else()
+  # Fast path for CMake >= 3.11
+  check_include_files(
+    "boost/units/quantity.hpp;boost/units/systems/si.hpp"
+    HAVE_BOOST_UNITS
+    LANGUAGE
+    CXX
+  )
+endif()
 
 if(${HAVE_BOOST_UNITS})
   add_definitions(
@@ -46,6 +63,27 @@ else()
       " You may need to clean up the CMake cache after installing it to pass this check."
   )
 endif()
+
+set(rt_sources)
+set(rt_headers)
+if(${ENABLE_REALTIME})
+  set(rt_sources
+      model/realtime-simulator-impl.cc
+      model/wall-clock-synchronizer.cc
+  )
+  set(rt_headers
+      model/realtime-simulator-impl.h
+      model/wall-clock-synchronizer.h
+  )
+  set(libraries_to_link
+      ${libraries_to_link}
+      ${LIBRT}
+  )
+endif()
+
+set(osclock_sources
+    model/unix-system-wall-clock-ms.cc
+)
 
 set(int64x64_sources)
 set(int64x64_headers)
@@ -82,9 +120,6 @@ elseif(
   )
 endif()
 
-set(example_as_test_sources)
-set(example_as_test_headers)
-set(example_as_test_suite)
 if(${ENABLE_EXAMPLES})
   set(example_as_test_sources
       model/example-as-test.cc
@@ -109,25 +144,11 @@ if(${ENABLE_BUILD_VERSION})
   )
 endif()
 
-if(WIN32)
-  set(libraries_to_link
-      ${libraries_to_link}
-      wsock32
-      ws2_32
-  )
-  set(fd-reader-sources
-      model/win32-fd-reader.cc
-  )
-else()
-  set(fd-reader-sources
-      model/unix-fd-reader.cc
-  )
-endif()
-
 # Define core lib sources
 set(source_files
+    ${rt_sources}
+    ${osclock_sources}
     ${int64x64_sources}
-    ${fd-reader-sources}
     ${example_as_test_sources}
     ${embedded_version_sources}
     helper/csv-reader.cc
@@ -148,12 +169,13 @@ set(source_files
     model/timer.cc
     model/watchdog.cc
     model/synchronizer.cc
-    model/environment-variable.cc
+    model/make-event.cc
     model/log.cc
     model/breakpoint.cc
     model/type-id.cc
     model/attribute-construction-list.cc
     model/object-base.cc
+    model/ref-count-base.cc
     model/object.cc
     model/test.cc
     model/random-variable-stream.cc
@@ -164,6 +186,7 @@ set(source_files
     model/boolean.cc
     model/integer.cc
     model/uinteger.cc
+    model/enum.cc
     model/double.cc
     model/int64x64.cc
     model/string.cc
@@ -187,19 +210,15 @@ set(source_files
     model/node-printer.cc
     model/show-progress.cc
     model/time-printer.cc
-    model/system-wall-clock-ms.cc
     model/system-wall-clock-timestamp.cc
     model/length.cc
     model/trickle-timer.cc
-    model/realtime-simulator-impl.cc
-    model/wall-clock-synchronizer.cc
-    model/matrix-array.cc
-    model/demangle.cc
+    model/unix-fd-reader.cc
 )
 
 # Define core lib headers
 set(header_files
-    ${config_headers}
+    ${rt_headers}
     ${int64x64_headers}
     ${example_as_test_headers}
     ${embedded_version_headers}
@@ -212,6 +231,7 @@ set(header_files
     model/assert.h
     model/attribute-accessor-helper.h
     model/attribute-construction-list.h
+    model/attribute-container-accessor-helper.h
     model/attribute-container.h
     model/attribute-helper.h
     model/attribute.h
@@ -224,23 +244,22 @@ set(header_files
     model/config.h
     model/default-deleter.h
     model/default-simulator-impl.h
-    model/demangle.h
     model/deprecated.h
     model/des-metrics.h
     model/double.h
+    model/empty.h
     model/enum.h
     model/event-id.h
     model/event-impl.h
     model/fatal-error.h
     model/fatal-impl.h
-    model/fd-reader.h
-    model/environment-variable.h
     model/global-value.h
     model/hash-fnv.h
     model/hash-function.h
     model/hash-murmur3.h
     model/hash.h
     model/heap-scheduler.h
+    model/int-to-type.h
     model/int64x64-double.h
     model/int64x64.h
     model/integer.h
@@ -266,11 +285,11 @@ set(header_files
     model/priority-queue-scheduler.h
     model/ptr.h
     model/random-variable-stream.h
+    model/ref-count-base.h
     model/rng-seed-manager.h
     model/rng-stream.h
     model/scheduler.h
     model/show-progress.h
-    model/shuffle.h
     model/simple-ref-count.h
     model/simulation-singleton.h
     model/simulator-impl.h
@@ -294,15 +313,11 @@ set(header_files
     model/type-name.h
     model/type-traits.h
     model/uinteger.h
-    model/uniform-random-bit-generator.h
+    model/unix-fd-reader.h
+    model/unused.h
     model/valgrind.h
     model/vector.h
-    model/warnings.h
     model/watchdog.h
-    model/realtime-simulator-impl.h
-    model/wall-clock-synchronizer.h
-    model/val-array.h
-    model/matrix-array.h
 )
 
 set(test_sources
@@ -314,7 +329,6 @@ set(test_sources
     test/callback-test-suite.cc
     test/command-line-test-suite.cc
     test/config-test-suite.cc
-    test/environment-variable-test-suite.cc
     test/event-garbage-collector-test-suite.cc
     test/global-value-test-suite.cc
     test/hash-test-suite.cc
@@ -328,7 +342,6 @@ set(test_sources
     test/ptr-test-suite.cc
     test/sample-test-suite.cc
     test/simulator-test-suite.cc
-    test/splitstring-test-suite.cc
     test/threaded-test-suite.cc
     test/time-test-suite.cc
     test/timer-test-suite.cc
@@ -338,8 +351,6 @@ set(test_sources
     test/type-id-test-suite.cc
     test/type-traits-test-suite.cc
     test/watchdog-test-suite.cc
-    test/val-array-test-suite.cc
-    test/matrix-array-test-suite.cc
 )
 
 # Build core lib

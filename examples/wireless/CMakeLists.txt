@@ -285,27 +285,3 @@ build_example(
     ${libbridge}
     ${libapplications}
 )
-
-build_example(
-  NAME wifi-ofdm-eht-validation
-  SOURCE_FILES wifi-ofdm-eht-validation.cc
-  LIBRARIES_TO_LINK ${libwifi}
-)
-
-build_example(
-  NAME wifi-eht-network
-  SOURCE_FILES wifi-eht-network.cc
-  LIBRARIES_TO_LINK ${libwifi}
-                    ${libapplications}
-)
-
-build_example(
-  NAME wifi-multicast
-  SOURCE_FILES wifi-multicast.cc
-  LIBRARIES_TO_LINK
-    ${libwifi}
-    ${libcore}
-    ${libnetwork}
-    ${libapplications}
-    ${libinternet}
-)

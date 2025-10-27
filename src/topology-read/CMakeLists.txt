@@ -13,5 +13,6 @@ build_lib(
     model/rocketfuel-topology-reader.h
     model/topology-reader.h
   LIBRARIES_TO_LINK ${libnetwork}
+                    ${PCRE_LIBRARIES}
   TEST_SOURCES test/rocketfuel-topology-reader-test-suite.cc
 )

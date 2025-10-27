@@ -1,8 +1,20 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2006,2007 INRIA
  * Copyright (c) 2019 University of Padova
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Mathieu Lacage <mathieu.lacage@sophia.inria.fr>
  * Author: Michele Polese <michele.polese@gmail.com>
@@ -11,24 +23,21 @@
 #ifndef RANDOM_WALK_2D_OUTDOOR_MOBILITY_MODEL_H
 #define RANDOM_WALK_2D_OUTDOOR_MOBILITY_MODEL_H
 
-#include "building.h"
-
-#include "ns3/constant-velocity-helper.h"
-#include "ns3/event-id.h"
-#include "ns3/mobility-model.h"
-#include "ns3/nstime.h"
 #include "ns3/object.h"
-#include "ns3/random-variable-stream.h"
+#include "ns3/nstime.h"
+#include "ns3/event-id.h"
 #include "ns3/rectangle.h"
+#include "ns3/random-variable-stream.h"
+#include "ns3/mobility-model.h"
+#include "ns3/constant-velocity-helper.h"
+#include "ns3/building.h"
 
-namespace ns3
-{
+namespace ns3 {
+
 
 /**
- * @ingroup buildings
- * @ingroup mobility
- *
- * @brief 2D random walk mobility model which avoids buildings.
+ * \ingroup mobility
+ * \brief 2D random walk mobility model which avoids buildings.
  *
  * This class reuses most of the code of RandomWalk2dMobilityModel,
  * but adds the awareness of buildings objects which are avoided
@@ -47,85 +56,80 @@ namespace ns3
  */
 class RandomWalk2dOutdoorMobilityModel : public MobilityModel
 {
-  public:
-    /**
-     * Register this type with the TypeId system.
-     * @return the object TypeId
-     */
-    static TypeId GetTypeId();
+public:
+  /**
+   * Register this type with the TypeId system.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
+  /** An enum representing the different working modes of this module. */
+  enum Mode
+  {
+    MODE_DISTANCE,
+    MODE_TIME
+  };
 
-    /** An enum representing the different working modes of this module. */
-    enum Mode
-    {
-        MODE_DISTANCE,
-        MODE_TIME
-    };
+private:
+  /**
+   * \brief Performs the rebound of the node if it reaches a boundary
+   * \param timeLeft The remaining time of the walk
+   */
+  void Rebound (Time timeLeft);
+  /**
+   * \brief Avoid a building
+   * \param delayLeft The remaining time of the walk
+   * \param intersectPosition The position at which the building is intersected
+   */
+  void AvoidBuilding (Time delayLeft, Vector intersectPosition);
+  /**
+   * Walk according to position and velocity, until distance is reached,
+   * time is reached, or intersection with the bounding box, or building
+   * \param delayLeft The remaining time of the walk
+   */
+  void DoWalk (Time delayLeft);
+  /**
+   * Perform initialization of the object before MobilityModel::DoInitialize ()
+   */
+  void DoInitializePrivate (void);
+  /**
+   * Check if there is a building between two positions (or if the nextPosition is inside a building).
+   * The code is taken from MmWave3gppBuildingsPropagationLossModel from the NYU/UNIPD ns-3 mmWave module
+   * \param currentPosition The current position of the node
+   * \param nextPosition The position to check
+   * \return a pair with a boolean (true if the line between the two position does not intersect building),
+   * and a pointer which is 0 if the boolean is true, or it points to the building which is intersected
+   */
+  std::pair<bool, Ptr<Building> > IsLineClearOfBuildings (Vector currentPosition, Vector nextPosition ) const;
+  /**
+   * Compute the intersecting point of the box represented by boundaries and the line between current and next
+   * Notice that we only consider a 2d plane
+   * \param current The current position
+   * \param next The next position
+   * \param boundaries The boundaries of the building we will intersect
+   * \return a vector with the position of the intersection
+   */
+  Vector CalculateIntersectionFromOutside (const Vector &current, const Vector &next, const Box boundaries) const;
 
-  private:
-    /**
-     * @brief Performs the rebound of the node if it reaches a boundary
-     * @param timeLeft The remaining time of the walk
-     */
-    void Rebound(Time timeLeft);
-    /**
-     * @brief Avoid a building
-     * @param delayLeft The remaining time of the walk
-     * @param intersectPosition The position at which the building is intersected
-     */
-    void AvoidBuilding(Time delayLeft, Vector intersectPosition);
-    /**
-     * Walk according to position and velocity, until distance is reached,
-     * time is reached, or intersection with the bounding box, or building
-     * @param delayLeft The remaining time of the walk
-     */
-    void DoWalk(Time delayLeft);
-    /**
-     * Perform initialization of the object before MobilityModel::DoInitialize ()
-     */
-    void DoInitializePrivate();
-    /**
-     * Check if there is a building between two positions (or if the nextPosition is inside a
-     * building). The code is taken from MmWave3gppBuildingsPropagationLossModel from the NYU/UNIPD
-     * ns-3 mmWave module
-     * @param currentPosition The current position of the node
-     * @param nextPosition The position to check
-     * @return a pair with a boolean (true if the line between the two position does not intersect
-     * building), and a pointer which is 0 if the boolean is true, or it points to the building
-     * which is intersected
-     */
-    std::pair<bool, Ptr<Building>> IsLineClearOfBuildings(Vector currentPosition,
-                                                          Vector nextPosition) const;
-    /**
-     * Compute the intersecting point of the box represented by boundaries and the line between
-     * current and next. Notice that we only consider a 2d plane.
-     * @param current The current position
-     * @param next The next position
-     * @param boundaries The boundaries of the building we will intersect
-     * @return a vector with the position of the intersection
-     */
-    Vector CalculateIntersectionFromOutside(const Vector& current,
-                                            const Vector& next,
-                                            const Box boundaries) const;
+  virtual void DoDispose (void);
+  virtual void DoInitialize (void);
+  virtual Vector DoGetPosition (void) const;
+  virtual void DoSetPosition (const Vector &position);
+  virtual Vector DoGetVelocity (void) const;
+  virtual int64_t DoAssignStreams (int64_t);
 
-    void DoDispose() override;
-    void DoInitialize() override;
-    Vector DoGetPosition() const override;
-    void DoSetPosition(const Vector& position) override;
-    Vector DoGetVelocity() const override;
-    int64_t DoAssignStreams(int64_t) override;
-
-    ConstantVelocityHelper m_helper;       //!< helper for this object
-    EventId m_event;                       //!< stored event ID
-    Mode m_mode;                           //!< whether in time or distance mode
-    double m_modeDistance;                 //!< Change direction and speed after this distance
-    Time m_modeTime;                       //!< Change current direction and speed after this delay
-    Ptr<RandomVariableStream> m_speed;     //!< rv for picking speed
-    Ptr<RandomVariableStream> m_direction; //!< rv for picking direction
-    Rectangle m_bounds;                    //!< Bounds of the area to cruise
-    double m_epsilon;                      //!< Tolerance for the intersection point with buildings
-    uint32_t m_maxIter;                    //!< Maximum number of tries to find the next position
-    Vector m_prevPosition; //!< Store the previous position in case a step back is needed
+  ConstantVelocityHelper m_helper; //!< helper for this object
+  EventId m_event; //!< stored event ID
+  enum Mode m_mode; //!< whether in time or distance mode
+  double m_modeDistance; //!< Change direction and speed after this distance
+  Time m_modeTime; //!< Change current direction and speed after this delay
+  Ptr<RandomVariableStream> m_speed; //!< rv for picking speed
+  Ptr<RandomVariableStream> m_direction; //!< rv for picking direction
+  Rectangle m_bounds; //!< Bounds of the area to cruise
+  double m_epsilon; //!< Tolerance for the intersection point with buildings
+  uint32_t m_maxIter; //!< Maximum number of tries to find the next position
+  Vector m_prevPosition; //!< Store the previous position in case a step back is needed
 };
+
 
 } // namespace ns3
 

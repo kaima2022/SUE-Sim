@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Lawrence Livermore National Laboratory
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Peter D. Barnes, Jr. <pdbarnes@llnl.gov>
  *
@@ -22,38 +34,34 @@
  * Other conversions to std::size_t are marked.
  */
 
-#include "hash-murmur3.h"
-
 #include "log.h"
+#include "hash-murmur3.h"
 
 #include <iomanip>
 
 /**
- * @file
- * @ingroup hash
- * @brief ns3::Hash::Function::Murmur3 implementation.
+ * \file
+ * \ingroup hash
+ * \brief ns3::Hash::Function::Murmur3 implementation.
  */
 
-namespace ns3
-{
+namespace ns3 {
 
-NS_LOG_COMPONENT_DEFINE("Hash-Murmur3");
+NS_LOG_COMPONENT_DEFINE ("Hash-Murmur3");
 
-namespace Hash
-{
+namespace Hash {
 
-namespace Function
-{
+namespace Function {
 
 /** Murmur3 hash implementation details. */
-namespace Murmur3Implementation
-{
+namespace Murmur3Implementation {
 
 /**
- * @ingroup hash
- * @defgroup hash_murmur3 Murmur3 Hash Implementation
+ * \ingroup hash
+ * \defgroup hash_murmur3 Murmur3 Hash Implementation
  */
 /**@{*/
+
 
 // Changes from Murmur3 distribution are marked with `//PDB'
 //
@@ -64,8 +72,7 @@ namespace Murmur3Implementation
 
 // Adapted from http://code.google.com/p/smhasher/
 
-// NOLINTBEGIN
-// clang-format off
+// Begin Murmur3.cpp -------- *NS_CHECK_STYLE_OFF* ---->
 
 //
 //-----------------------------------------------------------------------------
@@ -217,7 +224,7 @@ void MurmurHash3_x86_32_incr ( const void * key, std::size_t len,
     k1 *= c2;
 
     h1 ^= k1;
-    h1 = rotl32(h1,13);
+    h1 = rotl32(h1,13); 
     h1 = h1*5+0xe6546b64;
   }
 
@@ -253,7 +260,7 @@ void MurmurHash3_x86_32_fin ( std::size_t len,
   h1 = fmix(h1);
 
   *(uint32_t *)out = h1;
-}
+} 
 
 //-----------------------------------------------------------------------------
 
@@ -308,9 +315,9 @@ void MurmurHash3_x86_128_incr ( const void * key, const std::size_t len,
   uint32_t h3 = seeds[2];
   uint32_t h4 = seeds[3];
 
-  uint32_t c1 = 0x239b961b;
+  uint32_t c1 = 0x239b961b; 
   uint32_t c2 = 0xab0e9789;
-  uint32_t c3 = 0x38b34ae5;
+  uint32_t c3 = 0x38b34ae5; 
   uint32_t c4 = 0xa1e38b93;
 
   //----------
@@ -498,74 +505,80 @@ void MurmurHash3_x64_128 ( const void * key, const std::size_t len,
   ((uint32_t *)out)[1] = static_cast<uint32_t> (h2);  //PDB cast
 }
 
-// clang-format on
-// NOLINTEND
+
+// End Murmur3.cpp ---------- *NS_CHECK_STYLE_ON* ----->
 
 #undef BIG_CONSTANT
 
+
 //-----------------------------------------------------------------------------
 
-/**@}*/ // \defgroup hash_murmur3
 
-} // namespace Murmur3Implementation
+/**@}*/  // \defgroup hash_murmur3
 
-Murmur3::Murmur3()
+}  // namespace Murmur3Implementation
+
+
+Murmur3::Murmur3 ()
 {
-    clear();
+  clear ();
 }
 
 uint32_t
-Murmur3::GetHash32(const char* buffer, const std::size_t size)
+Murmur3::GetHash32  (const char * buffer, const std::size_t size)
 {
-    using namespace Murmur3Implementation;
+  using namespace Murmur3Implementation;
 
-    MurmurHash3_x86_32_incr(buffer, size, m_hash32, (void*)&m_hash32);
-    m_size32 += static_cast<uint32_t>(size);
-    uint32_t hash;
-    MurmurHash3_x86_32_fin(m_size32, m_hash32, (void*)&hash);
+  MurmurHash3_x86_32_incr (buffer, size,
+                           m_hash32, (void *) &m_hash32);
+  m_size32 += static_cast<uint32_t> (size);
+  uint32_t hash;
+  MurmurHash3_x86_32_fin  (m_size32, m_hash32, (void *) &hash);
 
-    return hash;
+  return hash;
 }
 
 uint64_t
-Murmur3::GetHash64(const char* buffer, const std::size_t size)
+Murmur3::GetHash64  (const char * buffer, const std::size_t size)
 {
-    using namespace Murmur3Implementation;
+  using namespace Murmur3Implementation;
 
-    MurmurHash3_x86_128_incr(buffer, static_cast<int>(size), (uint32_t*)(void*)m_hash64, m_hash64);
-    m_size64 += size;
+  MurmurHash3_x86_128_incr (buffer, static_cast<int> (size),
+                            (uint32_t *)(void *)m_hash64, m_hash64);
+  m_size64 += size;
 
-    // Simpler would be:
-    //
-    //   uint64_t hash[2];
-    //   MurmurHash3_x86_128_fin (m_size64, m_hash64, hash);
-    //   return hash[0];
-    //
-    // but this triggers an aliasing bug in gcc-4.4 (perhaps related to
-    // http://gcc.gnu.org/bugzilla/show_bug.cgi?id=39390).
-    // In ns-3, this bug produces incorrect results in static optimized
-    // builds only.
-    //
-    // Using uint32_t here avoids the bug, and continues to works with newer gcc.
-    uint32_t hash[4];
+  // Simpler would be:
+  //
+  //   uint64_t hash[2];
+  //   MurmurHash3_x86_128_fin (m_size64, m_hash64, hash);
+  //   return hash[0];
+  //
+  // but this triggers an aliasing bug in gcc-4.4 (perhaps related to
+  // http://gcc.gnu.org/bugzilla/show_bug.cgi?id=39390).
+  // In ns-3, this bug produces incorrect results in static optimized
+  // builds only.
+  //
+  // Using uint32_t here avoids the bug, and continues to works with newer gcc.
+  uint32_t hash[4];
 
-    MurmurHash3_x86_128_fin(static_cast<int>(m_size64), (uint32_t*)(void*)m_hash64, hash);
-    uint64_t result = hash[1];
-    result = (result << 32) | hash[0];
-    return result;
+  MurmurHash3_x86_128_fin (static_cast<int> (m_size64),
+                           (uint32_t *)(void *)m_hash64, hash);
+  uint64_t result = hash[1];
+  result = (result << 32) | hash[0];
+  return result;
 }
 
 void
-Murmur3::clear()
+Murmur3::clear (void)
 {
-    m_hash32 = (uint32_t)SEED;
-    m_size32 = 0;
-    m_hash64[0] = m_hash64[1] = ((uint64_t)SEED << 32) | (uint32_t)SEED;
-    m_size64 = 0;
+  m_hash32 = (uint32_t)SEED;
+  m_size32 = 0;
+  m_hash64[0] = m_hash64[1] = ((uint64_t)SEED << 32) | (uint32_t)SEED;
+  m_size64 = 0;
 }
 
-} // namespace Function
+}  // namespace Function
 
-} // namespace Hash
+}  // namespace Hash
 
-} // namespace ns3
+}  // namespace ns3

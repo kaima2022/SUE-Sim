@@ -1,200 +1,144 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2016
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Sébastien Deronne <sebastien.deronne@gmail.com>
  */
 
+#include <cmath>
+#include "ns3/packet.h"
 #include "wifi-utils.h"
-
-#include "ap-wifi-mac.h"
 #include "ctrl-headers.h"
-#include "gcr-manager.h"
 #include "wifi-mac-header.h"
 #include "wifi-mac-trailer.h"
 
-#include "ns3/packet.h"
-
-#include <cmath>
-
-namespace ns3
-{
-
-const Time WIFI_TU = MicroSeconds(WIFI_TU_US);
+namespace ns3 {
 
 double
-DbToRatio(dB_u val)
+DbToRatio (double dB)
 {
-    return std::pow(10.0, 0.1 * val);
+  return std::pow (10.0, 0.1 * dB);
 }
 
-Watt_u
-DbmToW(dBm_u val)
+double
+DbmToW (double dBm)
 {
-    return std::pow(10.0, 0.1 * (val - 30.0));
+  return std::pow (10.0, 0.1 * (dBm - 30.0));
 }
 
-dBm_u
-WToDbm(Watt_u val)
+double
+WToDbm (double w)
 {
-    NS_ASSERT(val > 0.);
-    return 10.0 * std::log10(val) + 30.0;
+  return 10.0 * std::log10 (w) + 30.0;
 }
 
-dB_u
-RatioToDb(double ratio)
+double
+RatioToDb (double ratio)
 {
-    return 10.0 * std::log10(ratio);
-}
-
-uint32_t
-GetAckSize()
-{
-    static const uint32_t size = WifiMacHeader(WIFI_MAC_CTL_ACK).GetSize() + 4;
-
-    return size;
+  return 10.0 * std::log10 (ratio);
 }
 
 uint32_t
-GetBlockAckSize(BlockAckType type)
+GetAckSize (void)
 {
-    WifiMacHeader hdr;
-    hdr.SetType(WIFI_MAC_CTL_BACKRESP);
-    CtrlBAckResponseHeader blockAck;
-    blockAck.SetType(type);
-    return hdr.GetSize() + blockAck.GetSerializedSize() + 4;
+  WifiMacHeader ack;
+  ack.SetType (WIFI_MAC_CTL_ACK);
+  return ack.GetSize () + 4;
 }
 
 uint32_t
-GetBlockAckRequestSize(BlockAckReqType type)
+GetBlockAckSize (BlockAckType type)
 {
-    WifiMacHeader hdr;
-    hdr.SetType(WIFI_MAC_CTL_BACKREQ);
-    CtrlBAckRequestHeader bar;
-    bar.SetType(type);
-    return hdr.GetSize() + bar.GetSerializedSize() + 4;
+  WifiMacHeader hdr;
+  hdr.SetType (WIFI_MAC_CTL_BACKRESP);
+  CtrlBAckResponseHeader blockAck;
+  blockAck.SetType (type);
+  return hdr.GetSize () + blockAck.GetSerializedSize () + 4;
 }
 
 uint32_t
-GetMuBarSize(std::list<BlockAckReqType> types)
+GetBlockAckRequestSize (BlockAckReqType type)
 {
-    WifiMacHeader hdr;
-    hdr.SetType(WIFI_MAC_CTL_TRIGGER);
-    CtrlTriggerHeader trigger;
-    trigger.SetType(TriggerFrameType::MU_BAR_TRIGGER);
-    for (auto& t : types)
+  WifiMacHeader hdr;
+  hdr.SetType (WIFI_MAC_CTL_BACKREQ);
+  CtrlBAckRequestHeader bar;
+  bar.SetType (type);
+  return hdr.GetSize () + bar.GetSerializedSize () + 4;
+}
+
+uint32_t
+GetMuBarSize (std::list<BlockAckReqType> types)
+{
+  WifiMacHeader hdr;
+  hdr.SetType (WIFI_MAC_CTL_TRIGGER);
+  CtrlTriggerHeader trigger;
+  trigger.SetType (MU_BAR_TRIGGER);
+  for (auto& t : types)
     {
-        auto userInfo = trigger.AddUserInfoField();
-        CtrlBAckRequestHeader bar;
-        bar.SetType(t);
-        userInfo.SetMuBarTriggerDepUserInfo(bar);
+      auto userInfo = trigger.AddUserInfoField ();
+      CtrlBAckRequestHeader bar;
+      bar.SetType (t);
+      userInfo.SetMuBarTriggerDepUserInfo (bar);
     }
-    return hdr.GetSize() + trigger.GetSerializedSize() + 4;
+  return hdr.GetSize () + trigger.GetSerializedSize () + 4;
 }
 
 uint32_t
-GetRtsSize()
+GetRtsSize (void)
 {
-    static const uint32_t size = WifiMacHeader(WIFI_MAC_CTL_RTS).GetSize() + 4;
-
-    return size;
+  WifiMacHeader rts;
+  rts.SetType (WIFI_MAC_CTL_RTS);
+  return rts.GetSize () + 4;
 }
 
 uint32_t
-GetCtsSize()
+GetCtsSize (void)
 {
-    static const uint32_t size = WifiMacHeader(WIFI_MAC_CTL_CTS).GetSize() + 4;
-
-    return size;
+  WifiMacHeader cts;
+  cts.SetType (WIFI_MAC_CTL_CTS);
+  return cts.GetSize () + 4;
 }
 
 bool
-IsInWindow(uint16_t seq, uint16_t winstart, uint16_t winsize)
+IsInWindow (uint16_t seq, uint16_t winstart, uint16_t winsize)
 {
-    return ((seq - winstart + 4096) % 4096) < winsize;
+  return ((seq - winstart + 4096) % 4096) < winsize;
 }
 
 void
-AddWifiMacTrailer(Ptr<Packet> packet)
+AddWifiMacTrailer (Ptr<Packet> packet)
 {
-    WifiMacTrailer fcs;
-    packet->AddTrailer(fcs);
+  WifiMacTrailer fcs;
+  packet->AddTrailer (fcs);
 }
 
 uint32_t
-GetSize(Ptr<const Packet> packet, const WifiMacHeader* hdr, bool isAmpdu)
+GetSize (Ptr<const Packet> packet, const WifiMacHeader *hdr, bool isAmpdu)
 {
-    uint32_t size;
-    WifiMacTrailer fcs;
-    if (isAmpdu)
+  uint32_t size;
+  WifiMacTrailer fcs;
+  if (isAmpdu)
     {
-        size = packet->GetSize();
+      size = packet->GetSize ();
     }
-    else
+  else
     {
-        size = packet->GetSize() + hdr->GetSize() + fcs.GetSerializedSize();
+      size = packet->GetSize () + hdr->GetSize () + fcs.GetSerializedSize ();
     }
-    return size;
+  return size;
 }
 
-bool
-TidToLinkMappingValidForNegType1(const WifiTidLinkMapping& dlLinkMapping,
-                                 const WifiTidLinkMapping& ulLinkMapping)
-{
-    if (dlLinkMapping.empty() && ulLinkMapping.empty())
-    {
-        // default mapping is valid
-        return true;
-    }
-
-    if (dlLinkMapping.size() != 8 || ulLinkMapping.size() != 8)
-    {
-        // not all TIDs have been mapped
-        return false;
-    }
-
-    const auto& linkSet = dlLinkMapping.cbegin()->second;
-
-    for (const auto& linkMapping : {std::cref(dlLinkMapping), std::cref(ulLinkMapping)})
-    {
-        for (const auto& [tid, links] : linkMapping.get())
-        {
-            if (links != linkSet)
-            {
-                // distinct link sets
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-
-bool
-IsGroupcast(const Mac48Address& adr)
-{
-    return adr.IsGroup() && !adr.IsBroadcast();
-}
-
-bool
-IsGcr(Ptr<WifiMac> mac, const WifiMacHeader& hdr)
-{
-    auto apMac = DynamicCast<ApWifiMac>(mac);
-    return apMac && apMac->UseGcr(hdr);
-}
-
-Mac48Address
-GetIndividuallyAddressedRecipient(Ptr<WifiMac> mac, const WifiMacHeader& hdr)
-{
-    const auto isGcr = IsGcr(mac, hdr);
-    const auto addr1 = hdr.GetAddr1();
-    if (!isGcr)
-    {
-        return addr1;
-    }
-    auto apMac = DynamicCast<ApWifiMac>(mac);
-    return apMac->GetGcrManager()->GetIndividuallyAddressedRecipient(addr1);
-}
-
-} // namespace ns3
+} //namespace ns3

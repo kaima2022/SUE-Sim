@@ -1,174 +1,132 @@
+/* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2017 Sébastien Deronne
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
  *
- * Authors: Sébastien Deronne <sebastien.deronne@gmail.com>
- *          Stefano Avallone <stavallo@unina.it>
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Author: Sébastien Deronne <sebastien.deronne@gmail.com>
  */
 
 #ifndef HE_OPERATION_H
 #define HE_OPERATION_H
 
 #include "ns3/wifi-information-element.h"
-#include "ns3/wifi-opt-field.h"
 
-namespace ns3
-{
+namespace ns3 {
 
 /**
- * @brief The HE Operation Information Element
- * @ingroup wifi
+ * \brief The HE Operation Information Element
+ * \ingroup wifi
  *
  * This class knows how to serialise and deserialise
  * the HE Operation Information Element
  */
 class HeOperation : public WifiInformationElement
 {
-  public:
-    HeOperation();
+public:
+  HeOperation ();
 
-    // Implementations of pure virtual methods of WifiInformationElement
-    WifiInformationElementId ElementId() const override;
-    WifiInformationElementId ElementIdExt() const override;
-    void Print(std::ostream& os) const override;
+  // Implementations of pure virtual methods of WifiInformationElement
+  WifiInformationElementId ElementId () const override;
+  WifiInformationElementId ElementIdExt () const override;
+  uint8_t GetInformationFieldSize () const override;
+  void SerializeInformationField (Buffer::Iterator start) const override;
+  uint8_t DeserializeInformationField (Buffer::Iterator start, uint8_t length) override;
+  /* This information element is a bit special in that it is only
+     included if the STA is a HE STA. To support this we
+     override the Serialize and GetSerializedSize methods of
+     WifiInformationElement. */
+  Buffer::Iterator Serialize (Buffer::Iterator start) const override;
+  uint16_t GetSerializedSize () const override;
 
-    /// HE Operation Parameters field
-    struct HeOperationParams
-    {
-        uint8_t m_defaultPeDuration : 3 {0};  ///< Default PE Duration
-        uint8_t m_twtRequired : 1 {0};        ///< TWT Required
-        uint16_t m_txopDurRtsThresh : 10 {0}; ///< TXOP Duration RTS Threshold
-        uint8_t m_vhOpPresent : 1 {0}; ///< VHT Operation Information Present (value 1 unsupported)
-        uint8_t m_coHostedBss : 1 {0}; ///< Co-Hosted BSS (value 1 unsupported)
-        uint8_t m_erSuDisable : 1 {0}; ///< ER SU Disable
-        bool m_6GHzOpPresent{false};   ///< 6 GHz Operation Information Present (do not set, it is
-                                       ///< set by the OptFieldWithPresenceInd)
+  /**
+   * Set the HE supported information element.
+   *
+   * \param heSupported the HE supported information element
+   */
+  void SetHeSupported (uint8_t heSupported);
 
-        /**
-         * Print the content of the HE Operation Parameters field.
-         *
-         * @param os output stream
-         */
-        void Print(std::ostream& os) const;
+  /**
+   * Set the HE Operation Parameters field in the HE Operation information element.
+   *
+   * \param ctrl the HE Operation Parameters field in the HE Operation information element
+   */
+  void SetHeOperationParameters (uint32_t ctrl);
+  /**
+   * Set the Basic HE-MCS and NSS field in the HE Operation information element
+   * by specifying the tuple (<i>nss</i>, <i>maxMcs</i>).
+   *
+   * \param nss the NSS
+   * \param maxHeMcs the maximum supported HE-MCS value corresponding to that NSS
+   */
+  void SetMaxHeMcsPerNss (uint8_t nss, uint8_t maxHeMcs);
 
-        /**
-         * @return the serialized size of the HE Operation Parameters field
-         */
-        uint16_t GetSerializedSize() const;
+  /**
+   * Return the HE Operation Parameters field in the HE Operation information element.
+   *
+   * \return the HE Operation Parameters field in the HE Operation information element
+   */
+  uint32_t GetHeOperationParameters (void) const;
+  /**
+   * Return the Basic HE-MCS And Nss field in the HE Operation information element.
+   *
+   * \return the Basic HE-MCS And Nss field in the HE Operation information element
+   */
+  uint16_t GetBasicHeMcsAndNssSet (void) const;
+  /**
+   * Set the BSS color
+   * \param bssColor the BSS color value
+   */
+  void SetBssColor (uint8_t bssColor);
+  /**
+   * Get the BSS color
+   * \return the BSS color value
+   */
+  uint8_t GetBssColor (void) const;
 
-        /**
-         * Serialize the HE Operation Parameters field
-         *
-         * @param start an iterator which points to where the information should be written
-         */
-        void Serialize(Buffer::Iterator& start) const;
 
-        /**
-         * Deserialize the HE Operation Parameters field.
-         *
-         * @param start an iterator which points to where the information should be read from
-         * @return the number of bytes read
-         */
-        uint16_t Deserialize(Buffer::Iterator& start);
-    };
+private:
+  //HE Operation Parameters fields
+  uint8_t m_bssColor;                     //!< BSS color
+  uint8_t m_defaultPEDuration;            //!< default PE duration
+  uint8_t m_twtRequired;                  //!< TWT required
+  uint16_t m_heDurationBasedRtsThreshold; //!< HE duration based RTS threshold
+  uint8_t m_partialBssColor;              //!< partial BSS color
+  uint8_t m_maxBssidIndicator;            //!< max BSSID indicator
+  uint8_t m_txBssidIndicator;             //!< TX BSSID indicator
+  uint8_t m_bssColorDisabled;             //!< BSS color disabled
+  uint8_t m_dualBeacon;                   //!< Dual Beacon
 
-    /// BSS Color Information field
-    struct BssColorInfo
-    {
-        uint8_t m_bssColor : 6 {0};         ///< BSS Color
-        uint8_t m_partialBssColor : 1 {0};  ///< Partial BSS Color
-        uint8_t m_bssColorDisabled : 1 {0}; ///< BSS Color Disabled
+  //Basic HE-MCS and NSS Set
+  uint16_t m_basicHeMcsAndNssSet; ///< basic HE MCS NSS set
 
-        /**
-         * Print the content of the BSS Color Information field.
-         *
-         * @param os output stream
-         */
-        void Print(std::ostream& os) const;
+  //TODO: VHT Operation Information subfields not defined in the standard yet.
 
-        /**
-         * @return the serialized size of the BSS Color Information field
-         */
-        uint16_t GetSerializedSize() const;
-
-        /**
-         * Serialize the BSS Color Information field
-         *
-         * @param start an iterator which points to where the information should be written
-         */
-        void Serialize(Buffer::Iterator& start) const;
-
-        /**
-         * Deserialize the BSS Color Information field.
-         *
-         * @param start an iterator which points to where the information should be read from
-         * @return the number of bytes read
-         */
-        uint16_t Deserialize(Buffer::Iterator& start);
-    };
-
-    /// 6 GHz Operation Information field
-    struct OpInfo6GHz
-    {
-        uint8_t m_primCh{0};         ///< Primary Channel
-        uint8_t m_chWid : 2 {0};     ///< Channel Width
-        uint8_t m_dupBeacon : 1 {0}; ///< Duplicate Beacon
-        uint8_t m_regInfo : 3 {0};   ///< Regulatory Info
-        uint8_t : 2;                 ///< Reserved bits
-        uint8_t m_chCntrFreqSeg0{0}; ///< Channel center frequency segment 0
-        uint8_t m_chCntrFreqSeg1{0}; ///< Channel center frequency segment 1
-        uint8_t m_minRate{0};        ///< Minimum Rate
-
-        /**
-         * Print the content of the 6 GHz Operation Information field.
-         *
-         * @param os output stream
-         */
-        void Print(std::ostream& os) const;
-
-        /**
-         * @return the serialized size of the 6 GHz Operation Information field
-         */
-        uint16_t GetSerializedSize() const;
-
-        /**
-         * Serialize the 6 GHz Operation Information field
-         *
-         * @param start an iterator which points to where the information should be written
-         */
-        void Serialize(Buffer::Iterator& start) const;
-
-        /**
-         * Deserialize the 6 GHz Operation Information field.
-         *
-         * @param start an iterator which points to where the information should be read from
-         * @return the number of bytes read
-         */
-        uint16_t Deserialize(Buffer::Iterator& start);
-    };
-
-    /**
-     * Set the Basic HE-MCS and NSS field in the HE Operation information element
-     * by specifying the pair (<i>nss</i>, <i>maxMcs</i>).
-     *
-     * @param nss the NSS
-     * @param maxHeMcs the maximum supported HE-MCS value corresponding to that NSS
-     */
-    void SetMaxHeMcsPerNss(uint8_t nss, uint8_t maxHeMcs);
-
-    // Fields
-    HeOperationParams m_heOpParams; //!< HE Operation Parameters field
-    BssColorInfo m_bssColorInfo;    //!< BSS Color Information field
-    uint16_t m_basicHeMcsAndNssSet; ///< Basic HE-MCS And NSS set (use setter to set value)
-    OptFieldWithPresenceInd<OpInfo6GHz> m_6GHzOpInfo; ///< 6 GHz Operation Information field
-
-  private:
-    uint16_t GetInformationFieldSize() const override;
-    void SerializeInformationField(Buffer::Iterator start) const override;
-    uint16_t DeserializeInformationField(Buffer::Iterator start, uint16_t length) override;
+  /// This is used to decide whether this element should be added to the frame or not
+  uint8_t m_heSupported;
 };
 
-} // namespace ns3
+/**
+ * output stream output operator
+ *
+ * \param os output stream
+ * \param HeOperation the HE operation
+ *
+ * \returns output stream
+ */
+std::ostream &operator << (std::ostream &os, const HeOperation &HeOperation);
+
+} //namespace ns3
 
 #endif /* HE_OPERATION_H */

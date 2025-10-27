@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008,2009 IITP RAS
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Authors: Kirill Andreev <andreev@iitp.ru>
  */
@@ -17,26 +29,26 @@ namespace dot11s
 {
 
 /**
- * @ingroup dot11s
+ * \ingroup dot11s
  *
- * @brief Mesh Peering Protocol Identifier information element
+ * \brief Mesh Peering Protocol Identifier information element
  * Note that it does not permit to set any value besides zero
  * (corresponding to mesh peering management protocol)
  */
 class IePeeringProtocol : public WifiInformationElement
 {
-  public:
-    IePeeringProtocol();
+public:
+  IePeeringProtocol ();
 
-    // Inherited from WifiInformationElement
-    WifiInformationElementId ElementId() const override;
-    uint16_t GetInformationFieldSize() const override;
-    void SerializeInformationField(Buffer::Iterator i) const override;
-    uint16_t DeserializeInformationField(Buffer::Iterator i, uint16_t length) override;
-    void Print(std::ostream& os) const override;
+  // Inherited from WifiInformationElement
+  virtual WifiInformationElementId ElementId () const;
+  virtual uint8_t GetInformationFieldSize () const;
+  virtual void SerializeInformationField (Buffer::Iterator i) const;
+  virtual uint8_t DeserializeInformationField (Buffer::Iterator i, uint8_t length);
+  virtual void Print (std::ostream& os) const;
 
-  private:
-    uint8_t m_protocol; ///< the protocol
+private:
+  uint8_t m_protocol; ///< the protocol
 };
 } // namespace dot11s
 } // namespace ns3

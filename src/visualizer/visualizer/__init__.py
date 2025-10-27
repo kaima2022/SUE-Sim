@@ -1,3 +1,3 @@
-from ns import *
 
-from .core import add_initialization_hook, register_plugin, set_bounds, start
+from .core import start, register_plugin, set_bounds, add_initialization_hook
+

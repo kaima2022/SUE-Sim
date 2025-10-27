@@ -3,7 +3,18 @@
 #
 # Copyright (c) 2017 Orange Labs
 #
-# SPDX-License-Identifier: GPL-2.0-only
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 as
+# published by the Free Software Foundation;
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 # Author: Rediet <getachew.redieteab@orange.com>
 #
@@ -45,7 +56,7 @@ else
 fi
 
 #List of available standards with corresponding bandwidth
-std_leg=("11a" "11p_10MHZ" "11p_5MHZ")
+std_leg=("11a" "11_10MHZ" "11_5MHZ")
 std_n=("11n_2_4GHZ" "11n_5GHZ")
 std_ac_ax=("11ac" "11ax_2_4GHZ" "11ax_5GHZ")
 bw_leg=(20 10 5)

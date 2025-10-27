@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 Lawrence Livermore National Laboratory
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Peter D. Barnes, Jr. <pdbarnes@llnl.gov>
  *
@@ -18,53 +30,46 @@
  * In addition comment blocks have been converted to Doxygen format.
  */
 
-#include "hash-fnv.h"
+#include <sys/types.h>
+#include <stdlib.h>
 
 #include "log.h"
-
-#include <stdlib.h>
-#include <sys/types.h>
+#include "hash-fnv.h"
 
 /**
- * @file
- * @ingroup hash
- * @brief ns3::Hash::Function::Fnv1a implementation.
+ * \file
+ * \ingroup hash
+ * \brief ns3::Hash::Function::Fnv1a implementation.
  */
 
-namespace ns3
-{
 
-NS_LOG_COMPONENT_DEFINE("Hash-Fnv");
+namespace ns3 {
 
-namespace Hash
-{
+NS_LOG_COMPONENT_DEFINE ("Hash-Fnv");
 
-namespace Function
-{
+namespace Hash {
+
+namespace Function {
 
 /** FNV hash implementation details. */
-namespace Fnv1aImplementation
-{
+namespace Fnv1aImplementation {
 
 /*************************************************
  **  class FnvHashImplementation
  ************************************************/
 
 /**
- * @ingroup hash
- * @defgroup hash_fnv FNV Hash Implementation
+ * \ingroup hash
+ * \defgroup hash_fnv FNV Hash Implementation
  */
 /**@{*/
 
-extern "C"
-{
-    // NOLINTBEGIN
-    // clang-format off
+extern "C" {
 
 // Changes from FNV distribution are marked with `//PDB'
 //
 
-/* Begin fnv.h ----------------------------------------> */
+/* Begin fnv.h -------------- *NS_CHECK_STYLE_OFF* ----> */
 
 /*
  * fnv - Fowler/Noll/Vo- hash code
@@ -189,11 +194,11 @@ typedef uint32_t Fnv32_t;  //PDB
  * Determine how 64 bit unsigned values are represented
  */
 //#include "longlong.h"  //PDB - assume `unsigned long long' is 64 bit
-#define HAVE_64BIT_LONG_LONG
+#define HAVE_64BIT_LONG_LONG  
 
 
 
-/**
+/** 
  * 64 bit FNV-0 hash
  */
 #if defined(HAVE_64BIT_LONG_LONG)
@@ -224,7 +229,7 @@ extern const Fnv64_t fnv0_64_init;
  * 64 bit FNV-1 non-zero initial basis
  *
  * The FNV-1 initial basis is the FNV-0 hash of the following 32 octets:
- *
+ * 
  *              chongo <Landon Curt Noll> /\../\
  *
  * \note The \'s above are not back-slashing escape characters.
@@ -287,9 +292,9 @@ enum fnv_type {
 
 #endif /* __FNV_H__ */
 
-/* End fnv.h ------------------------------------------> */
+/* End fnv.h ---------------- *NS_CHECK_STYLE_ON* -----> */
 
-/* Begin hash_32a.c -----------------------------------> */
+/* Begin hash_32a.c --------- *NS_CHECK_STYLE_OFF* ----> */
 
 /*
  * hash_32 - 32 bit Fowler/Noll/Vo FNV-1a hash code
@@ -434,9 +439,9 @@ fnv_32a_str(char *str, Fnv32_t hval)
     return hval;
 }
 
-/* End hash_32a.c -------------------------------------> */
+/* End hash_32a.c ----------- *NS_CHECK_STYLE_ON* -----> */
 
-/* Begin hash_64a.c -----------------------------------> */
+/* Begin hash_64a.c --------- *NS_CHECK_STYLE_OFF* ----> */
 
 /*
  * hash_64 - 64 bit Fowler/Noll/Vo-0 FNV-1a hash code
@@ -730,47 +735,47 @@ fnv_64a_str(char *str, Fnv64_t hval)
     return hval;
 }
 
-/* End hash_64a.c -------------------------------------> */
+/* End hash_64a.c ----------- *NS_CHECK_STYLE_ON* -----> */
 
-    // clang-format on
-    // NOLINTEND
-
-} /* extern "C" */
+}  /* extern "C" */
 
 //-----------------------------------------------------------------------------
 
-/**@}*/ // \defgroup hash_fnv
+/**@}*/  // \defgroup hash_fnv
 
-} // namespace Fnv1aImplementation
+}  // namespace Fnv1aImplementation
 
-Fnv1a::Fnv1a()
+
+Fnv1a::Fnv1a ()
 {
-    clear();
+  clear ();
 }
 
 uint32_t
-Fnv1a::GetHash32(const char* buffer, const std::size_t size)
+Fnv1a::GetHash32  (const char * buffer, const std::size_t size)
 {
-    m_hash32 = Fnv1aImplementation::fnv_32a_buf((void*)buffer, size, m_hash32);
-    return m_hash32;
+  m_hash32 =
+    Fnv1aImplementation::fnv_32a_buf ((void *)buffer, size, m_hash32);
+  return m_hash32;
 }
 
 uint64_t
-Fnv1a::GetHash64(const char* buffer, const std::size_t size)
+Fnv1a::GetHash64  (const char * buffer, const std::size_t size)
 {
-    m_hash64 = Fnv1aImplementation::fnv_64a_buf((void*)buffer, size, m_hash64);
-    return m_hash64;
+  m_hash64 =
+    Fnv1aImplementation::fnv_64a_buf ((void *)buffer, size, m_hash64);
+  return m_hash64;
 }
 
 void
-Fnv1a::clear()
+Fnv1a::clear (void)
 {
-    m_hash32 = FNV1_32A_INIT;
-    m_hash64 = FNV1A_64_INIT;
+  m_hash32 = FNV1_32A_INIT;
+  m_hash64 = FNV1A_64_INIT;
 }
 
-} // namespace Function
+}  // namespace Function
 
-} // namespace Hash
+}  // namespace Hash
 
-} // namespace ns3
+}  // namespace ns3

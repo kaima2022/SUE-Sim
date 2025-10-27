@@ -1,286 +1,201 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2019 Orange Labs
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Rediet <getachew.redieteab@orange.com>
  */
 
 #include "wifi-ppdu.h"
-
-#include "wifi-phy-operating-channel.h"
 #include "wifi-psdu.h"
-
 #include "ns3/log.h"
+#include "ns3/packet.h"
 
-namespace
-{
-/**
- * Get the center frequency of each segment covered by the provided channel width. If the specified
- * channel width is contained in a single frequency segment, a single center frequency is returned.
- * If the specified channel width is spread over multiple frequency segments (e.g. 160 MHz if
- * operating channel is 80+80MHz), multiple center frequencies are returned.
- *
- * @param channel the operating channel of the PHY
- * @param channelWidth the channel width
- * @return the center frequency of each segment covered by the given width
- */
-std::vector<ns3::MHz_u>
-GetChannelCenterFrequenciesPerSegment(const ns3::WifiPhyOperatingChannel& channel,
-                                      ns3::MHz_u channelWidth)
-{
-    if (!channel.IsSet())
-    {
-        return {};
-    }
-    std::vector<ns3::MHz_u> freqs{};
-    const auto width = std::min(channelWidth, channel.GetWidth(0));
-    const auto primarySegmentIndex = channel.GetPrimarySegmentIndex(width);
-    const auto secondarySegmentIndex = channel.GetSecondarySegmentIndex(width);
-    const auto primaryIndex = channel.GetPrimaryChannelIndex(channelWidth);
-    const auto segmentIndices =
-        ((channel.GetNSegments() < 2) || (channelWidth <= channel.GetWidth(primarySegmentIndex)))
-            ? std::vector<uint8_t>{primarySegmentIndex}
-            : std::vector<uint8_t>{primarySegmentIndex, secondarySegmentIndex};
-    for (auto segmentIndex : segmentIndices)
-    {
-        const auto segmentFrequency = channel.GetFrequency(segmentIndex);
-        const auto segmentWidth = channel.GetWidth(segmentIndex);
-        // segmentOffset has to be an (unsigned) integer to ensure correct calculation
-        const uint8_t segmentOffset = (primarySegmentIndex * (segmentWidth / channelWidth));
-        const auto freq =
-            segmentFrequency - (segmentWidth / 2.) + (primaryIndex - segmentOffset + 0.5) * width;
-        freqs.push_back(freq);
-    }
-    return freqs;
-}
-} // namespace
+namespace ns3 {
 
-namespace ns3
-{
+NS_LOG_COMPONENT_DEFINE ("WifiPpdu");
 
-NS_LOG_COMPONENT_DEFINE("WifiPpdu");
-
-WifiPpdu::WifiPpdu(Ptr<const WifiPsdu> psdu,
-                   const WifiTxVector& txVector,
-                   const WifiPhyOperatingChannel& channel,
-                   uint64_t uid /* = UINT64_MAX */)
-    : m_preamble(txVector.GetPreambleType()),
-      m_modulation(txVector.IsValid() ? txVector.GetModulationClass() : WIFI_MOD_CLASS_UNKNOWN),
-      m_txCenterFreqs(GetChannelCenterFrequenciesPerSegment(channel, txVector.GetChannelWidth())),
-      m_uid(uid),
-      m_txVector(txVector),
-      m_operatingChannel(channel),
-      m_truncatedTx(false),
-      m_txPowerLevel(txVector.GetTxPowerLevel()),
-      m_txAntennas(txVector.GetNTx()),
-      m_txChannelWidth(txVector.GetChannelWidth())
+WifiPpdu::WifiPpdu (Ptr<const WifiPsdu> psdu, const WifiTxVector& txVector, uint64_t uid /* = UINT64_MAX */)
+  : m_preamble (txVector.GetPreambleType ()),
+    m_modulation (txVector.IsValid () ? txVector.GetModulationClass () : WIFI_MOD_CLASS_UNKNOWN),
+    m_uid (uid),
+    m_truncatedTx (false),
+    m_txPowerLevel (txVector.GetTxPowerLevel ())
 {
-    NS_LOG_FUNCTION(this << *psdu << txVector << channel << uid);
-    m_psdus.insert(std::make_pair(SU_STA_ID, psdu));
+  NS_LOG_FUNCTION (this << *psdu << txVector << uid);
+  m_psdus.insert (std::make_pair (SU_STA_ID, psdu));
 }
 
-WifiPpdu::WifiPpdu(const WifiConstPsduMap& psdus,
-                   const WifiTxVector& txVector,
-                   const WifiPhyOperatingChannel& channel,
-                   uint64_t uid)
-    : m_preamble(txVector.GetPreambleType()),
-      m_modulation(txVector.IsValid() ? txVector.GetMode(psdus.begin()->first).GetModulationClass()
-                                      : WIFI_MOD_CLASS_UNKNOWN),
-      m_txCenterFreqs(GetChannelCenterFrequenciesPerSegment(channel, txVector.GetChannelWidth())),
-      m_uid(uid),
-      m_txVector(txVector),
-      m_operatingChannel(channel),
-      m_truncatedTx(false),
-      m_txPowerLevel(txVector.GetTxPowerLevel()),
-      m_txAntennas(txVector.GetNTx()),
-      m_txChannelWidth(txVector.GetChannelWidth())
+WifiPpdu::WifiPpdu (const WifiConstPsduMap & psdus, const WifiTxVector& txVector, uint64_t uid)
+  : m_preamble (txVector.GetPreambleType ()),
+    m_modulation (txVector.IsValid () ? txVector.GetMode (psdus.begin()->first).GetModulationClass () : WIFI_MOD_CLASS_UNKNOWN),
+    m_uid (uid),
+    m_truncatedTx (false),
+    m_txPowerLevel (txVector.GetTxPowerLevel ()),
+    m_txAntennas (txVector.GetNTx ())
 {
-    NS_LOG_FUNCTION(this << psdus << txVector << channel << uid);
-    m_psdus = psdus;
+  NS_LOG_FUNCTION (this << psdus << txVector << uid);
+  m_psdus = psdus;
 }
 
-const WifiTxVector&
-WifiPpdu::GetTxVector() const
+WifiPpdu::~WifiPpdu ()
 {
-    if (!m_txVector.has_value())
+  for (auto & psdu : m_psdus)
     {
-        m_txVector = DoGetTxVector();
-        m_txVector->SetTxPowerLevel(m_txPowerLevel);
-        m_txVector->SetNTx(m_txAntennas);
-        m_txVector->SetChannelWidth(m_txChannelWidth);
+      psdu.second = 0;
     }
-    return m_txVector.value();
+  m_psdus.clear ();
 }
 
 WifiTxVector
-WifiPpdu::DoGetTxVector() const
+WifiPpdu::GetTxVector (void) const
 {
-    NS_FATAL_ERROR("This method should not be called for the base WifiPpdu class. Use the "
-                   "overloaded version in the amendment-specific PPDU subclasses instead!");
-    return WifiTxVector(); // should be overloaded
+  WifiTxVector txVector = DoGetTxVector ();
+  txVector.SetTxPowerLevel (m_txPowerLevel);
+  txVector.SetNTx (m_txAntennas);
+  return txVector;
 }
 
-void
-WifiPpdu::ResetTxVector() const
+WifiTxVector
+WifiPpdu::DoGetTxVector (void) const
 {
-    NS_LOG_FUNCTION(this);
-    m_txVector.reset();
-}
-
-void
-WifiPpdu::UpdateTxVector(const WifiTxVector& updatedTxVector) const
-{
-    NS_LOG_FUNCTION(this << updatedTxVector);
-    ResetTxVector();
-    m_txVector = updatedTxVector;
+  NS_FATAL_ERROR ("This method should not be called for the base WifiPpdu class. Use the overloaded version in the amendment-specific PPDU subclasses instead!");
+  return WifiTxVector (); //should be overloaded
 }
 
 Ptr<const WifiPsdu>
-WifiPpdu::GetPsdu() const
+WifiPpdu::GetPsdu (void) const
 {
-    return m_psdus.begin()->second;
+  return m_psdus.begin ()->second;
 }
 
 bool
-WifiPpdu::IsTruncatedTx() const
+WifiPpdu::IsTruncatedTx (void) const
 {
-    return m_truncatedTx;
+  return m_truncatedTx;
 }
 
 void
-WifiPpdu::SetTruncatedTx()
+WifiPpdu::SetTruncatedTx (void)
 {
-    NS_LOG_FUNCTION(this);
-    m_truncatedTx = true;
+  NS_LOG_FUNCTION (this);
+  m_truncatedTx = true;
 }
 
 WifiModulationClass
-WifiPpdu::GetModulation() const
+WifiPpdu::GetModulation (void) const
 {
-    return m_modulation;
-}
-
-MHz_u
-WifiPpdu::GetTxChannelWidth() const
-{
-    return m_txChannelWidth;
-}
-
-std::vector<MHz_u>
-WifiPpdu::GetTxCenterFreqs() const
-{
-    return m_txCenterFreqs;
-}
-
-bool
-WifiPpdu::DoesOverlapChannel(MHz_u minFreq, MHz_u maxFreq) const
-{
-    NS_LOG_FUNCTION(this << minFreq << maxFreq);
-    // all segments have the same width
-    const MHz_u txChannelWidth = (m_txChannelWidth / m_txCenterFreqs.size());
-    for (auto txCenterFreq : m_txCenterFreqs)
-    {
-        const auto minTxFreq = txCenterFreq - txChannelWidth / 2;
-        const auto maxTxFreq = txCenterFreq + txChannelWidth / 2;
-        /**
-         * The PPDU does not overlap the channel in two cases.
-         *
-         * First non-overlapping case:
-         *
-         *                                        ┌─────────┐
-         *                                PPDU    │ Nominal │
-         *                                        │  Band   │
-         *                                        └─────────┘
-         *                                   minTxFreq   maxTxFreq
-         *
-         *       minFreq                       maxFreq
-         *         ┌──────────────────────────────┐
-         *         │           Channel            │
-         *         └──────────────────────────────┘
-         *
-         * Second non-overlapping case:
-         *
-         *         ┌─────────┐
-         * PPDU    │ Nominal │
-         *         │  Band   │
-         *         └─────────┘
-         *    minTxFreq   maxTxFreq
-         *
-         *                 minFreq                       maxFreq
-         *                   ┌──────────────────────────────┐
-         *                   │           Channel            │
-         *                   └──────────────────────────────┘
-         */
-        if ((minTxFreq < maxFreq) && (maxTxFreq > minFreq))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-uint64_t
-WifiPpdu::GetUid() const
-{
-    return m_uid;
-}
-
-WifiPreamble
-WifiPpdu::GetPreamble() const
-{
-    return m_preamble;
-}
-
-WifiPpduType
-WifiPpdu::GetType() const
-{
-    return WIFI_PPDU_TYPE_SU;
+  return m_modulation;
 }
 
 uint16_t
-WifiPpdu::GetStaId() const
+WifiPpdu::GetTransmissionChannelWidth (void) const
 {
-    return SU_STA_ID;
+  return GetTxVector ().GetChannelWidth ();
+}
+
+bool
+WifiPpdu::CanBeReceived (uint16_t txCenterFreq, uint16_t p20MinFreq,
+                              uint16_t p20MaxFreq) const
+{
+  NS_LOG_FUNCTION (this << txCenterFreq << p20MinFreq << p20MaxFreq);
+
+  uint16_t txChannelWidth = GetTxVector ().GetChannelWidth ();
+  uint16_t minTxFreq = txCenterFreq - txChannelWidth / 2;
+  uint16_t maxTxFreq = txCenterFreq + txChannelWidth / 2;
+
+  if (minTxFreq > p20MinFreq || maxTxFreq < p20MaxFreq)
+    {
+      NS_LOG_INFO ("Received PPDU does not overlap with the primary20 channel");
+      return false;
+    }
+  return true;
+}
+
+
+uint64_t
+WifiPpdu::GetUid (void) const
+{
+  return m_uid;
+}
+
+WifiPreamble
+WifiPpdu::GetPreamble (void) const
+{
+  return m_preamble;
+}
+
+WifiPpduType
+WifiPpdu::GetType (void) const
+{
+  return WIFI_PPDU_TYPE_SU;
+}
+
+uint16_t
+WifiPpdu::GetStaId (void) const
+{
+  return SU_STA_ID;
 }
 
 Time
-WifiPpdu::GetTxDuration() const
+WifiPpdu::GetTxDuration (void) const
 {
-    NS_FATAL_ERROR("This method should not be called for the base WifiPpdu class. Use the "
-                   "overloaded version in the amendment-specific PPDU subclasses instead!");
-    return MicroSeconds(0); // should be overloaded
+  NS_FATAL_ERROR ("This method should not be called for the base WifiPpdu class. Use the overloaded version in the amendment-specific PPDU subclasses instead!");
+  return MicroSeconds (0); //should be overloaded
 }
 
 void
-WifiPpdu::Print(std::ostream& os) const
+WifiPpdu::Print (std::ostream& os) const
 {
-    os << "[ preamble=" << m_preamble << ", modulation=" << m_modulation
-       << ", truncatedTx=" << (m_truncatedTx ? "Y" : "N") << ", UID=" << m_uid << ", "
-       << PrintPayload() << "]";
+  os << "[ preamble=" << m_preamble
+     << ", modulation=" << m_modulation
+     << ", truncatedTx=" << (m_truncatedTx ? "Y" : "N")
+     << ", UID=" << m_uid
+     << ", " << PrintPayload ()
+     << "]";
 }
 
 std::string
-WifiPpdu::PrintPayload() const
+WifiPpdu::PrintPayload (void) const
 {
-    std::ostringstream ss;
-    ss << "PSDU=" << *GetPsdu() << " ";
-    return ss.str();
+  std::ostringstream ss;
+  ss << "PSDU=" << GetPsdu () << " ";
+  return ss.str ();
 }
 
 Ptr<WifiPpdu>
-WifiPpdu::Copy() const
+WifiPpdu::Copy (void) const
 {
-    NS_FATAL_ERROR("This method should not be called for the base WifiPpdu class. Use the "
-                   "overloaded version in the amendment-specific PPDU subclasses instead!");
-    return Ptr<WifiPpdu>(new WifiPpdu(*this), false);
+  NS_FATAL_ERROR ("This method should not be called for the base WifiPpdu class. Use the overloaded version in the amendment-specific PPDU subclasses instead!");
+  return Create<WifiPpdu> (GetPsdu (), GetTxVector ());
 }
 
-std::ostream&
-operator<<(std::ostream& os, const Ptr<const WifiPpdu>& ppdu)
+std::ostream & operator << (std::ostream &os, const Ptr<const WifiPpdu> &ppdu)
 {
-    ppdu->Print(os);
-    return os;
+  ppdu->Print (os);
+  return os;
 }
 
-} // namespace ns3
+std::ostream & operator << (std::ostream &os, const WifiConstPsduMap &psdus)
+{
+  for (auto const& psdu : psdus)
+   {
+     os << "PSDU for STA_ID=" << psdu.first
+        << " (" << *psdu.second << ") ";
+   }
+   return os;
+}
+
+} //namespace ns3

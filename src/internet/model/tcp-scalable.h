@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2016 ResiliNets, ITTC, University of Kansas
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Authors: Truc Anh N. Nguyen <annguyen@ittc.ku.edu>
  *          Keerthi Ganta <keerthig@ittc.ku.edu>
@@ -9,7 +21,7 @@
  *          Amir Modarresi <amodarresi@ittc.ku.edu>
  *
  * James P.G. Sterbenz <jpgs@ittc.ku.edu>, director
- * ResiliNets Research Group  https://resilinets.org/
+ * ResiliNets Research Group  http://wiki.ittc.ku.edu/resilinets
  * Information and Telecommunication Technology Center (ITTC)
  * and Department of Electrical Engineering and Computer Science
  * The University of Kansas Lawrence, KS USA.
@@ -20,15 +32,14 @@
 
 #include "tcp-congestion-ops.h"
 
-namespace ns3
-{
+namespace ns3 {
 
 class TcpSocketState;
 
 /**
- * @ingroup congestionOps
+ * \ingroup congestionOps
  *
- * @brief An implementation of TCP Scalable
+ * \brief An implementation of TCP Scalable
  *
  * Scalable improves TCP performance to better utilize the available bandwidth
  * of a highspeed wide area network by altering NewReno congestion window
@@ -52,52 +63,54 @@ class TcpSocketState;
 
 class TcpScalable : public TcpNewReno
 {
-  public:
-    /**
-     * @brief Get the type ID.
-     * @return the object TypeId
-     */
-    static TypeId GetTypeId();
+public:
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
 
-    /**
-     * Create an unbound tcp socket.
-     */
-    TcpScalable();
+  /**
+   * Create an unbound tcp socket.
+   */
+  TcpScalable (void);
 
-    /**
-     * @brief Copy constructor
-     * @param sock the object to copy
-     */
-    TcpScalable(const TcpScalable& sock);
-    ~TcpScalable() override;
+  /**
+   * \brief Copy constructor
+   * \param sock the object to copy
+   */
+  TcpScalable (const TcpScalable& sock);
+  virtual ~TcpScalable (void);
 
-    std::string GetName() const override;
+  virtual std::string GetName () const;
 
-    /**
-     * @brief Get slow start threshold following Scalable principle (Equation 2)
-     *
-     * @param tcb internal congestion state
-     * @param bytesInFlight bytes in flight
-     *
-     * @return the slow start threshold value
-     */
-    uint32_t GetSsThresh(Ptr<const TcpSocketState> tcb, uint32_t bytesInFlight) override;
+  /**
+   * \brief Get slow start threshold following Scalable principle (Equation 2)
+   *
+   * \param tcb internal congestion state
+   * \param bytesInFlight bytes in flight
+   *
+   * \return the slow start threshold value
+   */
+  virtual uint32_t GetSsThresh (Ptr<const TcpSocketState> tcb,
+                                uint32_t bytesInFlight);
 
-    Ptr<TcpCongestionOps> Fork() override;
+  virtual Ptr<TcpCongestionOps> Fork ();
 
-  protected:
-    /**
-     * @brief Congestion avoidance of TcpScalable (Equation 1)
-     *
-     * @param tcb internal congestion state
-     * @param segmentsAcked count of segments acked
-     */
-    void CongestionAvoidance(Ptr<TcpSocketState> tcb, uint32_t segmentsAcked) override;
+protected:
+  /**
+   * \brief Congestion avoidance of TcpScalable (Equation 1)
+   *
+   * \param tcb internal congestion state
+   * \param segmentsAcked count of segments acked
+   */
+  virtual void CongestionAvoidance (Ptr<TcpSocketState> tcb,
+                                    uint32_t segmentsAcked);
 
-  private:
-    uint32_t m_ackCnt;   //!< Number of received ACK
-    uint32_t m_aiFactor; //!< Additive increase factor
-    double m_mdFactor;   //!< Multiplicative decrease factor
+private:
+  uint32_t m_ackCnt;               //!< Number of received ACK
+  uint32_t m_aiFactor;             //!< Additive increase factor
+  double m_mdFactor;               //!< Multiplicative decrease factor
 };
 
 } // namespace ns3

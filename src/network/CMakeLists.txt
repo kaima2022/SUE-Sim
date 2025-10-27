@@ -1,6 +1,5 @@
 set(source_files
     helper/application-container.cc
-    helper/application-helper.cc
     helper/delay-jitter-estimation.cc
     helper/net-device-container.cc
     helper/node-container.cc
@@ -69,12 +68,10 @@ set(source_files
     utils/simple-channel.cc
     utils/simple-net-device.cc
     utils/sll-header.cc
-    utils/timestamp-tag.cc
 )
 
 set(header_files
     helper/application-container.h
-    helper/application-helper.h
     helper/delay-jitter-estimation.h
     helper/net-device-container.h
     helper/node-container.h
@@ -101,7 +98,6 @@ set(header_files
     model/tag-buffer.h
     model/tag.h
     model/trailer.h
-    test/header-serialization-test.h
     utils/address-utils.h
     utils/bit-deserializer.h
     utils/bit-serializer.h
@@ -139,7 +135,6 @@ set(header_files
     utils/pcap-file-wrapper.h
     utils/pcap-file.h
     utils/pcap-test.h
-    utils/queue-fwd.h
     utils/queue-item.h
     utils/queue-limits.h
     utils/queue-size.h
@@ -149,14 +144,14 @@ set(header_files
     utils/simple-channel.h
     utils/simple-net-device.h
     utils/sll-header.h
-    utils/timestamp-tag.h
 )
 
 build_lib(
   LIBNAME network
   SOURCE_FILES ${source_files}
   HEADER_FILES ${header_files}
-  LIBRARIES_TO_LINK ${libstats}
+  LIBRARIES_TO_LINK ${libcore}
+                    ${libstats}
   TEST_SOURCES
     test/bit-serializer-test.cc
     test/buffer-test.cc

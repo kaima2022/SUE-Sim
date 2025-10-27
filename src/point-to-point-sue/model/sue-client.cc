@@ -364,7 +364,7 @@ void SueClient::CancelAllLogEvents() {
     SetLoggingEnabled(false);
   
     // Cancel own log statistics events
-    if (m_logClientStatisticsEvent.IsPending()) {
+    if (m_logClientStatisticsEvent.IsRunning()) {
         Simulator::Cancel(m_logClientStatisticsEvent);
         NS_LOG_INFO("Cancelled client log statistics event");
         
@@ -624,7 +624,7 @@ void SueClient::DoSendBurst(Ptr<Packet> burstPacket, Ptr<Socket> sendingSocket, 
 
 void SueClient::StopApplication(void) {
     // Cancel scheduler events
-    if (m_schedulerEvent.IsPending()) {
+    if (m_schedulerEvent.IsRunning()) {
         Simulator::Cancel(m_schedulerEvent);
     }
 

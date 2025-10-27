@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2009 MIRKO BANCHI
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Mirko Banchi <mk.banchi@gmail.com>
  */
@@ -9,33 +21,30 @@
 #ifndef QOS_UTILS_H
 #define QOS_UTILS_H
 
-#include "ns3/fatal-error.h"
 #include "ns3/ptr.h"
-
 #include <map>
 
-namespace ns3
-{
+namespace ns3 {
 
 class Packet;
 class WifiMacHeader;
 class QueueItem;
 class Mac48Address;
 
-typedef std::pair<Mac48Address, uint8_t> WifiAddressTidPair; //!< (MAC address, TID) pair
+typedef std::pair<Mac48Address, uint8_t> WifiAddressTidPair;  //!< (MAC address, TID) pair
 
 /**
  * Function object to compute the hash of a (MAC address, TID) pair
  */
 struct WifiAddressTidHash
 {
-    /**
-     * Functional operator for (MAC address, TID) hash computation.
-     *
-     * @param addressTidPair the (MAC address, TID) pair
-     * @return the hash
-     */
-    std::size_t operator()(const WifiAddressTidPair& addressTidPair) const;
+  /**
+   * Functional operator for (MAC address, TID) hash computation.
+   *
+   * \param addressTidPair the (MAC address, TID) pair
+   * \return the hash
+   */
+  std::size_t operator() (const WifiAddressTidPair& addressTidPair) const;
 };
 
 /**
@@ -43,153 +52,121 @@ struct WifiAddressTidHash
  */
 struct WifiAddressHash
 {
-    /**
-     * Functional operator for MAC address hash computation.
-     *
-     * @param address the MAC address
-     * @return the hash
-     */
-    std::size_t operator()(const Mac48Address& address) const;
+  /**
+   * Functional operator for MAC address hash computation.
+   *
+   * \param address the MAC address
+   * \return the hash
+   */
+  std::size_t operator() (const Mac48Address& address) const;
 };
 
 /**
- * @ingroup wifi
+ * \ingroup wifi
  * This enumeration defines the Access Categories as an enumeration
  * with values corresponding to the AC index (ACI) values specified
  * (Table 8-104 "ACI-to-AC coding"; IEEE 802.11-2012).
  */
 enum AcIndex : uint8_t
 {
-    /** Best Effort */
-    AC_BE = 0,
-    /** Background */
-    AC_BK = 1,
-    /** Video */
-    AC_VI = 2,
-    /** Voice */
-    AC_VO = 3,
-    /** Non-QoS */
-    AC_BE_NQOS = 4,
-    /** Beacon queue */
-    AC_BEACON = 5,
-    /** Total number of ACs */
-    AC_UNDEF
+  /** Best Effort */
+  AC_BE = 0,
+  /** Background */
+  AC_BK = 1,
+  /** Video */
+  AC_VI = 2,
+  /** Voice */
+  AC_VO = 3,
+  /** Non-QoS */
+  AC_BE_NQOS = 4,
+  /** Beacon queue */
+  AC_BEACON = 5,
+  /** Total number of ACs */
+  AC_UNDEF
 };
 
 /**
- * @brief Stream insertion operator.
- *
- * @param os the stream
- * @param acIndex the AC index
- * @returns a reference to the stream
- */
-inline std::ostream&
-operator<<(std::ostream& os, const AcIndex& acIndex)
-{
-    switch (acIndex)
-    {
-    case AC_BE:
-        return (os << "AC BE");
-    case AC_BK:
-        return (os << "AC BK");
-    case AC_VI:
-        return (os << "AC VI");
-    case AC_VO:
-        return (os << "AC VO");
-    case AC_BE_NQOS:
-        return (os << "AC BE NQOS");
-    case AC_BEACON:
-        return (os << "AC BEACON");
-    case AC_UNDEF:
-        return (os << "AC Undefined");
-    default:
-        NS_FATAL_ERROR("Unknown AC index");
-        return (os << "Unknown");
-    }
-}
-
-/**
- * @ingroup wifi
+ * \ingroup wifi
  * This class stores the pair of TIDs of an Access Category.
  */
 class WifiAc
 {
-  public:
-    /**
-     * Constructor.
-     *
-     * @param lowTid the TID with lower priority
-     * @param highTid the TID with higher priority
-     */
-    WifiAc(uint8_t lowTid, uint8_t highTid);
-    /**
-     * Get the TID with lower priority
-     *
-     * @return the TID with lower priority
-     */
-    uint8_t GetLowTid() const;
-    /**
-     * Get the TID with higher priority
-     *
-     * @return the TID with higher priority
-     */
-    uint8_t GetHighTid() const;
-    /**
-     * Given a TID belonging to this Access Category, get the other TID of this AC.
-     *
-     * @param tid a TID belonging to this AC
-     * @return the other TID belonging to this AC
-     */
-    uint8_t GetOtherTid(uint8_t tid) const;
+public:
+  /**
+   * Constructor.
+   *
+   * \param lowTid the TID with lower priority
+   * \param highTid the TID with higher priority
+   */
+  WifiAc (uint8_t lowTid, uint8_t highTid);
+  /**
+   * Get the TID with lower priority
+   *
+   * \return the TID with lower priority
+   */
+  uint8_t GetLowTid (void) const;
+  /**
+   * Get the TID with higher priority
+   *
+   * \return the TID with higher priority
+   */
+  uint8_t GetHighTid (void) const;
+  /**
+   * Given a TID belonging to this Access Category, get the other TID of this AC.
+   *
+   * \param tid a TID belonging to this AC
+   * \return the other TID belonging to this AC
+   */
+  uint8_t GetOtherTid (uint8_t tid) const;
 
-  private:
-    uint8_t m_lowTid;  //!< the TID with lower priority
-    uint8_t m_highTid; //!< the TID with higher priority
+private:
+  uint8_t m_lowTid;      //!< the TID with lower priority
+  uint8_t m_highTid;     //!< the TID with higher priority
 };
 
 /**
- * @ingroup wifi
+ * \ingroup wifi
  * Operator> overload returning true if the AC on the left has higher priority
  * than the AC on the right.
  *
- * @param left the AC on the left of operator>
- * @param right the AC on the right of operator>
- * @return true if the AC on the left has higher priority than the AC on the right
+ * \param left the AC on the left of operator>
+ * \param right the AC on the right of operator>
+ * \return true if the AC on the left has higher priority than the AC on the right
  */
-bool operator>(AcIndex left, AcIndex right);
+bool operator> (enum AcIndex left, enum AcIndex right);
 
 /**
- * @ingroup wifi
+ * \ingroup wifi
  * Operator>= overload returning true if the AC on the left has higher or the same
  * priority than the AC on the right.
  *
- * @param left the AC on the left of operator>=
- * @param right the AC on the right of operator>=
- * @return true if the AC on the left has higher or the same priority than the AC on the right
+ * \param left the AC on the left of operator>=
+ * \param right the AC on the right of operator>=
+ * \return true if the AC on the left has higher or the same priority than the AC on the right
  */
-bool operator>=(AcIndex left, AcIndex right);
+bool operator>= (enum AcIndex left, enum AcIndex right);
 
 /**
- * @ingroup wifi
+ * \ingroup wifi
  * Operator< overload returning true if the AC on the left has lower priority
  * than the AC on the right.
  *
- * @param left the AC on the left of operator<
- * @param right the AC on the right of operator<
- * @return true if the AC on the left has lower priority than the AC on the right
+ * \param left the AC on the left of operator<
+ * \param right the AC on the right of operator<
+ * \return true if the AC on the left has lower priority than the AC on the right
  */
-bool operator<(AcIndex left, AcIndex right);
+bool operator< (enum AcIndex left, enum AcIndex right);
 
 /**
- * @ingroup wifi
+ * \ingroup wifi
  * Operator<= overload returning true if the AC on the left has lower or the same
  * priority than the AC on the right.
  *
- * @param left the AC on the left of operator<=
- * @param right the AC on the right of operator<=
- * @return true if the AC on the left has lower or the same priority than the AC on the right
+ * \param left the AC on the left of operator<=
+ * \param right the AC on the right of operator<=
+ * \return true if the AC on the left has lower or the same priority than the AC on the right
  */
-bool operator<=(AcIndex left, AcIndex right);
+bool operator<= (enum AcIndex left, enum AcIndex right);
 
 /**
  * Map containing the four ACs in increasing order of priority (according to
@@ -198,30 +175,42 @@ bool operator<=(AcIndex left, AcIndex right);
 extern const std::map<AcIndex, WifiAc> wifiAcList;
 
 /**
- * @ingroup wifi
+ * \ingroup wifi
  * Maps TID (Traffic ID) to Access classes.
  * For more details see (Table 9-1 "UP-to-AC mapping"; IEEE 802.11-2012).
  *
- * @param tid the Traffic ID to be mapped to Access class
- * @return the access class for the given TID
+ * \param tid the Traffic ID to be mapped to Access class
+ * \return the access class for the given TID
  */
-AcIndex QosUtilsMapTidToAc(uint8_t tid);
+AcIndex QosUtilsMapTidToAc (uint8_t tid);
 
 /**
- * @ingroup wifi
+ * \ingroup wifi
+ * If a QoS tag is attached to the packet, returns a value < 8.
+ * A value >= 8 is returned otherwise.
+ *
+ * \param packet the packet to checked for a QoS tag
+ *
+ * \return a value less than 8 if QoS tag was present, a value >= 8
+ *         is returned if no QoS tag was present
+ */
+uint8_t QosUtilsGetTidForPacket (Ptr<const Packet> packet);
+
+/**
+ * \ingroup wifi
  * Next function is useful to correctly sort buffered packets under block ack.
  * When an BAR is received from originator station, completed "old"
  * (see section 9.10.3 in IEEE 802.11e) packets must be forwarded up before "new" packets.
  *
- * @param seqControl the sequence control field
- * @param endSequence the sequence number ending the acknowledgment window
+ * \param seqControl the sequence control field
+ * \param endSequence the sequence number ending the acknowledgment window
  *
- * @return a unique integer for the given sequence control and end sequence
+ * \return a unique integer for the given sequence control and end sequence
  */
-uint32_t QosUtilsMapSeqControlToUniqueInteger(uint16_t seqControl, uint16_t endSequence);
+uint32_t QosUtilsMapSeqControlToUniqueInteger (uint16_t seqControl, uint16_t endSequence);
 
 /**
- * @ingroup wifi
+ * \ingroup wifi
  * This function checks if packet with sequence number <i>seqNumber</i> is an "old" packet.
  * The sequence number space is considered divided into two parts, one of which is "old" and
  * one of which is "new" by means of a boundary created by adding half the sequence number
@@ -252,28 +241,28 @@ uint32_t QosUtilsMapSeqControlToUniqueInteger(uint16_t seqControl, uint16_t endS
  * if that packet (with sequence number <i>numberSeq</i>)) belongs to the section of the
  * sequence number space marked with '-' characters. The function returns false otherwise.
  *
- * @param startingSeq the starting sequence number
- * @param seqNumber the sequence number to be checked
+ * \param startingSeq the starting sequence number
+ * \param seqNumber the sequence number to be checked
  *
- * @return true if the packet is old, false otherwise
+ * \return true if the packet is old, false otherwise
  */
-bool QosUtilsIsOldPacket(uint16_t startingSeq, uint16_t seqNumber);
+bool QosUtilsIsOldPacket (uint16_t startingSeq, uint16_t seqNumber);
 
 /**
- * @ingroup wifi
+ * \ingroup wifi
  * This function is useful to get traffic id of different packet types.
  *
- * @param packet packet to check
- * @param hdr 802.11 header for packet to check
- * @return the TID of different packet types
+ * \param packet packet to check
+ * \param hdr 802.11 header for packet to check
+ * \return the TID of different packet types
  */
-uint8_t GetTid(Ptr<const Packet> packet, const WifiMacHeader hdr);
+uint8_t GetTid (Ptr<const Packet> packet, const WifiMacHeader hdr);
 
 /**
- * @ingroup wifi
- * @brief Determine the TX queue for a given packet
- * @param item the packet
- * @returns the access category
+ * \ingroup wifi
+ * \brief Determine the TX queue for a given packet
+ * \param item the packet
+ * \returns the access category
  *
  * Modeled after the Linux function ieee80211_select_queue (net/mac80211/wme.c).
  * A SocketPriority tag is attached to the packet (or the existing one is
@@ -312,8 +301,8 @@ uint8_t GetTid(Ptr<const Packet> packet, const WifiMacHeader hdr);
  * packet in the queue disc, if a queue disc is installed on the outgoing
  * device, or passing a packet to the device, otherwise.
  */
-uint8_t SelectQueueByDSField(Ptr<QueueItem> item);
+uint8_t SelectQueueByDSField (Ptr<QueueItem> item);
 
-} // namespace ns3
+} //namespace ns3
 
 #endif /* QOS_UTILS_H */

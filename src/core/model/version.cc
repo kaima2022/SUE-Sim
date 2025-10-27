@@ -1,152 +1,163 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2018 Lawrence Livermore National Laboratory
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Authors: Mathew Bielejeski <bielejeski1@llnl.gov>
  */
 
 #include "version.h"
-
 #include "ns3/version-defines.h"
-
 #include <sstream>
 
 /**
- * @file
- * @ingroup buildversion
+ * \file
+ * \ingroup buildversion
  * ns3::Version implementation
  */
 
-namespace ns3
-{
+namespace ns3 {
 
 std::string
-Version::VersionTag()
+Version::VersionTag (void)
 {
-    return NS3_VERSION_TAG;
-}
-
-std::string
-Version::ClosestAncestorTag()
-{
-    return NS3_VERSION_CLOSEST_TAG;
-}
-
-uint32_t
-Version::Major()
-{
-    return NS3_VERSION_MAJOR;
-}
-
-uint32_t
-Version::Minor()
-{
-    return NS3_VERSION_MINOR;
-}
-
-uint32_t
-Version::Patch()
-{
-    return NS3_VERSION_PATCH;
+  return NS3_VERSION_TAG;
 }
 
 std::string
-Version::ReleaseCandidate()
+Version::ClosestAncestorTag (void)
 {
-    return std::string{NS3_VERSION_RELEASE_CANDIDATE};
+  return NS3_VERSION_CLOSEST_TAG;
 }
 
 uint32_t
-Version::TagDistance()
+Version::Major (void)
 {
-    return NS3_VERSION_TAG_DISTANCE;
+  return NS3_VERSION_MAJOR;
+}
+
+uint32_t
+Version::Minor (void)
+{
+  return NS3_VERSION_MINOR;
+}
+
+uint32_t
+Version::Patch (void)
+{
+  return NS3_VERSION_PATCH;
+}
+
+std::string
+Version::ReleaseCandidate (void)
+{
+  return std::string{NS3_VERSION_RELEASE_CANDIDATE};
+}
+
+uint32_t
+Version::TagDistance (void)
+{
+  return NS3_VERSION_TAG_DISTANCE;
 }
 
 bool
-Version::DirtyWorkingTree()
+Version::DirtyWorkingTree (void)
 {
-    return static_cast<bool>(NS3_VERSION_DIRTY_FLAG);
+  return static_cast<bool> (NS3_VERSION_DIRTY_FLAG);
 }
 
 std::string
-Version::CommitHash()
+Version::CommitHash (void)
 {
-    return std::string{NS3_VERSION_COMMIT_HASH};
+  return std::string{NS3_VERSION_COMMIT_HASH};
 }
 
 std::string
-Version::BuildProfile()
+Version::BuildProfile (void)
 {
-    return std::string{NS3_VERSION_BUILD_PROFILE};
+  return std::string{NS3_VERSION_BUILD_PROFILE};
 }
 
 std::string
-Version::ShortVersion()
+Version::ShortVersion (void)
 {
-    std::ostringstream ostream;
-    ostream << VersionTag();
+  std::ostringstream ostream;
+  ostream << VersionTag (); 
 
-    auto ancestorTag = ClosestAncestorTag();
-    if ((!ancestorTag.empty() && (ancestorTag != VersionTag())) || TagDistance() > 0)
+  auto ancestorTag = ClosestAncestorTag ();
+  if ( ( !ancestorTag.empty () && (ancestorTag != VersionTag ()) )
+       || TagDistance () > 0)
     {
-        ostream << "+";
+      ostream << "+";
     }
-    if (DirtyWorkingTree())
+  if (DirtyWorkingTree ())
     {
-        ostream << "*";
+      ostream << "*";
     }
 
-    return ostream.str();
+  return ostream.str ();
 }
 
 std::string
-Version::BuildSummary()
+Version::BuildSummary (void)
 {
-    std::ostringstream ostream;
-    ostream << ClosestAncestorTag();
+  std::ostringstream ostream;
+  ostream << ClosestAncestorTag ();
 
-    if (TagDistance() > 0)
+  if (TagDistance () > 0)
     {
-        ostream << "+";
+      ostream << "+";
     }
-    if (DirtyWorkingTree())
+  if (DirtyWorkingTree ())
     {
-        ostream << "*";
+      ostream << "*";
     }
 
-    return ostream.str();
+  return ostream.str ();
 }
 
 std::string
-Version::LongVersion()
+Version::LongVersion (void)
 {
-    std::ostringstream ostream;
-    ostream << VersionTag();
+  std::ostringstream ostream;
+  ostream << VersionTag (); 
 
-    auto ancestorTag = ClosestAncestorTag();
-    if (!ancestorTag.empty() && (ancestorTag != VersionTag()))
+  auto ancestorTag = ClosestAncestorTag ();
+  if ( !ancestorTag.empty () && (ancestorTag != VersionTag ()) )
     {
-        ostream << '+' << ancestorTag;
+      ostream << '+' << ancestorTag;
     }
 
-    auto tagDistance = TagDistance();
+  auto tagDistance = TagDistance ();
 
-    if (tagDistance > 0)
+  if ( tagDistance > 0 )
     {
-        ostream << '+' << tagDistance;
+      ostream << '+' << tagDistance;
     }
 
-    ostream << '@' << CommitHash();
+  ostream << '@' << CommitHash ();
 
-    if (DirtyWorkingTree())
+  if ( DirtyWorkingTree () )
     {
-        ostream << "-dirty";
+      ostream << "-dirty";
     }
 
-    ostream << '-' << BuildProfile();
+  ostream << '-' << BuildProfile ();
 
-    return ostream.str();
+  return ostream.str ();
 }
 
-} // namespace ns3
+}   // namespace ns3
+

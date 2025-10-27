@@ -30,6 +30,7 @@ build_lib(
     model/dsr-routing.h
     model/dsr-rreq-table.h
     model/dsr-rsendbuff.h
-  LIBRARIES_TO_LINK ${libmesh}
+  LIBRARIES_TO_LINK ${libinternet}
+                    ${libwifi}
   TEST_SOURCES test/dsr-test-suite.cc
 )

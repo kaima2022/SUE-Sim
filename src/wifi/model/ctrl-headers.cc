@@ -1,2368 +1,2096 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2009 MIRKO BANCHI
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Mirko Banchi <mk.banchi@gmail.com>
  */
 
 #include "ctrl-headers.h"
-
 #include "wifi-tx-vector.h"
-#include "wifi-utils.h"
-
-#include "ns3/address-utils.h"
 #include "ns3/he-phy.h"
-
+#include "wifi-utils.h"
+#include "ns3/address-utils.h"
 #include <algorithm>
 
-namespace ns3
-{
+namespace ns3 {
+
 
 /***********************************
  *       Block ack request
  ***********************************/
 
-NS_OBJECT_ENSURE_REGISTERED(CtrlBAckRequestHeader);
+NS_OBJECT_ENSURE_REGISTERED (CtrlBAckRequestHeader);
 
-CtrlBAckRequestHeader::CtrlBAckRequestHeader()
-    : m_barAckPolicy(false),
-      m_barType(BlockAckReqType::BASIC)
+CtrlBAckRequestHeader::CtrlBAckRequestHeader ()
+  : m_barAckPolicy (false),
+    m_barType (BlockAckReqType::BASIC)
 {
 }
 
-CtrlBAckRequestHeader::~CtrlBAckRequestHeader()
+CtrlBAckRequestHeader::~CtrlBAckRequestHeader ()
 {
-}
-
-TypeId
-CtrlBAckRequestHeader::GetTypeId()
-{
-    static TypeId tid = TypeId("ns3::CtrlBAckRequestHeader")
-                            .SetParent<Header>()
-                            .SetGroupName("Wifi")
-                            .AddConstructor<CtrlBAckRequestHeader>();
-    return tid;
 }
 
 TypeId
-CtrlBAckRequestHeader::GetInstanceTypeId() const
+CtrlBAckRequestHeader::GetTypeId (void)
 {
-    return GetTypeId();
+  static TypeId tid = TypeId ("ns3::CtrlBAckRequestHeader")
+    .SetParent<Header> ()
+    .SetGroupName ("Wifi")
+    .AddConstructor<CtrlBAckRequestHeader> ()
+  ;
+  return tid;
+}
+
+TypeId
+CtrlBAckRequestHeader::GetInstanceTypeId (void) const
+{
+  return GetTypeId ();
 }
 
 void
-CtrlBAckRequestHeader::Print(std::ostream& os) const
+CtrlBAckRequestHeader::Print (std::ostream &os) const
 {
-    os << "TID_INFO=" << m_tidInfo << ", StartingSeq=" << std::hex << m_startingSeq << std::dec;
+  os << "TID_INFO=" << m_tidInfo << ", StartingSeq=" << std::hex << m_startingSeq << std::dec;
 }
 
 uint32_t
-CtrlBAckRequestHeader::GetSerializedSize() const
+CtrlBAckRequestHeader::GetSerializedSize () const
 {
-    uint32_t size = 0;
-    size += 2; // Bar control
-    switch (m_barType.m_variant)
+  uint32_t size = 0;
+  size += 2; //Bar control
+  switch (m_barType.m_variant)
     {
-    case BlockAckReqType::BASIC:
-    case BlockAckReqType::COMPRESSED:
-    case BlockAckReqType::EXTENDED_COMPRESSED:
+      case BlockAckReqType::BASIC:
+      case BlockAckReqType::COMPRESSED:
+      case BlockAckReqType::EXTENDED_COMPRESSED:
         size += 2;
         break;
-    case BlockAckReqType::MULTI_TID:
+      case BlockAckReqType::MULTI_TID:
         size += (2 + 2) * (m_tidInfo + 1);
         break;
-    case BlockAckReqType::GCR:
-        size += (2 + 6); // SSC plus GCR Group Address
-        break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
-    return size;
+  return size;
 }
 
 void
-CtrlBAckRequestHeader::Serialize(Buffer::Iterator start) const
+CtrlBAckRequestHeader::Serialize (Buffer::Iterator start) const
 {
-    Buffer::Iterator i = start;
-    i.WriteHtolsbU16(GetBarControl());
-    switch (m_barType.m_variant)
+  Buffer::Iterator i = start;
+  i.WriteHtolsbU16 (GetBarControl ());
+  switch (m_barType.m_variant)
     {
-    case BlockAckReqType::BASIC:
-    case BlockAckReqType::COMPRESSED:
-    case BlockAckReqType::EXTENDED_COMPRESSED:
-        i.WriteHtolsbU16(GetStartingSequenceControl());
+      case BlockAckReqType::BASIC:
+      case BlockAckReqType::COMPRESSED:
+      case BlockAckReqType::EXTENDED_COMPRESSED:
+        i.WriteHtolsbU16 (GetStartingSequenceControl ());
         break;
-    case BlockAckReqType::MULTI_TID:
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
+      case BlockAckReqType::MULTI_TID:
+        NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
         break;
-    case BlockAckReqType::GCR:
-        i.WriteHtolsbU16(GetStartingSequenceControl());
-        WriteTo(i, m_gcrAddress);
-        break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
 }
 
 uint32_t
-CtrlBAckRequestHeader::Deserialize(Buffer::Iterator start)
+CtrlBAckRequestHeader::Deserialize (Buffer::Iterator start)
 {
-    Buffer::Iterator i = start;
-    SetBarControl(i.ReadLsbtohU16());
-    switch (m_barType.m_variant)
+  Buffer::Iterator i = start;
+  SetBarControl (i.ReadLsbtohU16 ());
+  switch (m_barType.m_variant)
     {
-    case BlockAckReqType::BASIC:
-    case BlockAckReqType::COMPRESSED:
-    case BlockAckReqType::EXTENDED_COMPRESSED:
-        SetStartingSequenceControl(i.ReadLsbtohU16());
+      case BlockAckReqType::BASIC:
+      case BlockAckReqType::COMPRESSED:
+      case BlockAckReqType::EXTENDED_COMPRESSED:
+        SetStartingSequenceControl (i.ReadLsbtohU16 ());
         break;
-    case BlockAckReqType::MULTI_TID:
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
+      case BlockAckReqType::MULTI_TID:
+        NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
         break;
-    case BlockAckReqType::GCR:
-        SetStartingSequenceControl(i.ReadLsbtohU16());
-        ReadFrom(i, m_gcrAddress);
-        break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
-    return i.GetDistanceFrom(start);
+  return i.GetDistanceFrom (start);
 }
 
 uint16_t
-CtrlBAckRequestHeader::GetBarControl() const
+CtrlBAckRequestHeader::GetBarControl (void) const
 {
-    uint16_t res = 0;
-    switch (m_barType.m_variant)
+  uint16_t res = 0;
+  switch (m_barType.m_variant)
     {
-    case BlockAckReqType::BASIC:
+      case BlockAckReqType::BASIC:
         break;
-    case BlockAckReqType::COMPRESSED:
+      case BlockAckReqType::COMPRESSED:
         res |= (0x02 << 1);
         break;
-    case BlockAckReqType::EXTENDED_COMPRESSED:
+      case BlockAckReqType::EXTENDED_COMPRESSED:
         res |= (0x01 << 1);
         break;
-    case BlockAckReqType::MULTI_TID:
+      case BlockAckReqType::MULTI_TID:
         res |= (0x03 << 1);
         break;
-    case BlockAckReqType::GCR:
-        res |= (0x06 << 1);
-        break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
-    res |= (m_tidInfo << 12) & (0xf << 12);
-    return res;
+  res |= (m_tidInfo << 12) & (0xf << 12);
+  return res;
 }
 
 void
-CtrlBAckRequestHeader::SetBarControl(uint16_t bar)
+CtrlBAckRequestHeader::SetBarControl (uint16_t bar)
 {
-    m_barAckPolicy = ((bar & 0x01) == 1);
-    if (((bar >> 1) & 0x0f) == 0x06)
+  m_barAckPolicy = ((bar & 0x01) == 1);
+  if (((bar >> 1) & 0x0f) == 0x03)
     {
-        m_barType.m_variant = BlockAckReqType::GCR;
+      m_barType.m_variant = BlockAckReqType::MULTI_TID;
     }
-    else if (((bar >> 1) & 0x0f) == 0x03)
+  else if (((bar >> 1) & 0x0f) == 0x01)
     {
-        m_barType.m_variant = BlockAckReqType::MULTI_TID;
+      m_barType.m_variant = BlockAckReqType::EXTENDED_COMPRESSED;
     }
-    else if (((bar >> 1) & 0x0f) == 0x01)
+  else if (((bar >> 1) & 0x0f) == 0x02)
     {
-        m_barType.m_variant = BlockAckReqType::EXTENDED_COMPRESSED;
+      m_barType.m_variant = BlockAckReqType::COMPRESSED;
     }
-    else if (((bar >> 1) & 0x0f) == 0x02)
+  else
     {
-        m_barType.m_variant = BlockAckReqType::COMPRESSED;
+      m_barType.m_variant = BlockAckReqType::BASIC;
     }
-    else
-    {
-        m_barType.m_variant = BlockAckReqType::BASIC;
-    }
-    m_tidInfo = (bar >> 12) & 0x0f;
+  m_tidInfo = (bar >> 12) & 0x0f;
 }
 
 uint16_t
-CtrlBAckRequestHeader::GetStartingSequenceControl() const
+CtrlBAckRequestHeader::GetStartingSequenceControl (void) const
 {
-    return (m_startingSeq << 4) & 0xfff0;
+  return (m_startingSeq << 4) & 0xfff0;
 }
 
 void
-CtrlBAckRequestHeader::SetStartingSequenceControl(uint16_t seqControl)
+CtrlBAckRequestHeader::SetStartingSequenceControl (uint16_t seqControl)
 {
-    m_startingSeq = (seqControl >> 4) & 0x0fff;
+  m_startingSeq = (seqControl >> 4) & 0x0fff;
 }
 
 void
-CtrlBAckRequestHeader::SetHtImmediateAck(bool immediateAck)
+CtrlBAckRequestHeader::SetHtImmediateAck (bool immediateAck)
 {
-    m_barAckPolicy = immediateAck;
+  m_barAckPolicy = immediateAck;
 }
 
 void
-CtrlBAckRequestHeader::SetType(BlockAckReqType type)
+CtrlBAckRequestHeader::SetType (BlockAckReqType type)
 {
-    m_barType = type;
+  m_barType = type;
 }
 
 BlockAckReqType
-CtrlBAckRequestHeader::GetType() const
+CtrlBAckRequestHeader::GetType (void) const
 {
-    return m_barType;
+  return m_barType;
 }
 
 void
-CtrlBAckRequestHeader::SetTidInfo(uint8_t tid)
+CtrlBAckRequestHeader::SetTidInfo (uint8_t tid)
 {
-    m_tidInfo = static_cast<uint16_t>(tid);
+  m_tidInfo = static_cast<uint16_t> (tid);
 }
 
 void
-CtrlBAckRequestHeader::SetStartingSequence(uint16_t seq)
+CtrlBAckRequestHeader::SetStartingSequence (uint16_t seq)
 {
-    m_startingSeq = seq;
+  m_startingSeq = seq;
 }
 
 bool
-CtrlBAckRequestHeader::MustSendHtImmediateAck() const
+CtrlBAckRequestHeader::MustSendHtImmediateAck (void) const
 {
-    return m_barAckPolicy;
+  return m_barAckPolicy;
 }
 
 uint8_t
-CtrlBAckRequestHeader::GetTidInfo() const
+CtrlBAckRequestHeader::GetTidInfo (void) const
 {
-    auto tid = static_cast<uint8_t>(m_tidInfo);
-    return tid;
+  uint8_t tid = static_cast<uint8_t> (m_tidInfo);
+  return tid;
 }
 
 uint16_t
-CtrlBAckRequestHeader::GetStartingSequence() const
+CtrlBAckRequestHeader::GetStartingSequence (void) const
 {
-    return m_startingSeq;
-}
-
-void
-CtrlBAckRequestHeader::SetGcrGroupAddress(const Mac48Address& address)
-{
-    NS_ASSERT(IsGcr());
-    m_gcrAddress = address;
-}
-
-Mac48Address
-CtrlBAckRequestHeader::GetGcrGroupAddress() const
-{
-    NS_ASSERT(IsGcr());
-    return m_gcrAddress;
+  return m_startingSeq;
 }
 
 bool
-CtrlBAckRequestHeader::IsBasic() const
+CtrlBAckRequestHeader::IsBasic (void) const
 {
-    return m_barType.m_variant == BlockAckReqType::BASIC;
+  return m_barType.m_variant == BlockAckReqType::BASIC;
 }
 
 bool
-CtrlBAckRequestHeader::IsCompressed() const
+CtrlBAckRequestHeader::IsCompressed (void) const
 {
-    return m_barType.m_variant == BlockAckReqType::COMPRESSED;
+  return m_barType.m_variant == BlockAckReqType::COMPRESSED;
 }
 
 bool
-CtrlBAckRequestHeader::IsExtendedCompressed() const
+CtrlBAckRequestHeader::IsExtendedCompressed (void) const
 {
-    return m_barType.m_variant == BlockAckReqType::EXTENDED_COMPRESSED;
+  return m_barType.m_variant == BlockAckReqType::EXTENDED_COMPRESSED;
 }
 
 bool
-CtrlBAckRequestHeader::IsMultiTid() const
+CtrlBAckRequestHeader::IsMultiTid (void) const
 {
-    return m_barType.m_variant == BlockAckReqType::MULTI_TID;
+  return m_barType.m_variant == BlockAckReqType::MULTI_TID;
 }
 
-bool
-CtrlBAckRequestHeader::IsGcr() const
-{
-    return m_barType.m_variant == BlockAckReqType::GCR;
-}
 
 /***********************************
  *       Block ack response
  ***********************************/
 
-NS_OBJECT_ENSURE_REGISTERED(CtrlBAckResponseHeader);
+NS_OBJECT_ENSURE_REGISTERED (CtrlBAckResponseHeader);
 
-CtrlBAckResponseHeader::CtrlBAckResponseHeader()
-    : m_baAckPolicy(false),
-      m_tidInfo(0)
+CtrlBAckResponseHeader::CtrlBAckResponseHeader ()
+  : m_baAckPolicy (false),
+    m_tidInfo (0)
 {
-    SetType(BlockAckType::BASIC);
+  SetType (BlockAckType::BASIC);
 }
 
-CtrlBAckResponseHeader::~CtrlBAckResponseHeader()
+CtrlBAckResponseHeader::~CtrlBAckResponseHeader ()
 {
-}
-
-TypeId
-CtrlBAckResponseHeader::GetTypeId()
-{
-    static TypeId tid = TypeId("ns3::CtrlBAckResponseHeader")
-                            .SetParent<Header>()
-                            .SetGroupName("Wifi")
-                            .AddConstructor<CtrlBAckResponseHeader>();
-    return tid;
 }
 
 TypeId
-CtrlBAckResponseHeader::GetInstanceTypeId() const
+CtrlBAckResponseHeader::GetTypeId (void)
 {
-    return GetTypeId();
+  static TypeId tid = TypeId ("ns3::CtrlBAckResponseHeader")
+    .SetParent<Header> ()
+    .SetGroupName ("Wifi")
+    .AddConstructor<CtrlBAckResponseHeader> ()
+  ;
+  return tid;
+}
+
+TypeId
+CtrlBAckResponseHeader::GetInstanceTypeId (void) const
+{
+  return GetTypeId ();
 }
 
 void
-CtrlBAckResponseHeader::Print(std::ostream& os) const
+CtrlBAckResponseHeader::Print (std::ostream &os) const
 {
-    if (m_baType.m_variant != BlockAckType::MULTI_STA)
+  if (m_baType.m_variant != BlockAckType::MULTI_STA)
     {
-        os << "TID_INFO=" << m_tidInfo << ", StartingSeq=0x" << std::hex
-           << m_baInfo[0].m_startingSeq << std::dec;
+      os << "TID_INFO=" << m_tidInfo << ", StartingSeq=0x" << std::hex << m_baInfo[0].m_startingSeq << std::dec;
     }
-    else
+  else
     {
-        for (std::size_t i = 0; i < m_baInfo.size(); i++)
+      for (std::size_t i = 0; i < m_baInfo.size (); i++)
         {
-            os << "{AID=" << GetAid11(i) << ", TID=" << GetTidInfo(i) << ", StartingSeq=0x"
-               << std::hex << m_baInfo[i].m_startingSeq << std::dec << "}";
+          os << "{AID=" << GetAid11 (i)
+             << ", TID=" << GetTidInfo (i)
+             << ", StartingSeq=0x" << std::hex << m_baInfo[i].m_startingSeq << std::dec << "}";
         }
     }
 }
 
 uint32_t
-CtrlBAckResponseHeader::GetSerializedSize() const
+CtrlBAckResponseHeader::GetSerializedSize (void) const
 {
-    // This method only makes use of the configured BA type, so that functions like
-    // GetBlockAckSize () can easily return the size of a Block Ack of a given type
-    uint32_t size = 0;
-    size += 2; // BA control
-    switch (m_baType.m_variant)
+  // This method only makes use of the configured BA type, so that functions like
+  // GetBlockAckSize () can easily return the size of a Block Ack of a given type
+  uint32_t size = 0;
+  size += 2; //BA control
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
-    case BlockAckType::COMPRESSED:
-    case BlockAckType::EXTENDED_COMPRESSED:
+      case BlockAckType::BASIC:
+      case BlockAckType::COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
         size += (2 + m_baType.m_bitmapLen[0]);
         break;
-    case BlockAckType::MULTI_TID:
-        size += (2 + 2 + 8) * (m_tidInfo + 1); // Multi-TID block ack
+      case BlockAckType::MULTI_TID:
+        size += (2 + 2 + 8) * (m_tidInfo + 1); //Multi-TID block ack
         break;
-    case BlockAckType::GCR:
-        size += (2 + 6 + m_baType.m_bitmapLen[0]);
-        break;
-    case BlockAckType::MULTI_STA:
+      case BlockAckType::MULTI_STA:
         for (auto& bitmapLen : m_baType.m_bitmapLen)
-        {
+          {
             size += 2 /* AID TID Info */ + (bitmapLen > 0 ? 2 : 0) /* BA SSC */ + bitmapLen;
-        }
+          }
         break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
-    return size;
+  return size;
 }
 
 void
-CtrlBAckResponseHeader::Serialize(Buffer::Iterator start) const
+CtrlBAckResponseHeader::Serialize (Buffer::Iterator start) const
 {
-    Buffer::Iterator i = start;
-    i.WriteHtolsbU16(GetBaControl());
-    switch (m_baType.m_variant)
+  Buffer::Iterator i = start;
+  i.WriteHtolsbU16 (GetBaControl ());
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
-    case BlockAckType::COMPRESSED:
-    case BlockAckType::EXTENDED_COMPRESSED:
-        i.WriteHtolsbU16(GetStartingSequenceControl());
-        i = SerializeBitmap(i);
+      case BlockAckType::BASIC:
+      case BlockAckType::COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
+        i.WriteHtolsbU16 (GetStartingSequenceControl ());
+        i = SerializeBitmap (i);
         break;
-    case BlockAckType::GCR:
-        i.WriteHtolsbU16(GetStartingSequenceControl());
-        WriteTo(i, m_baInfo[0].m_address);
-        i = SerializeBitmap(i);
-        break;
-    case BlockAckType::MULTI_STA:
-        for (std::size_t index = 0; index < m_baInfo.size(); index++)
-        {
-            i.WriteHtolsbU16(m_baInfo[index].m_aidTidInfo);
-            if (GetAid11(index) != 2045)
-            {
-                if (!m_baInfo[index].m_bitmap.empty())
-                {
-                    i.WriteHtolsbU16(GetStartingSequenceControl(index));
-                    i = SerializeBitmap(i, index);
-                }
-            }
+      case BlockAckType::MULTI_STA:
+        for (std::size_t index = 0; index < m_baInfo.size (); index++)
+          {
+            i.WriteHtolsbU16 (m_baInfo[index].m_aidTidInfo);
+            if (GetAid11 (index) != 2045)
+              {
+                if (m_baInfo[index].m_bitmap.size () > 0)
+                  {
+                    i.WriteHtolsbU16 (GetStartingSequenceControl (index));
+                    i = SerializeBitmap (i, index);
+                  }
+              }
             else
-            {
+              {
                 uint32_t reserved = 0;
-                i.WriteHtolsbU32(reserved);
-                WriteTo(i, m_baInfo[index].m_address);
-            }
-        }
+                i.WriteHtolsbU32 (reserved);
+                WriteTo (i, m_baInfo[index].m_ra);
+              }
+          }
         break;
-    case BlockAckType::MULTI_TID:
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
+      case BlockAckType::MULTI_TID:
+        NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
         break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
 }
 
 uint32_t
-CtrlBAckResponseHeader::Deserialize(Buffer::Iterator start)
+CtrlBAckResponseHeader::Deserialize (Buffer::Iterator start)
 {
-    Buffer::Iterator i = start;
-    SetBaControl(i.ReadLsbtohU16());
-    switch (m_baType.m_variant)
+  Buffer::Iterator i = start;
+  SetBaControl (i.ReadLsbtohU16 ());
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
-    case BlockAckType::COMPRESSED:
-    case BlockAckType::EXTENDED_COMPRESSED:
-        SetStartingSequenceControl(i.ReadLsbtohU16());
-        i = DeserializeBitmap(i);
+      case BlockAckType::BASIC:
+      case BlockAckType::COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
+        SetStartingSequenceControl (i.ReadLsbtohU16 ());
+        i = DeserializeBitmap (i);
         break;
-    case BlockAckType::GCR:
-        SetStartingSequenceControl(i.ReadLsbtohU16());
-        ReadFrom(i, m_baInfo[0].m_address);
-        i = DeserializeBitmap(i);
-        break;
-    case BlockAckType::MULTI_STA: {
-        std::size_t index = 0;
-        while (i.GetRemainingSize() > 0)
+      case BlockAckType::MULTI_STA:
         {
-            m_baInfo.emplace_back();
-            m_baType.m_bitmapLen.push_back(0); // updated by next call to SetStartingSequenceControl
-
-            m_baInfo.back().m_aidTidInfo = i.ReadLsbtohU16();
-
-            if (GetAid11(index) != 2045)
+          std::size_t index = 0;
+          while (i.GetRemainingSize () > 0)
             {
-                // the Block Ack Starting Sequence Control and Block Ack Bitmap subfields
-                // are only present in Block acknowledgement context, i.e., if the Ack Type
-                // subfield is set to 0 and the TID subfield is set to a value from 0 to 7.
-                if (!GetAckType(index) && GetTidInfo(index) < 8)
+              m_baInfo.push_back (BaInfoInstance ());
+              m_baType.m_bitmapLen.push_back (0);  // updated by next call to SetStartingSequenceControl
+
+              m_baInfo.back ().m_aidTidInfo = i.ReadLsbtohU16 ();
+
+              if (GetAid11 (index) != 2045)
                 {
-                    SetStartingSequenceControl(i.ReadLsbtohU16(), index);
-                    i = DeserializeBitmap(i, index);
+                  // the Block Ack Starting Sequence Control and Block Ack Bitmap subfields
+                  // are only present in Block acknowledgement context, i.e., if the Ack Type
+                  // subfield is set to 0 and the TID subfield is set to a value from 0 to 7.
+                  if (!GetAckType (index) && GetTidInfo (index) < 8)
+                    {
+                      SetStartingSequenceControl (i.ReadLsbtohU16 (), index);
+                      i = DeserializeBitmap (i, index);
+                    }
                 }
+              else
+                {
+                  i.ReadLsbtohU32 ();  // next 4 bytes are reserved
+                  ReadFrom (i, m_baInfo.back ().m_ra);
+                  // the length of this Per AID TID Info subfield is 12, so set
+                  // the bitmap length to 8 to simulate the correct size
+                  m_baType.m_bitmapLen.back () = 8;
+                }
+              index++;
             }
-            else
-            {
-                i.ReadLsbtohU32(); // next 4 bytes are reserved
-                ReadFrom(i, m_baInfo.back().m_address);
-                // the length of this Per AID TID Info subfield is 12, so set
-                // the bitmap length to 8 to simulate the correct size
-                m_baType.m_bitmapLen.back() = 8;
-            }
-            index++;
         }
-    }
-    break;
-    case BlockAckType::MULTI_TID:
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
         break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      case BlockAckType::MULTI_TID:
+        NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
+        break;
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
-    return i.GetDistanceFrom(start);
+  return i.GetDistanceFrom (start);
 }
 
 void
-CtrlBAckResponseHeader::SetHtImmediateAck(bool immediateAck)
+CtrlBAckResponseHeader::SetHtImmediateAck (bool immediateAck)
 {
-    m_baAckPolicy = immediateAck;
+  m_baAckPolicy = immediateAck;
 }
 
 void
-CtrlBAckResponseHeader::SetType(BlockAckType type)
+CtrlBAckResponseHeader::SetType (BlockAckType type)
 {
-    m_baType = type;
-    m_baInfo.clear();
+  m_baType = type;
+  m_baInfo.clear ();
 
-    for (auto& bitmapLen : m_baType.m_bitmapLen)
+  for (auto& bitmapLen : m_baType.m_bitmapLen)
     {
-        BaInfoInstance baInfoInstance{.m_aidTidInfo = 0,
-                                      .m_startingSeq = 0,
-                                      .m_bitmap = std::vector<uint8_t>(bitmapLen, 0),
-                                      .m_address = Mac48Address()};
-
-        m_baInfo.emplace_back(baInfoInstance);
+      m_baInfo.push_back ({.m_aidTidInfo = 0,
+                           .m_startingSeq = 0,
+                           .m_bitmap = std::vector<uint8_t> (bitmapLen, 0),
+                           .m_ra = Mac48Address ()});
     }
 }
 
 BlockAckType
-CtrlBAckResponseHeader::GetType() const
+CtrlBAckResponseHeader::GetType (void) const
 {
-    return m_baType;
+  return m_baType;
 }
 
 void
-CtrlBAckResponseHeader::SetTidInfo(uint8_t tid, std::size_t index)
+CtrlBAckResponseHeader::SetTidInfo (uint8_t tid, std::size_t index)
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    if (m_baType.m_variant != BlockAckType::MULTI_STA)
+  if (m_baType.m_variant != BlockAckType::MULTI_STA)
     {
-        m_tidInfo = static_cast<uint16_t>(tid);
+      m_tidInfo = static_cast<uint16_t> (tid);
     }
-    else
+  else
     {
-        m_baInfo[index].m_aidTidInfo |= ((static_cast<uint16_t>(tid) & 0x000f) << 12);
+      m_baInfo[index].m_aidTidInfo |= ((static_cast<uint16_t> (tid) & 0x000f) << 12);
     }
 }
 
 void
-CtrlBAckResponseHeader::SetStartingSequence(uint16_t seq, std::size_t index)
+CtrlBAckResponseHeader::SetStartingSequence (uint16_t seq, std::size_t index)
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    m_baInfo[index].m_startingSeq = seq;
+  m_baInfo[index].m_startingSeq = seq;
 }
 
 bool
-CtrlBAckResponseHeader::MustSendHtImmediateAck() const
+CtrlBAckResponseHeader::MustSendHtImmediateAck (void) const
 {
-    return m_baAckPolicy;
+  return m_baAckPolicy;
 }
 
 uint8_t
-CtrlBAckResponseHeader::GetTidInfo(std::size_t index) const
+CtrlBAckResponseHeader::GetTidInfo (std::size_t index) const
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    uint8_t tid = 0;
+  uint8_t tid = 0;
 
-    if (m_baType.m_variant != BlockAckType::MULTI_STA)
+  if (m_baType.m_variant != BlockAckType::MULTI_STA)
     {
-        tid = static_cast<uint8_t>(m_tidInfo);
+      tid = static_cast<uint8_t> (m_tidInfo);
     }
-    else
+  else
     {
-        tid = static_cast<uint8_t>((m_baInfo[index].m_aidTidInfo >> 12) & 0x000f);
+      tid = static_cast<uint8_t> ((m_baInfo[index].m_aidTidInfo >> 12) & 0x000f);
     }
-    return tid;
+  return tid;
 }
 
 uint16_t
-CtrlBAckResponseHeader::GetStartingSequence(std::size_t index) const
+CtrlBAckResponseHeader::GetStartingSequence (std::size_t index) const
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    return m_baInfo[index].m_startingSeq;
+  return m_baInfo[index].m_startingSeq;
 }
 
 bool
-CtrlBAckResponseHeader::IsBasic() const
+CtrlBAckResponseHeader::IsBasic (void) const
 {
-    return m_baType.m_variant == BlockAckType::BASIC;
+  return m_baType.m_variant == BlockAckType::BASIC;
 }
 
 bool
-CtrlBAckResponseHeader::IsCompressed() const
+CtrlBAckResponseHeader::IsCompressed (void) const
 {
-    return m_baType.m_variant == BlockAckType::COMPRESSED;
+  return m_baType.m_variant == BlockAckType::COMPRESSED;
 }
 
 bool
-CtrlBAckResponseHeader::IsExtendedCompressed() const
+CtrlBAckResponseHeader::IsExtendedCompressed (void) const
 {
-    return m_baType.m_variant == BlockAckType::EXTENDED_COMPRESSED;
+  return m_baType.m_variant == BlockAckType::EXTENDED_COMPRESSED;
 }
 
 bool
-CtrlBAckResponseHeader::IsMultiTid() const
+CtrlBAckResponseHeader::IsMultiTid (void) const
 {
-    return m_baType.m_variant == BlockAckType::MULTI_TID;
+  return m_baType.m_variant == BlockAckType::MULTI_TID;
 }
 
 bool
-CtrlBAckResponseHeader::IsMultiSta() const
+CtrlBAckResponseHeader::IsMultiSta (void) const
 {
-    return m_baType.m_variant == BlockAckType::MULTI_STA;
-}
-
-bool
-CtrlBAckResponseHeader::IsGcr() const
-{
-    return m_baType.m_variant == BlockAckType::GCR;
+  return m_baType.m_variant == BlockAckType::MULTI_STA;
 }
 
 void
-CtrlBAckResponseHeader::SetAid11(uint16_t aid, std::size_t index)
+CtrlBAckResponseHeader::SetAid11 (uint16_t aid, std::size_t index)
 {
-    NS_ASSERT(m_baType.m_variant == BlockAckType::MULTI_STA && index < m_baInfo.size());
+  NS_ASSERT (m_baType.m_variant == BlockAckType::MULTI_STA && index < m_baInfo.size ());
 
-    m_baInfo[index].m_aidTidInfo |= (aid & 0x07ff);
+  m_baInfo[index].m_aidTidInfo |= (aid & 0x07ff);
 }
 
 uint16_t
-CtrlBAckResponseHeader::GetAid11(std::size_t index) const
+CtrlBAckResponseHeader::GetAid11 (std::size_t index) const
 {
-    NS_ASSERT(m_baType.m_variant == BlockAckType::MULTI_STA && index < m_baInfo.size());
+  NS_ASSERT (m_baType.m_variant == BlockAckType::MULTI_STA && index < m_baInfo.size ());
 
-    return m_baInfo[index].m_aidTidInfo & 0x07ff;
+  return m_baInfo[index].m_aidTidInfo & 0x07ff;
 }
 
 void
-CtrlBAckResponseHeader::SetAckType(bool type, std::size_t index)
+CtrlBAckResponseHeader::SetAckType (bool type, std::size_t index)
 {
-    NS_ASSERT(m_baType.m_variant == BlockAckType::MULTI_STA && index < m_baInfo.size());
+  NS_ASSERT (m_baType.m_variant == BlockAckType::MULTI_STA && index < m_baInfo.size ());
 
-    if (type)
+  if (type)
     {
-        m_baInfo[index].m_aidTidInfo |= (1 << 11);
+      m_baInfo[index].m_aidTidInfo |= (1 << 11);
     }
 }
 
 bool
-CtrlBAckResponseHeader::GetAckType(std::size_t index) const
+CtrlBAckResponseHeader::GetAckType (std::size_t index) const
 {
-    NS_ASSERT(m_baType.m_variant == BlockAckType::MULTI_STA && index < m_baInfo.size());
+  NS_ASSERT (m_baType.m_variant == BlockAckType::MULTI_STA && index < m_baInfo.size ());
 
-    return ((m_baInfo[index].m_aidTidInfo >> 11) & 0x0001) != 0;
+  return ((m_baInfo[index].m_aidTidInfo >> 11) & 0x0001) != 0;
 }
 
 void
-CtrlBAckResponseHeader::SetUnassociatedStaAddress(const Mac48Address& ra, std::size_t index)
+CtrlBAckResponseHeader::SetUnassociatedStaAddress (const Mac48Address& ra, std::size_t index)
 {
-    NS_ASSERT(GetAid11(index) == 2045);
+  NS_ASSERT (GetAid11 (index) == 2045);
 
-    m_baInfo[index].m_address = ra;
+  m_baInfo[index].m_ra = ra;
 }
 
 Mac48Address
-CtrlBAckResponseHeader::GetUnassociatedStaAddress(std::size_t index) const
+CtrlBAckResponseHeader::GetUnassociatedStaAddress (std::size_t index) const
 {
-    NS_ASSERT(GetAid11(index) == 2045);
+  NS_ASSERT (GetAid11 (index) == 2045);
 
-    return m_baInfo[index].m_address;
+  return m_baInfo[index].m_ra;
 }
 
 std::size_t
-CtrlBAckResponseHeader::GetNPerAidTidInfoSubfields() const
+CtrlBAckResponseHeader::GetNPerAidTidInfoSubfields (void) const
 {
-    NS_ASSERT(m_baType.m_variant == BlockAckType::MULTI_STA);
-    return m_baInfo.size();
+  NS_ASSERT (m_baType.m_variant == BlockAckType::MULTI_STA);
+  return m_baInfo.size ();
 }
 
 std::vector<uint32_t>
-CtrlBAckResponseHeader::FindPerAidTidInfoWithAid(uint16_t aid) const
+CtrlBAckResponseHeader::FindPerAidTidInfoWithAid (uint16_t aid) const
 {
-    NS_ASSERT(m_baType.m_variant == BlockAckType::MULTI_STA);
+  NS_ASSERT (m_baType.m_variant == BlockAckType::MULTI_STA);
 
-    std::vector<uint32_t> ret;
-    ret.reserve(m_baInfo.size());
-    for (uint32_t i = 0; i < m_baInfo.size(); i++)
+  std::vector<uint32_t> ret;
+  ret.reserve (m_baInfo.size ());
+  for (uint32_t i = 0; i < m_baInfo.size (); i++)
     {
-        if (GetAid11(i) == aid)
+      if (GetAid11 (i) == aid)
         {
-            ret.push_back(i);
+          ret.push_back (i);
         }
     }
-    return ret;
-}
-
-void
-CtrlBAckResponseHeader::SetGcrGroupAddress(const Mac48Address& address)
-{
-    NS_ASSERT(IsGcr());
-    m_baInfo[0].m_address = address;
-}
-
-Mac48Address
-CtrlBAckResponseHeader::GetGcrGroupAddress() const
-{
-    NS_ASSERT(IsGcr());
-    return m_baInfo[0].m_address;
+  return ret;
 }
 
 uint16_t
-CtrlBAckResponseHeader::GetBaControl() const
+CtrlBAckResponseHeader::GetBaControl (void) const
 {
-    uint16_t res = 0;
-    if (m_baAckPolicy)
+  uint16_t res = 0;
+  if (m_baAckPolicy)
     {
-        res |= 0x1;
+      res |= 0x1;
     }
-    switch (m_baType.m_variant)
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
+      case BlockAckType::BASIC:
         break;
-    case BlockAckType::COMPRESSED:
+      case BlockAckType::COMPRESSED:
         res |= (0x02 << 1);
         break;
-    case BlockAckType::EXTENDED_COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
         res |= (0x01 << 1);
         break;
-    case BlockAckType::MULTI_TID:
+      case BlockAckType::MULTI_TID:
         res |= (0x03 << 1);
         break;
-    case BlockAckType::GCR:
-        res |= (0x06 << 1);
-        break;
-    case BlockAckType::MULTI_STA:
+      case BlockAckType::MULTI_STA:
         res |= (0x0b << 1);
         break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
-    if (m_baType.m_variant != BlockAckType::MULTI_STA)
+  if (m_baType.m_variant != BlockAckType::MULTI_STA)
     {
-        res |= (m_tidInfo << 12) & (0xf << 12);
+      res |= (m_tidInfo << 12) & (0xf << 12);
     }
-    return res;
+  return res;
 }
 
 void
-CtrlBAckResponseHeader::SetBaControl(uint16_t ba)
+CtrlBAckResponseHeader::SetBaControl (uint16_t ba)
 {
-    m_baAckPolicy = ((ba & 0x01) == 1);
-    if (((ba >> 1) & 0x0f) == 0x06)
+  m_baAckPolicy = ((ba & 0x01) == 1);
+  if (((ba >> 1) & 0x0f) == 0x03)
     {
-        SetType(BlockAckType::GCR);
+      SetType (BlockAckType::MULTI_TID);
     }
-    else if (((ba >> 1) & 0x0f) == 0x03)
+  else if (((ba >> 1) & 0x0f) == 0x01)
     {
-        SetType(BlockAckType::MULTI_TID);
+      SetType (BlockAckType::EXTENDED_COMPRESSED);
     }
-    else if (((ba >> 1) & 0x0f) == 0x01)
+  else if (((ba >> 1) & 0x0f) == 0x02)
     {
-        SetType(BlockAckType::EXTENDED_COMPRESSED);
+      SetType (BlockAckType::COMPRESSED);
     }
-    else if (((ba >> 1) & 0x0f) == 0x02)
+  else if (((ba >> 1) & 0x0f) == 0)
     {
-        SetType(BlockAckType::COMPRESSED);
+      SetType (BlockAckType::BASIC);
     }
-    else if (((ba >> 1) & 0x0f) == 0)
+  else if (((ba >> 1) & 0x0f) == 0x0b)
     {
-        SetType(BlockAckType::BASIC);
+      SetType (BlockAckType::MULTI_STA);
     }
-    else if (((ba >> 1) & 0x0f) == 0x0b)
+  else
     {
-        SetType(BlockAckType::MULTI_STA);
+      NS_FATAL_ERROR ("Invalid BA type");
     }
-    else
+  if (m_baType.m_variant != BlockAckType::MULTI_STA)
     {
-        NS_FATAL_ERROR("Invalid BA type");
-    }
-    if (m_baType.m_variant != BlockAckType::MULTI_STA)
-    {
-        m_tidInfo = (ba >> 12) & 0x0f;
+      m_tidInfo = (ba >> 12) & 0x0f;
     }
 }
 
 uint16_t
-CtrlBAckResponseHeader::GetStartingSequenceControl(std::size_t index) const
+CtrlBAckResponseHeader::GetStartingSequenceControl (std::size_t index) const
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    uint16_t ret = (m_baInfo[index].m_startingSeq << 4) & 0xfff0;
+  uint16_t ret = (m_baInfo[index].m_startingSeq << 4) & 0xfff0;
 
-    // The Fragment Number subfield encodes the length of the bitmap for Compressed and Multi-STA
-    // variants (see sections 9.3.1.8.2 and 9.3.1.8.7 of 802.11ax-2021 and 802.11be Draft 4.0).
-    // Note that Fragmentation Level 3 is not supported.
-    if (m_baType.m_variant == BlockAckType::COMPRESSED || m_baType.m_variant == BlockAckType::GCR)
+  // The Fragment Number subfield encodes the length of the bitmap for
+  // Compressed and Multi-STA variants (see sections 9.3.1.9.3 and 9.3.1.9.7
+  // of 802.11ax Draft 3.0). Note that Fragmentation Level 3 is not supported.
+  if (m_baType.m_variant == BlockAckType::COMPRESSED)
     {
-        switch (m_baType.m_bitmapLen[0])
+      if (m_baType.m_bitmapLen[0] == 32)
         {
-        case 8:
-            // do nothing
-            break;
-        case 32:
-            ret |= 0x0004;
-            break;
-        case 64:
-            ret |= 0x0008;
-            break;
-        case 128:
-            ret |= 0x000a;
-            break;
-        default:
-            NS_ABORT_MSG("Unsupported bitmap length: " << +m_baType.m_bitmapLen[0] << " bytes");
+          ret |= 0x0004;
         }
     }
-    else if (m_baType.m_variant == BlockAckType::MULTI_STA)
+  else if (m_baType.m_variant == BlockAckType::MULTI_STA)
     {
-        NS_ASSERT(m_baInfo.size() == m_baType.m_bitmapLen.size());
-        NS_ASSERT_MSG(!m_baInfo[index].m_bitmap.empty(),
-                      "This Per AID TID Info subfield has no Starting Sequence Control subfield");
+      NS_ASSERT (m_baInfo.size () == m_baType.m_bitmapLen.size ());
+      NS_ASSERT_MSG (m_baInfo[index].m_bitmap.size () > 0,
+                     "This Per AID TID Info subfield has no Starting Sequence Control subfield");
 
-        switch (m_baType.m_bitmapLen[index])
+      if (m_baType.m_bitmapLen[index] == 16)
         {
-        case 8:
-            // do nothing
-            break;
-        case 16:
-            ret |= 0x0002;
-            break;
-        case 32:
-            ret |= 0x0004;
-            break;
-        case 4:
-            ret |= 0x0006;
-            break;
-        case 64:
-            ret |= 0x0008;
-            break;
-        case 128:
-            ret |= 0x000a;
-            break;
-        default:
-            NS_ABORT_MSG("Unsupported bitmap length: " << +m_baType.m_bitmapLen[index] << " bytes");
+          ret |= 0x0002;
+        }
+      else if (m_baType.m_bitmapLen[index] == 32)
+        {
+          ret |= 0x0004;
+        }
+      else if (m_baType.m_bitmapLen[index] == 4)
+        {
+          ret |= 0x0006;
         }
     }
-    return ret;
+  return ret;
 }
 
 void
-CtrlBAckResponseHeader::SetStartingSequenceControl(uint16_t seqControl, std::size_t index)
+CtrlBAckResponseHeader::SetStartingSequenceControl (uint16_t seqControl, std::size_t index)
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    // The Fragment Number subfield encodes the length of the bitmap for Compressed and Multi-STA
-    // variants (see sections 9.3.1.8.2 and 9.3.1.8.7 of 802.11ax-2021 and 802.11be Draft 4.0).
-    // Note that Fragmentation Level 3 is not supported.
-    if (m_baType.m_variant == BlockAckType::COMPRESSED || m_baType.m_variant == BlockAckType::GCR)
+  // The Fragment Number subfield encodes the length of the bitmap for
+  // Compressed and Multi-STA variants (see sections 9.3.1.9.3 and 9.3.1.9.7
+  // of 802.11ax Draft 3.0). Note that Fragmentation Level 3 is not supported.
+  if (m_baType.m_variant == BlockAckType::COMPRESSED)
     {
-        uint16_t fragNumber = seqControl & 0x000f;
-
-        if ((fragNumber & 0x0001) == 1)
+      if ((seqControl & 0x0001) == 1)
         {
-            NS_FATAL_ERROR("Fragmentation Level 3 unsupported");
+          NS_FATAL_ERROR ("Fragmentation Level 3 unsupported");
         }
-        switch (fragNumber)
+      if (((seqControl >> 3) & 0x0001) == 0 && ((seqControl >> 1) & 0x0003) == 0)
         {
-        case 0:
-            SetType({m_baType.m_variant, {8}});
-            break;
-        case 4:
-            SetType({m_baType.m_variant, {32}});
-            break;
-        case 8:
-            SetType({m_baType.m_variant, {64}});
-            break;
-        case 10:
-            SetType({m_baType.m_variant, {128}});
-            break;
-        default:
-            NS_ABORT_MSG("Unsupported fragment number: " << fragNumber);
+          SetType ({BlockAckType::COMPRESSED, {8}});
+        }
+      else if (((seqControl >> 3) & 0x0001) == 0 && ((seqControl >> 1) & 0x0003) == 2)
+        {
+          SetType ({BlockAckType::COMPRESSED, {32}});
+        }
+      else
+        {
+          NS_FATAL_ERROR ("Reserved configurations");
         }
     }
-    else if (m_baType.m_variant == BlockAckType::MULTI_STA)
+  else if (m_baType.m_variant == BlockAckType::MULTI_STA)
     {
-        uint16_t fragNumber = seqControl & 0x000f;
-
-        if ((fragNumber & 0x0001) == 1)
+      if ((seqControl & 0x0001) == 1)
         {
-            NS_FATAL_ERROR("Fragmentation Level 3 unsupported");
+          NS_FATAL_ERROR ("Fragmentation Level 3 unsupported");
         }
-        uint8_t bitmapLen = 0;
-        switch (fragNumber)
+      uint8_t bitmapLen = 0;
+      if (((seqControl >> 3) & 0x0001) == 0 && ((seqControl >> 1) & 0x0003) == 0)
         {
-        case 0:
-            bitmapLen = 8;
-            break;
-        case 2:
-            bitmapLen = 16;
-            break;
-        case 4:
-            bitmapLen = 32;
-            break;
-        case 6:
-            bitmapLen = 4;
-            break;
-        case 8:
-            bitmapLen = 64;
-            break;
-        case 10:
-            bitmapLen = 128;
-            break;
-        default:
-            NS_ABORT_MSG("Unsupported fragment number: " << fragNumber);
+          bitmapLen = 8;
         }
-        m_baType.m_bitmapLen[index] = bitmapLen;
-        m_baInfo[index].m_bitmap.assign(bitmapLen, 0);
+      else if (((seqControl >> 3) & 0x0001) == 0 && ((seqControl >> 1) & 0x0003) == 1)
+        {
+          bitmapLen = 16;
+        }
+      else if (((seqControl >> 3) & 0x0001) == 0 && ((seqControl >> 1) & 0x0003) == 2)
+        {
+          bitmapLen = 32;
+        }
+      else if (((seqControl >> 3) & 0x0001) == 0 && ((seqControl >> 1) & 0x0003) == 3)
+        {
+          bitmapLen = 4;
+        }
+      else
+        {
+          NS_FATAL_ERROR ("Reserved configurations");
+        }
+      m_baType.m_bitmapLen[index] = bitmapLen;
+      m_baInfo[index].m_bitmap.assign (bitmapLen, 0);
     }
 
-    m_baInfo[index].m_startingSeq = (seqControl >> 4) & 0x0fff;
+  m_baInfo[index].m_startingSeq = (seqControl >> 4) & 0x0fff;
 }
 
 Buffer::Iterator
-CtrlBAckResponseHeader::SerializeBitmap(Buffer::Iterator start, std::size_t index) const
+CtrlBAckResponseHeader::SerializeBitmap (Buffer::Iterator start, std::size_t index) const
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    Buffer::Iterator i = start;
-    switch (m_baType.m_variant)
+  Buffer::Iterator i = start;
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
-    case BlockAckType::COMPRESSED:
-    case BlockAckType::EXTENDED_COMPRESSED:
-    case BlockAckType::GCR:
-    case BlockAckType::MULTI_STA:
-        for (const auto& byte : m_baInfo[index].m_bitmap)
-        {
-            i.WriteU8(byte);
-        }
+      case BlockAckType::BASIC:
+      case BlockAckType::COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
+      case BlockAckType::MULTI_STA:
+          for (const auto& byte : m_baInfo[index].m_bitmap)
+            {
+              i.WriteU8 (byte);
+            }
+          break;
+      case BlockAckType::MULTI_TID:
+        NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
         break;
-    case BlockAckType::MULTI_TID:
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
-        break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
-    return i;
+  return i;
 }
 
 Buffer::Iterator
-CtrlBAckResponseHeader::DeserializeBitmap(Buffer::Iterator start, std::size_t index)
+CtrlBAckResponseHeader::DeserializeBitmap (Buffer::Iterator start, std::size_t index)
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    Buffer::Iterator i = start;
-    switch (m_baType.m_variant)
+  Buffer::Iterator i = start;
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
-    case BlockAckType::COMPRESSED:
-    case BlockAckType::EXTENDED_COMPRESSED:
-    case BlockAckType::GCR:
-    case BlockAckType::MULTI_STA:
-        for (uint8_t j = 0; j < m_baType.m_bitmapLen[index]; j++)
-        {
-            m_baInfo[index].m_bitmap[j] = i.ReadU8();
-        }
+      case BlockAckType::BASIC:
+      case BlockAckType::COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
+      case BlockAckType::MULTI_STA:
+          for (uint8_t j = 0; j < m_baType.m_bitmapLen[index]; j++)
+            {
+              m_baInfo[index].m_bitmap[j] = i.ReadU8 ();
+            }
+          break;
+      case BlockAckType::MULTI_TID:
+        NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
         break;
-    case BlockAckType::MULTI_TID:
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
-        break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
-    return i;
+  return i;
 }
 
 void
-CtrlBAckResponseHeader::SetReceivedPacket(uint16_t seq, std::size_t index)
+CtrlBAckResponseHeader::SetReceivedPacket (uint16_t seq, std::size_t index)
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    if (!IsInBitmap(seq, index))
+  if (!IsInBitmap (seq, index))
     {
-        return;
+      return;
     }
-    switch (m_baType.m_variant)
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
+      case BlockAckType::BASIC:
         /* To set correctly basic block ack bitmap we need fragment number too.
             So if it's not specified, we consider packet not fragmented. */
-        m_baInfo[index].m_bitmap[IndexInBitmap(seq) * 2] |= 0x01;
+        m_baInfo[index].m_bitmap[IndexInBitmap (seq) * 2] |= 0x01;
         break;
-    case BlockAckType::COMPRESSED:
-    case BlockAckType::EXTENDED_COMPRESSED:
-    case BlockAckType::GCR:
-    case BlockAckType::MULTI_STA: {
-        uint16_t i = IndexInBitmap(seq, index);
-        m_baInfo[index].m_bitmap[i / 8] |= (uint8_t(0x01) << (i % 8));
+      case BlockAckType::COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
+      case BlockAckType::MULTI_STA:
+        {
+          uint16_t i = IndexInBitmap (seq, index);
+          m_baInfo[index].m_bitmap[i / 8] |= (uint8_t (0x01) << (i % 8));
+          break;
+        }
+      case BlockAckType::MULTI_TID:
+        NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
         break;
-    }
-    case BlockAckType::MULTI_TID:
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
-        break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
 }
 
 void
-CtrlBAckResponseHeader::SetReceivedFragment(uint16_t seq, uint8_t frag)
+CtrlBAckResponseHeader::SetReceivedFragment (uint16_t seq, uint8_t frag)
 {
-    NS_ASSERT(frag < 16);
-    if (!IsInBitmap(seq))
+  NS_ASSERT (frag < 16);
+  if (!IsInBitmap (seq))
     {
-        return;
+      return;
     }
-    switch (m_baType.m_variant)
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
-        m_baInfo[0].m_bitmap[IndexInBitmap(seq) * 2 + frag / 8] |= (0x01 << (frag % 8));
+      case BlockAckType::BASIC:
+        m_baInfo[0].m_bitmap[IndexInBitmap (seq) * 2 + frag / 8] |= (0x01 << (frag % 8));
         break;
-    case BlockAckType::COMPRESSED:
-    case BlockAckType::EXTENDED_COMPRESSED:
-    case BlockAckType::GCR:
-    case BlockAckType::MULTI_STA:
+      case BlockAckType::COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
+      case BlockAckType::MULTI_STA:
         /* We can ignore this...compressed block ack doesn't support
            acknowledgment of single fragments */
         break;
-    case BlockAckType::MULTI_TID:
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
+      case BlockAckType::MULTI_TID:
+        NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
         break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
 }
 
 bool
-CtrlBAckResponseHeader::IsPacketReceived(uint16_t seq, std::size_t index) const
+CtrlBAckResponseHeader::IsPacketReceived (uint16_t seq, std::size_t index) const
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    if (m_baType.m_variant == BlockAckType::MULTI_STA && GetAckType(index) &&
-        GetTidInfo(index) == 14)
+  if (m_baType.m_variant == BlockAckType::MULTI_STA
+      && GetAckType (index) && GetTidInfo (index) == 14)
     {
-        // All-ack context
-        return true;
+      // All-ack context
+      return true;
     }
-    if (!IsInBitmap(seq, index))
+  if (!IsInBitmap (seq, index))
     {
-        return false;
+      return false;
     }
-    switch (m_baType.m_variant)
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
+      case BlockAckType::BASIC:
         /*It's impossible to say if an entire packet was correctly received. */
         return false;
-    case BlockAckType::COMPRESSED:
-    case BlockAckType::EXTENDED_COMPRESSED:
-    case BlockAckType::GCR:
-    case BlockAckType::MULTI_STA: {
-        uint16_t i = IndexInBitmap(seq, index);
-        uint8_t mask = uint8_t(0x01) << (i % 8);
-        return (m_baInfo[index].m_bitmap[i / 8] & mask) != 0;
-    }
-    case BlockAckType::MULTI_TID:
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
+      case BlockAckType::COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
+      case BlockAckType::MULTI_STA:
+        {
+          uint16_t i = IndexInBitmap (seq, index);
+          uint8_t mask = uint8_t (0x01) << (i % 8);
+          return (m_baInfo[index].m_bitmap[i / 8] & mask) != 0;
+        }
+      case BlockAckType::MULTI_TID:
+        NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
         break;
-    default:
-        NS_FATAL_ERROR("Invalid BA type");
+      default:
+        NS_FATAL_ERROR ("Invalid BA type");
         break;
     }
-    return false;
+  return false;
 }
 
 bool
-CtrlBAckResponseHeader::IsFragmentReceived(uint16_t seq, uint8_t frag) const
+CtrlBAckResponseHeader::IsFragmentReceived (uint16_t seq, uint8_t frag) const
 {
-    NS_ASSERT(frag < 16);
-    if (!IsInBitmap(seq))
+  NS_ASSERT (frag < 16);
+  if (!IsInBitmap (seq))
     {
-        return false;
+      return false;
     }
-    switch (m_baType.m_variant)
+  switch (m_baType.m_variant)
     {
-    case BlockAckType::BASIC:
-        return (m_baInfo[0].m_bitmap[IndexInBitmap(seq) * 2 + frag / 8] & (0x01 << (frag % 8))) !=
-               0;
-    case BlockAckType::COMPRESSED:
-    case BlockAckType::EXTENDED_COMPRESSED:
-    case BlockAckType::GCR:
-    case BlockAckType::MULTI_STA:
+      case BlockAckType::BASIC:
+        return (m_baInfo[0].m_bitmap[IndexInBitmap (seq) * 2 + frag / 8] & (0x01 << (frag % 8))) != 0;
+      case BlockAckType::COMPRESSED:
+      case BlockAckType::EXTENDED_COMPRESSED:
+      case BlockAckType::MULTI_STA:
         /* We can ignore this...compressed block ack doesn't support
            acknowledgement of single fragments */
         return false;
-    case BlockAckType::MULTI_TID: {
-        NS_FATAL_ERROR("Multi-tid block ack is not supported.");
-        break;
+      case BlockAckType::MULTI_TID:
+        {
+          NS_FATAL_ERROR ("Multi-tid block ack is not supported.");
+          break;
+        }
+      default:
+        {
+          NS_FATAL_ERROR ("Invalid BA type");
+          break;
+        }
     }
-    default: {
-        NS_FATAL_ERROR("Invalid BA type");
-        break;
-    }
-    }
-    return false;
+  return false;
 }
 
 uint16_t
-CtrlBAckResponseHeader::IndexInBitmap(uint16_t seq, std::size_t index) const
+CtrlBAckResponseHeader::IndexInBitmap (uint16_t seq, std::size_t index) const
 {
-    uint16_t i;
-    if (seq >= m_baInfo[index].m_startingSeq)
+  uint16_t i;
+  if (seq >= m_baInfo[index].m_startingSeq)
     {
-        i = seq - m_baInfo[index].m_startingSeq;
+      i = seq - m_baInfo[index].m_startingSeq;
     }
-    else
+  else
     {
-        i = SEQNO_SPACE_SIZE - m_baInfo[index].m_startingSeq + seq;
-    }
-
-    uint16_t nAckedMpdus = m_baType.m_bitmapLen[index] * 8;
-
-    if (m_baType.m_variant == BlockAckType::BASIC)
-    {
-        nAckedMpdus = nAckedMpdus / 16;
+      i = SEQNO_SPACE_SIZE - m_baInfo[index].m_startingSeq + seq;
     }
 
-    NS_ASSERT(i < nAckedMpdus);
-    return i;
+  uint16_t nAckedMpdus = m_baType.m_bitmapLen[index] * 8;
+
+  if (m_baType.m_variant == BlockAckType::BASIC)
+    {
+      nAckedMpdus = nAckedMpdus / 16;
+    }
+
+  NS_ASSERT (i < nAckedMpdus);
+  return i;
 }
 
 bool
-CtrlBAckResponseHeader::IsInBitmap(uint16_t seq, std::size_t index) const
+CtrlBAckResponseHeader::IsInBitmap (uint16_t seq, std::size_t index) const
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baType.m_bitmapLen.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baType.m_bitmapLen.size ());
 
-    uint16_t nAckedMpdus = m_baType.m_bitmapLen[index] * 8;
+  uint16_t nAckedMpdus = m_baType.m_bitmapLen[index] * 8;
 
-    if (m_baType.m_variant == BlockAckType::BASIC)
+  if (m_baType.m_variant == BlockAckType::BASIC)
     {
-        nAckedMpdus = nAckedMpdus / 16;
+      nAckedMpdus = nAckedMpdus / 16;
     }
 
-    return (seq - m_baInfo[index].m_startingSeq + SEQNO_SPACE_SIZE) % SEQNO_SPACE_SIZE <
-           nAckedMpdus;
+  return (seq - m_baInfo[index].m_startingSeq + SEQNO_SPACE_SIZE) % SEQNO_SPACE_SIZE < nAckedMpdus;
 }
 
 const std::vector<uint8_t>&
-CtrlBAckResponseHeader::GetBitmap(std::size_t index) const
+CtrlBAckResponseHeader::GetBitmap (std::size_t index) const
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    return m_baInfo[index].m_bitmap;
+  return m_baInfo[index].m_bitmap;
 }
 
 void
-CtrlBAckResponseHeader::ResetBitmap(std::size_t index)
+CtrlBAckResponseHeader::ResetBitmap (std::size_t index)
 {
-    NS_ASSERT_MSG(m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
-                  "index can only be non null for Multi-STA Block Ack");
-    NS_ASSERT(index < m_baInfo.size());
+  NS_ASSERT_MSG (m_baType.m_variant == BlockAckType::MULTI_STA || index == 0,
+                 "index can only be non null for Multi-STA Block Ack");
+  NS_ASSERT (index < m_baInfo.size ());
 
-    m_baInfo[index].m_bitmap.assign(m_baType.m_bitmapLen[index], 0);
+  m_baInfo[index].m_bitmap.assign (m_baType.m_bitmapLen[index], 0);
 }
+
 
 /***********************************
  * Trigger frame - User Info field
  ***********************************/
 
-CtrlTriggerUserInfoField::CtrlTriggerUserInfoField(TriggerFrameType triggerType,
-                                                   TriggerFrameVariant variant)
-    : m_variant(variant),
-      m_aid12(0),
-      m_ruAllocation(0),
-      m_ulFecCodingType(false),
-      m_ulMcs(0),
-      m_ulDcm(false),
-      m_ps160(true),
-      m_ulTargetRssi(0),
-      m_triggerType(triggerType),
-      m_basicTriggerDependentUserInfo(0)
+CtrlTriggerUserInfoField::CtrlTriggerUserInfoField (uint8_t triggerType)
+  : m_aid12 (0),
+    m_ruAllocation (0),
+    m_ulFecCodingType (false),
+    m_ulMcs (0),
+    m_ulDcm (false),
+    m_ulTargetRssi (0),
+    m_triggerType (triggerType),
+    m_basicTriggerDependentUserInfo (0)
 {
-    memset(&m_bits26To31, 0, sizeof(m_bits26To31));
+  memset (&m_bits26To31, 0, sizeof (m_bits26To31));
 }
 
-CtrlTriggerUserInfoField::~CtrlTriggerUserInfoField()
+CtrlTriggerUserInfoField::~CtrlTriggerUserInfoField ()
 {
 }
 
 CtrlTriggerUserInfoField&
-CtrlTriggerUserInfoField::operator=(const CtrlTriggerUserInfoField& userInfo)
+CtrlTriggerUserInfoField::operator= (const CtrlTriggerUserInfoField& userInfo)
 {
-    NS_ABORT_MSG_IF(m_triggerType != userInfo.m_triggerType, "Trigger Frame type mismatch");
+  NS_ABORT_MSG_IF (m_triggerType != userInfo.m_triggerType, "Trigger Frame type mismatch");
 
-    // check for self-assignment
-    if (&userInfo == this)
+  // check for self-assignment
+  if (&userInfo == this)
     {
-        return *this;
+      return *this;
     }
 
-    m_variant = userInfo.m_variant;
-    m_aid12 = userInfo.m_aid12;
-    m_ruAllocation = userInfo.m_ruAllocation;
-    m_ulFecCodingType = userInfo.m_ulFecCodingType;
-    m_ulMcs = userInfo.m_ulMcs;
-    m_ulDcm = userInfo.m_ulDcm;
-    m_ps160 = userInfo.m_ps160;
-    m_bits26To31 = userInfo.m_bits26To31;
-    m_ulTargetRssi = userInfo.m_ulTargetRssi;
-    m_basicTriggerDependentUserInfo = userInfo.m_basicTriggerDependentUserInfo;
-    m_muBarTriggerDependentUserInfo = userInfo.m_muBarTriggerDependentUserInfo;
-    return *this;
+  m_aid12 = userInfo.m_aid12;
+  m_ruAllocation = userInfo.m_ruAllocation;
+  m_ulFecCodingType = userInfo.m_ulFecCodingType;
+  m_ulMcs = userInfo.m_ulMcs;
+  m_ulDcm = userInfo.m_ulDcm;
+  m_bits26To31 = userInfo.m_bits26To31;
+  m_ulTargetRssi = userInfo.m_ulTargetRssi;
+  m_basicTriggerDependentUserInfo = userInfo.m_basicTriggerDependentUserInfo;
+  m_muBarTriggerDependentUserInfo = userInfo.m_muBarTriggerDependentUserInfo;
+  return *this;
 }
 
 void
-CtrlTriggerUserInfoField::Print(std::ostream& os) const
+CtrlTriggerUserInfoField::Print (std::ostream &os) const
 {
-    os << ", USER_INFO " << (m_variant == TriggerFrameVariant::HE ? "HE" : "EHT")
-       << " variant AID=" << m_aid12 << ", RU_Allocation=" << +m_ruAllocation
-       << ", MCS=" << +m_ulMcs;
+  os << ", USER_INFO AID=" << m_aid12 << ", RU_Allocation=" << +m_ruAllocation << ", MCS=" << +m_ulMcs;
 }
 
 uint32_t
-CtrlTriggerUserInfoField::GetSerializedSize() const
+CtrlTriggerUserInfoField::GetSerializedSize (void) const
 {
-    uint32_t size = 0;
-    size += 5; // User Info (excluding Trigger Dependent User Info)
+  uint32_t size = 0;
+  size += 5;   // User Info (excluding Trigger Dependent User Info)
 
-    switch (m_triggerType)
+  switch (m_triggerType)
     {
-    case TriggerFrameType::BASIC_TRIGGER:
-    case TriggerFrameType::BFRP_TRIGGER:
+      case BASIC_TRIGGER:
+      case BFRP_TRIGGER:
         size += 1;
         break;
-    case TriggerFrameType::MU_BAR_TRIGGER:
-        size +=
-            m_muBarTriggerDependentUserInfo.GetSerializedSize(); // BAR Control and BAR Information
+      case MU_BAR_TRIGGER:
+        size += m_muBarTriggerDependentUserInfo.GetSerializedSize (); // BAR Control and BAR Information
         break;
-    default:;
-        // The Trigger Dependent User Info subfield is not present in the other variants
+      // The Trigger Dependent User Info subfield is not present in the other variants
     }
 
-    return size;
+  return size;
 }
 
 Buffer::Iterator
-CtrlTriggerUserInfoField::Serialize(Buffer::Iterator start) const
+CtrlTriggerUserInfoField::Serialize (Buffer::Iterator start) const
 {
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::BFRP_TRIGGER,
-                    "BFRP Trigger frame is not supported");
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::GCR_MU_BAR_TRIGGER,
-                    "GCR-MU-BAR Trigger frame is not supported");
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::NFRP_TRIGGER,
-                    "NFRP Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == BFRP_TRIGGER, "BFRP Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == GCR_MU_BAR_TRIGGER, "GCR-MU-BAR Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == NFRP_TRIGGER, "NFRP Trigger frame is not supported");
 
-    Buffer::Iterator i = start;
+  Buffer::Iterator i = start;
 
-    uint32_t userInfo = 0; // User Info except the MSB
-    userInfo |= (m_aid12 & 0x0fff);
-    userInfo |= (m_ruAllocation << 12);
-    userInfo |= (m_ulFecCodingType ? 1 << 20 : 0);
-    userInfo |= (m_ulMcs & 0x0f) << 21;
-    if (m_variant == TriggerFrameVariant::HE)
+  uint32_t userInfo = 0;   // User Info except the MSB
+  userInfo |= (m_aid12 & 0x0fff);
+  userInfo |= (m_ruAllocation << 12);
+  userInfo |= (m_ulFecCodingType ? 1 << 20 : 0);
+  userInfo |= (m_ulMcs & 0x0f) << 21;
+  userInfo |= (m_ulDcm ? 1 << 25 : 0);
+
+  if (m_aid12 != 0 && m_aid12 != 2045)
     {
-        userInfo |= (m_ulDcm ? 1 << 25 : 0);
+      userInfo |= (m_bits26To31.ssAllocation.startingSs & 0x07) << 26;
+      userInfo |= (m_bits26To31.ssAllocation.nSs & 0x07) << 29;
+    }
+  else
+    {
+      userInfo |= (m_bits26To31.raRuInformation.nRaRu & 0x1f) << 26;
+      userInfo |= (m_bits26To31.raRuInformation.moreRaRu ? 1 << 31 : 0);
     }
 
-    if (m_aid12 != 0 && m_aid12 != 2045)
+  i.WriteHtolsbU32 (userInfo);
+  // Here we need to write 8 bits covering the UL Target RSSI (7 bits) and the
+  // Reserved bit. Given how m_ulTargetRssi is set, writing m_ulTargetRssi
+  // leads to setting the Reserved bit to zero
+  i.WriteU8 (m_ulTargetRssi);
+
+  if (m_triggerType == BASIC_TRIGGER)
     {
-        userInfo |= (m_bits26To31.ssAllocation.startingSs & 0x07) << 26;
-        userInfo |= (m_bits26To31.ssAllocation.nSs & 0x07) << 29;
+      i.WriteU8 (m_basicTriggerDependentUserInfo);
     }
-    else
+  else if (m_triggerType == MU_BAR_TRIGGER)
     {
-        userInfo |= (m_bits26To31.raRuInformation.nRaRu & 0x1f) << 26;
-        userInfo |= (m_bits26To31.raRuInformation.moreRaRu ? 1 << 31 : 0);
+      m_muBarTriggerDependentUserInfo.Serialize (i);
+      i.Next (m_muBarTriggerDependentUserInfo.GetSerializedSize ());
     }
 
-    i.WriteHtolsbU32(userInfo);
-    // Here we need to write 8 bits covering the UL Target RSSI (7 bits) and B39, which is
-    // reserved in the HE variant and the PS160 subfield in the EHT variant.
-    uint8_t bit32To39 = m_ulTargetRssi;
-    if (m_variant == TriggerFrameVariant::EHT)
-    {
-        bit32To39 |= (m_ps160 ? 1 << 7 : 0);
-    }
-
-    i.WriteU8(bit32To39);
-
-    if (m_triggerType == TriggerFrameType::BASIC_TRIGGER)
-    {
-        i.WriteU8(m_basicTriggerDependentUserInfo);
-    }
-    else if (m_triggerType == TriggerFrameType::MU_BAR_TRIGGER)
-    {
-        m_muBarTriggerDependentUserInfo.Serialize(i);
-        i.Next(m_muBarTriggerDependentUserInfo.GetSerializedSize());
-    }
-
-    return i;
+  return i;
 }
 
 Buffer::Iterator
-CtrlTriggerUserInfoField::Deserialize(Buffer::Iterator start)
+CtrlTriggerUserInfoField::Deserialize (Buffer::Iterator start)
 {
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::BFRP_TRIGGER,
-                    "BFRP Trigger frame is not supported");
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::GCR_MU_BAR_TRIGGER,
-                    "GCR-MU-BAR Trigger frame is not supported");
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::NFRP_TRIGGER,
-                    "NFRP Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == BFRP_TRIGGER, "BFRP Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == GCR_MU_BAR_TRIGGER, "GCR-MU-BAR Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == NFRP_TRIGGER, "NFRP Trigger frame is not supported");
 
-    Buffer::Iterator i = start;
+  Buffer::Iterator i = start;
 
-    uint32_t userInfo = i.ReadLsbtohU32();
+  uint32_t userInfo = i.ReadLsbtohU32 ();
 
-    m_aid12 = userInfo & 0x0fff;
-    NS_ABORT_MSG_IF(m_aid12 == 4095, "Cannot deserialize a Padding field");
-    m_ruAllocation = (userInfo >> 12) & 0xff;
-    m_ulFecCodingType = (userInfo >> 20) & 0x01;
-    m_ulMcs = (userInfo >> 21) & 0x0f;
-    if (m_variant == TriggerFrameVariant::HE)
+  m_aid12 = userInfo & 0x0fff;
+  NS_ABORT_MSG_IF (m_aid12 == 4095, "Cannot deserialize a Padding field");
+  m_ruAllocation = (userInfo >> 12) & 0xff;
+  m_ulFecCodingType = (userInfo >> 20) & 0x01;
+  m_ulMcs = (userInfo >> 21) & 0x0f;
+  m_ulDcm = (userInfo >> 25) & 0x01;
+
+  if (m_aid12 != 0 && m_aid12 != 2045)
     {
-        m_ulDcm = (userInfo >> 25) & 0x01;
+      m_bits26To31.ssAllocation.startingSs = (userInfo >> 26) & 0x07;
+      m_bits26To31.ssAllocation.nSs = (userInfo >> 29) & 0x07;
+    }
+  else
+    {
+      m_bits26To31.raRuInformation.nRaRu = (userInfo >> 26) & 0x1f;
+      m_bits26To31.raRuInformation.moreRaRu = (userInfo >> 31) & 0x01;
     }
 
-    if (m_aid12 != 0 && m_aid12 != 2045)
+  m_ulTargetRssi = i.ReadU8 () & 0x7f;  // B39 is reserved
+
+  if (m_triggerType == BASIC_TRIGGER)
     {
-        m_bits26To31.ssAllocation.startingSs = (userInfo >> 26) & 0x07;
-        m_bits26To31.ssAllocation.nSs = (userInfo >> 29) & 0x07;
+      m_basicTriggerDependentUserInfo= i.ReadU8 ();
     }
-    else
+  else if (m_triggerType == MU_BAR_TRIGGER)
     {
-        m_bits26To31.raRuInformation.nRaRu = (userInfo >> 26) & 0x1f;
-        m_bits26To31.raRuInformation.moreRaRu = (userInfo >> 31) & 0x01;
+      uint32_t len = m_muBarTriggerDependentUserInfo.Deserialize (i);
+      i.Next (len);
     }
 
-    uint8_t bit32To39 = i.ReadU8();
-    m_ulTargetRssi = bit32To39 & 0x7f; // B39 is reserved in HE variant
-    if (m_variant == TriggerFrameVariant::EHT)
-    {
-        m_ps160 = (bit32To39 >> 7) == 1;
-    }
-
-    if (m_triggerType == TriggerFrameType::BASIC_TRIGGER)
-    {
-        m_basicTriggerDependentUserInfo = i.ReadU8();
-    }
-    else if (m_triggerType == TriggerFrameType::MU_BAR_TRIGGER)
-    {
-        uint32_t len = m_muBarTriggerDependentUserInfo.Deserialize(i);
-        i.Next(len);
-    }
-
-    return i;
+  return i;
 }
 
 TriggerFrameType
-CtrlTriggerUserInfoField::GetType() const
+CtrlTriggerUserInfoField::GetType (void) const
 {
-    return m_triggerType;
-}
-
-WifiPreamble
-CtrlTriggerUserInfoField::GetPreambleType() const
-{
-    switch (m_variant)
-    {
-    case TriggerFrameVariant::HE:
-        return WIFI_PREAMBLE_HE_TB;
-    case TriggerFrameVariant::EHT:
-        return WIFI_PREAMBLE_EHT_TB;
-    default:
-        NS_ABORT_MSG("Unexpected variant: " << +static_cast<uint8_t>(m_variant));
-    }
-    return WIFI_PREAMBLE_LONG; // to silence warning
+  return static_cast<TriggerFrameType> (m_triggerType);
 }
 
 void
-CtrlTriggerUserInfoField::SetAid12(uint16_t aid)
+CtrlTriggerUserInfoField::SetAid12 (uint16_t aid)
 {
-    m_aid12 = aid & 0x0fff;
+  m_aid12 = aid & 0x0fff;
 }
 
 uint16_t
-CtrlTriggerUserInfoField::GetAid12() const
+CtrlTriggerUserInfoField::GetAid12 (void) const
 {
-    return m_aid12;
+  return m_aid12;
 }
 
 bool
-CtrlTriggerUserInfoField::HasRaRuForAssociatedSta() const
+CtrlTriggerUserInfoField::HasRaRuForAssociatedSta (void) const
 {
-    return (m_aid12 == 0);
+  return (m_aid12 == 0);
 }
 
 bool
-CtrlTriggerUserInfoField::HasRaRuForUnassociatedSta() const
+CtrlTriggerUserInfoField::HasRaRuForUnassociatedSta (void) const
 {
-    return (m_aid12 == 2045);
+  return (m_aid12 == 2045);
 }
 
 void
-CtrlTriggerUserInfoField::SetRuAllocation(HeRu::RuSpec ru)
+CtrlTriggerUserInfoField::SetRuAllocation (HeRu::RuSpec ru)
 {
-    NS_ABORT_MSG_IF(ru.GetIndex() == 0, "Valid indices start at 1");
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::MU_RTS_TRIGGER,
-                    "SetMuRtsRuAllocation() must be used for MU-RTS");
+  NS_ABORT_MSG_IF (ru.GetIndex () == 0, "Valid indices start at 1");
 
-    switch (ru.GetRuType())
+  switch (ru.GetRuType ())
     {
     case HeRu::RU_26_TONE:
-        m_ruAllocation = ru.GetIndex() - 1;
-        break;
+      m_ruAllocation = ru.GetIndex () - 1;
+      break;
     case HeRu::RU_52_TONE:
-        m_ruAllocation = ru.GetIndex() + 36;
-        break;
+      m_ruAllocation = ru.GetIndex () + 36;
+      break;
     case HeRu::RU_106_TONE:
-        m_ruAllocation = ru.GetIndex() + 52;
-        break;
+      m_ruAllocation = ru.GetIndex () + 52;
+      break;
     case HeRu::RU_242_TONE:
-        m_ruAllocation = ru.GetIndex() + 60;
-        break;
+      m_ruAllocation = ru.GetIndex () + 60;
+      break;
     case HeRu::RU_484_TONE:
-        m_ruAllocation = ru.GetIndex() + 64;
-        break;
+      m_ruAllocation = ru.GetIndex () + 64;
+      break;
     case HeRu::RU_996_TONE:
-        m_ruAllocation = 67;
-        break;
+      m_ruAllocation = 67;
+      break;
     case HeRu::RU_2x996_TONE:
-        m_ruAllocation = 68;
-        break;
+      m_ruAllocation = 68;
+      break;
     default:
-        NS_FATAL_ERROR("RU type unknown.");
-        break;
+      NS_FATAL_ERROR ("RU type unknown.");
+      break;
     }
 
-    NS_ABORT_MSG_IF(m_ruAllocation > 68, "Reserved value.");
+  NS_ABORT_MSG_IF (m_ruAllocation > 68, "Reserved value.");
 
-    m_ruAllocation <<= 1;
-    if (!ru.GetPrimary80MHz())
+  m_ruAllocation <<= 1;
+  if (!ru.GetPrimary80MHz ())
     {
-        m_ruAllocation++;
+      m_ruAllocation++;
     }
 }
 
 HeRu::RuSpec
-CtrlTriggerUserInfoField::GetRuAllocation() const
+CtrlTriggerUserInfoField::GetRuAllocation (void) const
 {
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::MU_RTS_TRIGGER,
-                    "GetMuRtsRuAllocation() must be used for MU-RTS");
+  HeRu::RuType ruType;
+  std::size_t index;
 
-    HeRu::RuType ruType;
-    std::size_t index;
+  bool primary80MHz = ((m_ruAllocation & 0x01) == 0);
 
-    bool primary80MHz = ((m_ruAllocation & 0x01) == 0);
+  uint8_t val = m_ruAllocation >> 1;
 
-    uint8_t val = m_ruAllocation >> 1;
-
-    if (val < 37)
+  if (val < 37)
     {
-        ruType = HeRu::RU_26_TONE;
-        index = val + 1;
+      ruType = HeRu::RU_26_TONE;
+      index = val + 1;
     }
-    else if (val < 53)
+  else if (val < 53)
     {
-        ruType = HeRu::RU_52_TONE;
-        index = val - 36;
+      ruType = HeRu::RU_52_TONE;
+      index = val - 36;
     }
-    else if (val < 61)
+  else if (val < 61)
     {
-        ruType = HeRu::RU_106_TONE;
-        index = val - 52;
+      ruType = HeRu::RU_106_TONE;
+      index = val - 52;
     }
-    else if (val < 65)
+  else if (val < 65)
     {
-        ruType = HeRu::RU_242_TONE;
-        index = val - 60;
+      ruType = HeRu::RU_242_TONE;
+      index = val - 60;
     }
-    else if (val < 67)
+  else if (val < 67)
     {
-        ruType = HeRu::RU_484_TONE;
-        index = val - 64;
+      ruType = HeRu::RU_484_TONE;
+      index = val - 64;
     }
-    else if (val == 67)
+  else if (val == 67)
     {
-        ruType = HeRu::RU_996_TONE;
-        index = 1;
+      ruType = HeRu::RU_996_TONE;
+      index = 1;
     }
-    else if (val == 68)
+  else if (val == 68)
     {
-        ruType = HeRu::RU_2x996_TONE;
-        index = 1;
+      ruType = HeRu::RU_2x996_TONE;
+      index = 1;
     }
-    else
+  else
     {
-        NS_FATAL_ERROR("Reserved value.");
+      NS_FATAL_ERROR ("Reserved value.");
     }
 
-    return HeRu::RuSpec(ruType, index, primary80MHz);
+  return HeRu::RuSpec (ruType, index, primary80MHz);
 }
 
 void
-CtrlTriggerUserInfoField::SetMuRtsRuAllocation(uint8_t value)
+CtrlTriggerUserInfoField::SetUlFecCodingType (bool ldpc)
 {
-    NS_ABORT_MSG_IF(m_triggerType != TriggerFrameType::MU_RTS_TRIGGER,
-                    "SetMuRtsRuAllocation() can only be used for MU-RTS");
-    NS_ABORT_MSG_IF(
-        value < 61 || value > 68,
-        "Value "
-            << +value
-            << " is not admitted for B7-B1 of the RU Allocation subfield of MU-RTS Trigger Frames");
-
-    m_ruAllocation = (value << 1);
-    if (value == 68)
-    {
-        // set B0 for 160 MHz and 80+80 MHz indication
-        m_ruAllocation++;
-    }
-}
-
-uint8_t
-CtrlTriggerUserInfoField::GetMuRtsRuAllocation() const
-{
-    NS_ABORT_MSG_IF(m_triggerType != TriggerFrameType::MU_RTS_TRIGGER,
-                    "GetMuRtsRuAllocation() can only be used for MU-RTS");
-    uint8_t value = (m_ruAllocation >> 1);
-    NS_ABORT_MSG_IF(
-        value < 61 || value > 68,
-        "Value "
-            << +value
-            << " is not admitted for B7-B1 of the RU Allocation subfield of MU-RTS Trigger Frames");
-    return value;
-}
-
-void
-CtrlTriggerUserInfoField::SetUlFecCodingType(bool ldpc)
-{
-    m_ulFecCodingType = ldpc;
+  m_ulFecCodingType = ldpc;
 }
 
 bool
-CtrlTriggerUserInfoField::GetUlFecCodingType() const
+CtrlTriggerUserInfoField::GetUlFecCodingType (void) const
 {
-    return m_ulFecCodingType;
+  return m_ulFecCodingType;
 }
 
 void
-CtrlTriggerUserInfoField::SetUlMcs(uint8_t mcs)
+CtrlTriggerUserInfoField::SetUlMcs (uint8_t mcs)
 {
-    uint8_t maxMcs = m_variant == TriggerFrameVariant::EHT ? 13 : 11;
-    NS_ABORT_MSG_IF(mcs > maxMcs, "Invalid MCS index");
-    m_ulMcs = mcs;
+  NS_ABORT_MSG_IF (mcs > 11, "Invalid MCS index");
+  m_ulMcs = mcs;
 }
 
 uint8_t
-CtrlTriggerUserInfoField::GetUlMcs() const
+CtrlTriggerUserInfoField::GetUlMcs (void) const
 {
-    return m_ulMcs;
+  return m_ulMcs;
 }
 
 void
-CtrlTriggerUserInfoField::SetUlDcm(bool dcm)
+CtrlTriggerUserInfoField::SetUlDcm (bool dcm)
 {
-    NS_ASSERT_MSG(m_variant == TriggerFrameVariant::HE, "UL DCM flag only present in HE variant");
-    m_ulDcm = dcm;
+  m_ulDcm = dcm;
 }
 
 bool
-CtrlTriggerUserInfoField::GetUlDcm() const
+CtrlTriggerUserInfoField::GetUlDcm (void) const
 {
-    NS_ASSERT_MSG(m_variant == TriggerFrameVariant::HE, "UL DCM flag only present in HE variant");
-    return m_ulDcm;
+  return m_ulDcm;
 }
 
 void
-CtrlTriggerUserInfoField::SetSsAllocation(uint8_t startingSs, uint8_t nSs)
+CtrlTriggerUserInfoField::SetSsAllocation (uint8_t startingSs, uint8_t nSs)
 {
-    NS_ABORT_MSG_IF(m_aid12 == 0 || m_aid12 == 2045, "SS Allocation subfield not present");
-    NS_ABORT_MSG_IF(!startingSs || startingSs > 8, "Starting SS must be from 1 to 8");
-    NS_ABORT_MSG_IF(!nSs || nSs > 8, "Number of SS must be from 1 to 8");
+  NS_ABORT_MSG_IF (m_aid12 == 0 || m_aid12 == 2045, "SS Allocation subfield not present");
+  NS_ABORT_MSG_IF (!startingSs || startingSs > 8, "Starting SS must be from 1 to 8");
+  NS_ABORT_MSG_IF (!nSs || nSs > 8, "Number of SS must be from 1 to 8");
 
-    m_bits26To31.ssAllocation.startingSs = startingSs - 1;
-    m_bits26To31.ssAllocation.nSs = nSs - 1;
+  m_bits26To31.ssAllocation.startingSs = startingSs - 1;
+  m_bits26To31.ssAllocation.nSs = nSs - 1;
 }
 
 uint8_t
-CtrlTriggerUserInfoField::GetStartingSs() const
+CtrlTriggerUserInfoField::GetStartingSs (void) const
 {
-    if (m_aid12 == 0 || m_aid12 == 2045)
+  if (m_aid12 == 0 || m_aid12 == 2045)
     {
-        return 1;
+      return 1;
     }
-    return m_bits26To31.ssAllocation.startingSs + 1;
+  return m_bits26To31.ssAllocation.startingSs + 1;
 }
 
 uint8_t
-CtrlTriggerUserInfoField::GetNss() const
+CtrlTriggerUserInfoField::GetNss (void) const
 {
-    if (m_aid12 == 0 || m_aid12 == 2045)
+  if (m_aid12 == 0 || m_aid12 == 2045)
     {
-        return 1;
+      return 1;
     }
-    return m_bits26To31.ssAllocation.nSs + 1;
+  return m_bits26To31.ssAllocation.nSs + 1;
 }
 
 void
-CtrlTriggerUserInfoField::SetRaRuInformation(uint8_t nRaRu, bool moreRaRu)
+CtrlTriggerUserInfoField::SetRaRuInformation (uint8_t nRaRu, bool moreRaRu)
 {
-    NS_ABORT_MSG_IF(m_aid12 != 0 && m_aid12 != 2045, "RA-RU Information subfield not present");
-    NS_ABORT_MSG_IF(!nRaRu || nRaRu > 32, "Number of contiguous RA-RUs must be from 1 to 32");
+  NS_ABORT_MSG_IF (m_aid12 != 0 && m_aid12 != 2045, "RA-RU Information subfield not present");
+  NS_ABORT_MSG_IF (!nRaRu || nRaRu > 32, "Number of contiguous RA-RUs must be from 1 to 32");
 
-    m_bits26To31.raRuInformation.nRaRu = nRaRu - 1;
-    m_bits26To31.raRuInformation.moreRaRu = moreRaRu;
+  m_bits26To31.raRuInformation.nRaRu = nRaRu - 1;
+  m_bits26To31.raRuInformation.moreRaRu = moreRaRu;
 }
 
 uint8_t
-CtrlTriggerUserInfoField::GetNRaRus() const
+CtrlTriggerUserInfoField::GetNRaRus (void) const
 {
-    NS_ABORT_MSG_IF(m_aid12 != 0 && m_aid12 != 2045, "RA-RU Information subfield not present");
+  NS_ABORT_MSG_IF (m_aid12 != 0 && m_aid12 != 2045, "RA-RU Information subfield not present");
 
-    return m_bits26To31.raRuInformation.nRaRu + 1;
+  return m_bits26To31.raRuInformation.nRaRu + 1;
 }
 
 bool
-CtrlTriggerUserInfoField::GetMoreRaRu() const
+CtrlTriggerUserInfoField::GetMoreRaRu (void) const
 {
-    NS_ABORT_MSG_IF(m_aid12 != 0 && m_aid12 != 2045, "RA-RU Information subfield not present");
+  NS_ABORT_MSG_IF (m_aid12 != 0 && m_aid12 != 2045, "RA-RU Information subfield not present");
 
-    return m_bits26To31.raRuInformation.moreRaRu;
+  return m_bits26To31.raRuInformation.moreRaRu;
 }
 
 void
-CtrlTriggerUserInfoField::SetUlTargetRssiMaxTxPower()
+CtrlTriggerUserInfoField::SetUlTargetRssiMaxTxPower (void)
 {
-    m_ulTargetRssi = 127; // see Table 9-25i of 802.11ax amendment D3.0
+  m_ulTargetRssi = 127;  // see Table 9-25i of 802.11ax amendment D3.0
 }
 
 void
-CtrlTriggerUserInfoField::SetUlTargetRssi(int8_t dBm)
+CtrlTriggerUserInfoField::SetUlTargetRssi (int8_t dBm)
 {
-    NS_ABORT_MSG_IF(dBm < -110 || dBm > -20, "Invalid values for signal power");
+  NS_ABORT_MSG_IF (dBm < -110 || dBm > -20, "Invalid values for signal power");
 
-    m_ulTargetRssi = static_cast<uint8_t>(110 + dBm);
+  m_ulTargetRssi = static_cast<uint8_t> (110 + dBm);
 }
 
 bool
-CtrlTriggerUserInfoField::IsUlTargetRssiMaxTxPower() const
+CtrlTriggerUserInfoField::IsUlTargetRssiMaxTxPower (void) const
 {
-    return (m_ulTargetRssi == 127);
+  return (m_ulTargetRssi == 127);
 }
 
 int8_t
-CtrlTriggerUserInfoField::GetUlTargetRssi() const
+CtrlTriggerUserInfoField::GetUlTargetRssi (void) const
 {
-    NS_ABORT_MSG_IF(m_ulTargetRssi == 127, "STA must use its max TX power");
+  NS_ABORT_MSG_IF (m_ulTargetRssi == 127, "STA must use its max TX power");
 
-    return static_cast<int8_t>(m_ulTargetRssi) - 110;
+  return static_cast<int8_t> (m_ulTargetRssi) - 110;
 }
 
 void
-CtrlTriggerUserInfoField::SetBasicTriggerDepUserInfo(uint8_t spacingFactor,
-                                                     uint8_t tidLimit,
-                                                     AcIndex prefAc)
+CtrlTriggerUserInfoField::SetBasicTriggerDepUserInfo (uint8_t spacingFactor, uint8_t tidLimit, AcIndex prefAc)
 {
-    NS_ABORT_MSG_IF(m_triggerType != TriggerFrameType::BASIC_TRIGGER, "Not a Basic Trigger Frame");
+  NS_ABORT_MSG_IF (m_triggerType != BASIC_TRIGGER, "Not a Basic Trigger Frame");
 
-    m_basicTriggerDependentUserInfo = (spacingFactor & 0x03) |
-                                      (tidLimit & 0x07) << 2
-                                      // B5 is reserved
-                                      | (prefAc & 0x03) << 6;
+  m_basicTriggerDependentUserInfo = (spacingFactor & 0x03)
+                                     | (tidLimit & 0x07) << 2
+                                     // B5 is reserved
+                                     | (prefAc & 0x03) << 6;
 }
 
 uint8_t
-CtrlTriggerUserInfoField::GetMpduMuSpacingFactor() const
+CtrlTriggerUserInfoField::GetMpduMuSpacingFactor (void) const
 {
-    NS_ABORT_MSG_IF(m_triggerType != TriggerFrameType::BASIC_TRIGGER, "Not a Basic Trigger Frame");
+  NS_ABORT_MSG_IF (m_triggerType != BASIC_TRIGGER, "Not a Basic Trigger Frame");
 
-    return m_basicTriggerDependentUserInfo & 0x03;
+  return m_basicTriggerDependentUserInfo & 0x03;
 }
 
 uint8_t
-CtrlTriggerUserInfoField::GetTidAggregationLimit() const
+CtrlTriggerUserInfoField::GetTidAggregationLimit (void) const
 {
-    NS_ABORT_MSG_IF(m_triggerType != TriggerFrameType::BASIC_TRIGGER, "Not a Basic Trigger Frame");
+  NS_ABORT_MSG_IF (m_triggerType != BASIC_TRIGGER, "Not a Basic Trigger Frame");
 
-    return (m_basicTriggerDependentUserInfo & 0x1c) >> 2;
+  return (m_basicTriggerDependentUserInfo & 0x1c) >> 2;
 }
 
 AcIndex
-CtrlTriggerUserInfoField::GetPreferredAc() const
+CtrlTriggerUserInfoField::GetPreferredAc (void) const
 {
-    NS_ABORT_MSG_IF(m_triggerType != TriggerFrameType::BASIC_TRIGGER, "Not a Basic Trigger Frame");
+  NS_ABORT_MSG_IF (m_triggerType != BASIC_TRIGGER, "Not a Basic Trigger Frame");
 
-    return AcIndex((m_basicTriggerDependentUserInfo & 0xc0) >> 6);
+  return AcIndex ((m_basicTriggerDependentUserInfo & 0xc0) >> 6);
 }
 
 void
-CtrlTriggerUserInfoField::SetMuBarTriggerDepUserInfo(const CtrlBAckRequestHeader& bar)
+CtrlTriggerUserInfoField::SetMuBarTriggerDepUserInfo (const CtrlBAckRequestHeader& bar)
 {
-    NS_ABORT_MSG_IF(m_triggerType != TriggerFrameType::MU_BAR_TRIGGER,
-                    "Not a MU-BAR Trigger frame");
-    NS_ABORT_MSG_IF(bar.GetType().m_variant != BlockAckReqType::COMPRESSED &&
-                        bar.GetType().m_variant != BlockAckReqType::MULTI_TID,
-                    "BAR Control indicates it is neither the Compressed nor the Multi-TID variant");
-    m_muBarTriggerDependentUserInfo = bar;
+  NS_ABORT_MSG_IF (m_triggerType != MU_BAR_TRIGGER, "Not a MU-BAR Trigger frame");
+  NS_ABORT_MSG_IF (bar.GetType ().m_variant != BlockAckReqType::COMPRESSED
+                   && bar.GetType ().m_variant != BlockAckReqType::MULTI_TID,
+                   "BAR Control indicates it is neither the Compressed nor the Multi-TID variant");
+  m_muBarTriggerDependentUserInfo = bar;
 }
 
 const CtrlBAckRequestHeader&
-CtrlTriggerUserInfoField::GetMuBarTriggerDepUserInfo() const
+CtrlTriggerUserInfoField::GetMuBarTriggerDepUserInfo (void) const
 {
-    NS_ABORT_MSG_IF(m_triggerType != TriggerFrameType::MU_BAR_TRIGGER,
-                    "Not a MU-BAR Trigger frame");
+  NS_ABORT_MSG_IF (m_triggerType != MU_BAR_TRIGGER, "Not a MU-BAR Trigger frame");
 
-    return m_muBarTriggerDependentUserInfo;
+  return m_muBarTriggerDependentUserInfo;
 }
 
 /***********************************
  *       Trigger frame
  ***********************************/
 
-NS_OBJECT_ENSURE_REGISTERED(CtrlTriggerHeader);
+NS_OBJECT_ENSURE_REGISTERED (CtrlTriggerHeader);
 
-CtrlTriggerHeader::CtrlTriggerHeader()
-    : m_variant(TriggerFrameVariant::HE),
-      m_triggerType(TriggerFrameType::BASIC_TRIGGER),
-      m_ulLength(0),
-      m_moreTF(false),
-      m_csRequired(false),
-      m_ulBandwidth(0),
-      m_giAndLtfType(0),
-      m_apTxPower(0),
-      m_ulSpatialReuse(0),
-      m_padding(0)
+CtrlTriggerHeader::CtrlTriggerHeader ()
+  : m_triggerType (0),
+    m_ulLength (0),
+    m_moreTF (false),
+    m_csRequired (false),
+    m_ulBandwidth (0),
+    m_giAndLtfType (0),
+    m_apTxPower (0),
+    m_ulSpatialReuse (0)
 {
 }
 
-CtrlTriggerHeader::CtrlTriggerHeader(TriggerFrameType type, const WifiTxVector& txVector)
-    : CtrlTriggerHeader()
+CtrlTriggerHeader::CtrlTriggerHeader (TriggerFrameType type, const WifiTxVector& txVector)
+  : CtrlTriggerHeader ()
 {
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::MU_RTS_TRIGGER,
-                    "This constructor cannot be used for MU-RTS");
-
-    switch (txVector.GetPreambleType())
+  m_triggerType = type;
+  SetUlBandwidth (txVector.GetChannelWidth ());
+  SetUlLength (txVector.GetLength ());
+  uint16_t gi = txVector.GetGuardInterval ();
+  if (gi == 800 || gi == 1600)
     {
-    case WIFI_PREAMBLE_HE_TB:
-        m_variant = TriggerFrameVariant::HE;
-        break;
-    case WIFI_PREAMBLE_EHT_TB:
-        m_variant = TriggerFrameVariant::EHT;
-        break;
-    default:
-        NS_ABORT_MSG("Cannot create a TF out of a TXVECTOR with preamble type: "
-                     << txVector.GetPreambleType());
+      m_giAndLtfType = 1;
     }
-
-    m_triggerType = type;
-    SetUlBandwidth(txVector.GetChannelWidth());
-    SetUlLength(txVector.GetLength());
-    const auto gi = txVector.GetGuardInterval().GetNanoSeconds();
-    if ((gi == 800) || (gi == 1600))
+  else
     {
-        m_giAndLtfType = 1;
+      m_giAndLtfType = 2;
     }
-    else
+  for (auto& userInfo : txVector.GetHeMuUserInfoMap ())
     {
-        m_giAndLtfType = 2;
-    }
-    for (auto& userInfo : txVector.GetHeMuUserInfoMap())
-    {
-        CtrlTriggerUserInfoField& ui = AddUserInfoField();
-        ui.SetAid12(userInfo.first);
-        ui.SetRuAllocation(userInfo.second.ru);
-        ui.SetUlMcs(userInfo.second.mcs);
-        ui.SetSsAllocation(1, userInfo.second.nss); // MU-MIMO is not supported
+      CtrlTriggerUserInfoField& ui = AddUserInfoField ();
+      ui.SetAid12 (userInfo.first);
+      ui.SetRuAllocation (userInfo.second.ru);
+      ui.SetUlMcs (userInfo.second.mcs.GetMcsValue ());
+      ui.SetSsAllocation (1, userInfo.second.nss); // MU-MIMO is not supported
     }
 }
 
-CtrlTriggerHeader::~CtrlTriggerHeader()
+CtrlTriggerHeader::~CtrlTriggerHeader ()
 {
 }
 
 CtrlTriggerHeader&
-CtrlTriggerHeader::operator=(const CtrlTriggerHeader& trigger)
+CtrlTriggerHeader::operator= (const CtrlTriggerHeader& trigger)
 {
-    // check for self-assignment
-    if (&trigger == this)
+  // check for self-assignment
+  if (&trigger == this)
     {
-        return *this;
+      return *this;
     }
 
-    m_variant = trigger.m_variant;
-    m_triggerType = trigger.m_triggerType;
-    m_ulLength = trigger.m_ulLength;
-    m_moreTF = trigger.m_moreTF;
-    m_csRequired = trigger.m_csRequired;
-    m_ulBandwidth = trigger.m_ulBandwidth;
-    m_giAndLtfType = trigger.m_giAndLtfType;
-    m_apTxPower = trigger.m_apTxPower;
-    m_ulSpatialReuse = trigger.m_ulSpatialReuse;
-    m_padding = trigger.m_padding;
-    m_userInfoFields.clear();
-    m_userInfoFields = trigger.m_userInfoFields;
-    return *this;
+  m_triggerType = trigger.m_triggerType;
+  m_ulLength = trigger.m_ulLength;
+  m_moreTF = trigger.m_moreTF;
+  m_csRequired = trigger.m_csRequired;
+  m_ulBandwidth = trigger.m_ulBandwidth;
+  m_giAndLtfType = trigger.m_giAndLtfType;
+  m_apTxPower = trigger.m_apTxPower;
+  m_ulSpatialReuse = trigger.m_ulSpatialReuse;
+  m_userInfoFields.clear ();
+  m_userInfoFields = trigger.m_userInfoFields;
+  return *this;
 }
 
 TypeId
-CtrlTriggerHeader::GetTypeId()
+CtrlTriggerHeader::GetTypeId (void)
 {
-    static TypeId tid = TypeId("ns3::CtrlTriggerHeader")
-                            .SetParent<Header>()
-                            .SetGroupName("Wifi")
-                            .AddConstructor<CtrlTriggerHeader>();
-    return tid;
+  static TypeId tid = TypeId ("ns3::CtrlTriggerHeader")
+    .SetParent<Header> ()
+    .SetGroupName ("Wifi")
+    .AddConstructor<CtrlTriggerHeader> ()
+  ;
+  return tid;
 }
 
 TypeId
-CtrlTriggerHeader::GetInstanceTypeId() const
+CtrlTriggerHeader::GetInstanceTypeId (void) const
 {
-    return GetTypeId();
+  return GetTypeId ();
 }
 
 void
-CtrlTriggerHeader::Print(std::ostream& os) const
+CtrlTriggerHeader::Print (std::ostream &os) const
 {
-    os << "TriggerType=" << GetTypeString() << ", Bandwidth=" << +GetUlBandwidth()
-       << ", UL Length=" << m_ulLength;
+  os << "TriggerType=" << GetTypeString () << ", Bandwidth=" << +GetUlBandwidth ()
+     << ", UL Length=" << m_ulLength;
 
-    for (auto& ui : m_userInfoFields)
+  for (auto& ui : m_userInfoFields)
     {
-        ui.Print(os);
-    }
-}
-
-void
-CtrlTriggerHeader::SetVariant(TriggerFrameVariant variant)
-{
-    NS_ABORT_MSG_IF(!m_userInfoFields.empty(),
-                    "Cannot change Common Info field variant if User Info fields are present");
-    m_variant = variant;
-}
-
-TriggerFrameVariant
-CtrlTriggerHeader::GetVariant() const
-{
-    return m_variant;
-}
-
-uint32_t
-CtrlTriggerHeader::GetSerializedSize() const
-{
-    uint32_t size = 0;
-    size += 8; // Common Info (excluding Trigger Dependent Common Info)
-
-    // Add the size of the Trigger Dependent Common Info subfield
-    if (m_triggerType == TriggerFrameType::GCR_MU_BAR_TRIGGER)
-    {
-        size += 4;
-    }
-
-    for (auto& ui : m_userInfoFields)
-    {
-        size += ui.GetSerializedSize();
-    }
-
-    size += m_padding;
-
-    return size;
-}
-
-void
-CtrlTriggerHeader::Serialize(Buffer::Iterator start) const
-{
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::BFRP_TRIGGER,
-                    "BFRP Trigger frame is not supported");
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::GCR_MU_BAR_TRIGGER,
-                    "GCR-MU-BAR Trigger frame is not supported");
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::NFRP_TRIGGER,
-                    "NFRP Trigger frame is not supported");
-
-    Buffer::Iterator i = start;
-
-    uint64_t commonInfo = 0;
-    commonInfo |= (static_cast<uint8_t>(m_triggerType) & 0x0f);
-    commonInfo |= (m_ulLength & 0x0fff) << 4;
-    commonInfo |= (m_moreTF ? 1 << 16 : 0);
-    commonInfo |= (m_csRequired ? 1 << 17 : 0);
-    commonInfo |= (m_ulBandwidth & 0x03) << 18;
-    commonInfo |= (m_giAndLtfType & 0x03) << 20;
-    commonInfo |= static_cast<uint64_t>(m_apTxPower & 0x3f) << 28;
-    commonInfo |= static_cast<uint64_t>(m_ulSpatialReuse) << 37;
-    if (m_variant == TriggerFrameVariant::HE)
-    {
-        uint64_t ulHeSigA2 = 0x01ff; // nine bits equal to 1
-        commonInfo |= ulHeSigA2 << 54;
-    }
-
-    i.WriteHtolsbU64(commonInfo);
-
-    for (auto& ui : m_userInfoFields)
-    {
-        i = ui.Serialize(i);
-    }
-
-    for (std::size_t count = 0; count < m_padding; count++)
-    {
-        i.WriteU8(0xff); // Padding field
+      ui.Print (os);
     }
 }
 
 uint32_t
-CtrlTriggerHeader::Deserialize(Buffer::Iterator start)
+CtrlTriggerHeader::GetSerializedSize (void) const
 {
-    Buffer::Iterator i = start;
+  uint32_t size = 0;
+  size += 8;  // Common Info (excluding Trigger Dependent Common Info)
 
-    uint64_t commonInfo = i.ReadLsbtohU64();
-
-    m_triggerType = static_cast<TriggerFrameType>(commonInfo & 0x0f);
-    m_ulLength = (commonInfo >> 4) & 0x0fff;
-    m_moreTF = (commonInfo >> 16) & 0x01;
-    m_csRequired = (commonInfo >> 17) & 0x01;
-    m_ulBandwidth = (commonInfo >> 18) & 0x03;
-    m_giAndLtfType = (commonInfo >> 20) & 0x03;
-    m_apTxPower = (commonInfo >> 28) & 0x3f;
-    m_ulSpatialReuse = (commonInfo >> 37) & 0xffff;
-    uint8_t bit54and55 = (commonInfo >> 54) & 0x03;
-    m_variant = bit54and55 == 3 ? TriggerFrameVariant::HE : TriggerFrameVariant::EHT;
-    m_userInfoFields.clear();
-    m_padding = 0;
-
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::BFRP_TRIGGER,
-                    "BFRP Trigger frame is not supported");
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::GCR_MU_BAR_TRIGGER,
-                    "GCR-MU-BAR Trigger frame is not supported");
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::NFRP_TRIGGER,
-                    "NFRP Trigger frame is not supported");
-
-    while (i.GetRemainingSize() >= 2)
+  // Add the size of the Trigger Dependent Common Info subfield
+  if (m_triggerType == GCR_MU_BAR_TRIGGER)
     {
-        // read the first 2 bytes to check if we encountered the Padding field
-        if (i.ReadU16() == 0xffff)
-        {
-            m_padding = i.GetRemainingSize() + 2;
-        }
-        else
-        {
-            // go back 2 bytes to deserialize the User Info field from the beginning
-            i.Prev(2);
-            CtrlTriggerUserInfoField& ui = AddUserInfoField();
-            i = ui.Deserialize(i);
-        }
+      size += 4;
     }
 
-    return i.GetDistanceFrom(start);
+  for (auto& ui : m_userInfoFields)
+    {
+      size += ui.GetSerializedSize ();
+    }
+
+  size += 2;  // Padding field
+
+  return size;
 }
 
 void
-CtrlTriggerHeader::SetType(TriggerFrameType type)
+CtrlTriggerHeader::Serialize (Buffer::Iterator start) const
 {
-    m_triggerType = type;
+  NS_ABORT_MSG_IF (m_triggerType == BFRP_TRIGGER, "BFRP Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == GCR_MU_BAR_TRIGGER, "GCR-MU-BAR Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == NFRP_TRIGGER, "NFRP Trigger frame is not supported");
+
+  Buffer::Iterator i = start;
+
+  uint64_t commonInfo = 0;
+  commonInfo |= (m_triggerType & 0x0f);
+  commonInfo |= (m_ulLength & 0x0fff) << 4;
+  commonInfo |= (m_moreTF ? 1 << 16 : 0);
+  commonInfo |= (m_csRequired ? 1 << 17 : 0);
+  commonInfo |= (m_ulBandwidth & 0x03) << 18;
+  commonInfo |= (m_giAndLtfType & 0x03) << 20;
+  commonInfo |= static_cast<uint64_t> (m_apTxPower & 0x3f) << 28;
+  commonInfo |= static_cast<uint64_t> (m_ulSpatialReuse) << 37;
+
+  i.WriteHtolsbU64 (commonInfo);
+
+  for (auto& ui : m_userInfoFields)
+    {
+      i = ui.Serialize (i);
+    }
+
+  i.WriteHtolsbU16 (0xffff);   // Padding field, used as delimiter
+}
+
+uint32_t
+CtrlTriggerHeader::Deserialize (Buffer::Iterator start)
+{
+  Buffer::Iterator i = start;
+
+  uint64_t commonInfo = i.ReadLsbtohU64 ();
+
+  m_triggerType = (commonInfo & 0x0f);
+  m_ulLength = (commonInfo >> 4) & 0x0fff;
+  m_moreTF = (commonInfo >> 16) & 0x01;
+  m_csRequired = (commonInfo >> 17) & 0x01;
+  m_ulBandwidth = (commonInfo >> 18) & 0x03;
+  m_giAndLtfType = (commonInfo >> 20) & 0x03;
+  m_apTxPower = (commonInfo >> 28) & 0x3f;
+  m_ulSpatialReuse = (commonInfo >> 37) & 0xffff;
+  m_userInfoFields.clear ();
+
+  NS_ABORT_MSG_IF (m_triggerType == BFRP_TRIGGER, "BFRP Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == GCR_MU_BAR_TRIGGER, "GCR-MU-BAR Trigger frame is not supported");
+  NS_ABORT_MSG_IF (m_triggerType == NFRP_TRIGGER, "NFRP Trigger frame is not supported");
+
+  bool isPadding = false;
+
+  // We always add a Padding field (of two octets of all 1s) as delimiter
+  while (!isPadding)
+    {
+      // read the first 2 bytes to check if we encountered the Padding field
+      if (i.ReadU16 () == 0xffff)
+        {
+          isPadding = true;
+        }
+      else
+        {
+          // go back 2 bytes to deserialize the User Info field from the beginning
+          i.Prev (2);
+          CtrlTriggerUserInfoField& ui = AddUserInfoField ();
+          i = ui.Deserialize (i);
+        }
+    }
+
+  return i.GetDistanceFrom (start);
+}
+
+void
+CtrlTriggerHeader::SetType (TriggerFrameType type)
+{
+  m_triggerType = type;
 }
 
 TriggerFrameType
-CtrlTriggerHeader::GetType() const
+CtrlTriggerHeader::GetType (void) const
 {
-    return m_triggerType;
+  return static_cast<TriggerFrameType> (m_triggerType);
 }
 
-const char*
-CtrlTriggerHeader::GetTypeString() const
+const char *
+CtrlTriggerHeader::GetTypeString (void) const
 {
-    return GetTypeString(GetType());
+  return GetTypeString (GetType ());
 }
 
-const char*
-CtrlTriggerHeader::GetTypeString(TriggerFrameType type)
+const char *
+CtrlTriggerHeader::GetTypeString (TriggerFrameType type)
 {
-#define FOO(x)                                                                                     \
-    case TriggerFrameType::x:                                                                      \
-        return #x;
+#define FOO(x) \
+case x: \
+  return # x; \
+  break;
 
-    switch (type)
+  switch (type)
     {
-        FOO(BASIC_TRIGGER);
-        FOO(BFRP_TRIGGER);
-        FOO(MU_BAR_TRIGGER);
-        FOO(MU_RTS_TRIGGER);
-        FOO(BSRP_TRIGGER);
-        FOO(GCR_MU_BAR_TRIGGER);
-        FOO(BQRP_TRIGGER);
-        FOO(NFRP_TRIGGER);
+      FOO (BASIC_TRIGGER);
+      FOO (BFRP_TRIGGER);
+      FOO (MU_BAR_TRIGGER);
+      FOO (MU_RTS_TRIGGER);
+      FOO (BSRP_TRIGGER);
+      FOO (GCR_MU_BAR_TRIGGER);
+      FOO (BQRP_TRIGGER);
+      FOO (NFRP_TRIGGER);
     default:
-        return "ERROR";
+      return "ERROR";
     }
 #undef FOO
 }
 
 bool
-CtrlTriggerHeader::IsBasic() const
+CtrlTriggerHeader::IsBasic (void) const
 {
-    return (m_triggerType == TriggerFrameType::BASIC_TRIGGER);
+  return (m_triggerType == BASIC_TRIGGER);
 }
 
 bool
-CtrlTriggerHeader::IsBfrp() const
+CtrlTriggerHeader::IsBfrp (void) const
 {
-    return (m_triggerType == TriggerFrameType::BFRP_TRIGGER);
+  return (m_triggerType == BFRP_TRIGGER);
 }
 
 bool
-CtrlTriggerHeader::IsMuBar() const
+CtrlTriggerHeader::IsMuBar (void) const
 {
-    return (m_triggerType == TriggerFrameType::MU_BAR_TRIGGER);
+  return (m_triggerType == MU_BAR_TRIGGER);
 }
 
 bool
-CtrlTriggerHeader::IsMuRts() const
+CtrlTriggerHeader::IsMuRts (void) const
 {
-    return (m_triggerType == TriggerFrameType::MU_RTS_TRIGGER);
+  return (m_triggerType == MU_RTS_TRIGGER);
 }
 
 bool
-CtrlTriggerHeader::IsBsrp() const
+CtrlTriggerHeader::IsBsrp (void) const
 {
-    return (m_triggerType == TriggerFrameType::BSRP_TRIGGER);
+  return (m_triggerType == BSRP_TRIGGER);
 }
 
 bool
-CtrlTriggerHeader::IsGcrMuBar() const
+CtrlTriggerHeader::IsGcrMuBar (void) const
 {
-    return (m_triggerType == TriggerFrameType::GCR_MU_BAR_TRIGGER);
+  return (m_triggerType == GCR_MU_BAR_TRIGGER);
 }
 
 bool
-CtrlTriggerHeader::IsBqrp() const
+CtrlTriggerHeader::IsBqrp (void) const
 {
-    return (m_triggerType == TriggerFrameType::BQRP_TRIGGER);
+  return (m_triggerType == BQRP_TRIGGER);
 }
 
 bool
-CtrlTriggerHeader::IsNfrp() const
+CtrlTriggerHeader::IsNfrp (void) const
 {
-    return (m_triggerType == TriggerFrameType::NFRP_TRIGGER);
+  return (m_triggerType == NFRP_TRIGGER);
 }
 
 void
-CtrlTriggerHeader::SetUlLength(uint16_t len)
+CtrlTriggerHeader::SetUlLength (uint16_t len)
 {
-    m_ulLength = (len & 0x0fff);
+  m_ulLength = (len & 0x0fff);
 }
 
 uint16_t
-CtrlTriggerHeader::GetUlLength() const
+CtrlTriggerHeader::GetUlLength (void) const
 {
-    return m_ulLength;
+  return m_ulLength;
 }
 
 WifiTxVector
-CtrlTriggerHeader::GetHeTbTxVector(uint16_t staId) const
+CtrlTriggerHeader::GetHeTbTxVector (uint16_t staId) const
 {
-    NS_ABORT_MSG_IF(m_triggerType == TriggerFrameType::MU_RTS_TRIGGER,
-                    "GetHeTbTxVector() cannot be used for MU-RTS");
-    auto userInfoIt = FindUserInfoWithAid(staId);
-    NS_ASSERT(userInfoIt != end());
+  auto userInfoIt = FindUserInfoWithAid (staId);
+  NS_ASSERT (userInfoIt != end ());
 
-    WifiTxVector v;
-    v.SetPreambleType(userInfoIt->GetPreambleType());
-    v.SetChannelWidth(GetUlBandwidth());
-    v.SetGuardInterval(GetGuardInterval());
-    v.SetLength(GetUlLength());
-    v.SetHeMuUserInfo(
-        staId,
-        {userInfoIt->GetRuAllocation(), userInfoIt->GetUlMcs(), userInfoIt->GetNss()});
-    return v;
+  WifiTxVector v;
+  v.SetPreambleType (WifiPreamble::WIFI_PREAMBLE_HE_TB);
+  v.SetChannelWidth (GetUlBandwidth ());
+  v.SetGuardInterval (GetGuardInterval ());
+  v.SetLength (GetUlLength ());
+  v.SetHeMuUserInfo (staId, {userInfoIt->GetRuAllocation (),
+                             HePhy::GetHeMcs (userInfoIt->GetUlMcs ()),
+                             userInfoIt->GetNss ()});
+  return v;
 }
 
 void
-CtrlTriggerHeader::SetMoreTF(bool more)
+CtrlTriggerHeader::SetMoreTF (bool more)
 {
-    m_moreTF = more;
+  m_moreTF = more;
 }
 
 bool
-CtrlTriggerHeader::GetMoreTF() const
+CtrlTriggerHeader::GetMoreTF (void) const
 {
-    return m_moreTF;
+  return m_moreTF;
 }
 
 void
-CtrlTriggerHeader::SetCsRequired(bool cs)
+CtrlTriggerHeader::SetCsRequired (bool cs)
 {
-    m_csRequired = cs;
+  m_csRequired = cs;
 }
 
 bool
-CtrlTriggerHeader::GetCsRequired() const
+CtrlTriggerHeader::GetCsRequired (void) const
 {
-    return m_csRequired;
+  return m_csRequired;
 }
 
 void
-CtrlTriggerHeader::SetUlBandwidth(MHz_u bw)
+CtrlTriggerHeader::SetUlBandwidth (uint16_t bw)
 {
-    switch (static_cast<uint16_t>(bw))
+  switch (bw)
     {
     case 20:
-        m_ulBandwidth = 0;
-        break;
+      m_ulBandwidth = 0;
+      break;
     case 40:
-        m_ulBandwidth = 1;
-        break;
+      m_ulBandwidth = 1;
+      break;
     case 80:
-        m_ulBandwidth = 2;
-        break;
+      m_ulBandwidth = 2;
+      break;
     case 160:
-        m_ulBandwidth = 3;
-        break;
+      m_ulBandwidth = 3;
+      break;
     default:
-        NS_FATAL_ERROR("Bandwidth value not allowed.");
-        break;
+      NS_FATAL_ERROR ("Bandwidth value not allowed.");
+      break;
     }
 }
 
-MHz_u
-CtrlTriggerHeader::GetUlBandwidth() const
+uint16_t
+CtrlTriggerHeader::GetUlBandwidth (void) const
 {
-    return (1 << m_ulBandwidth) * MHz_u{20};
+  return (1 << m_ulBandwidth) * 20;
 }
 
 void
-CtrlTriggerHeader::SetGiAndLtfType(Time guardInterval, uint8_t ltfType)
+CtrlTriggerHeader::SetGiAndLtfType (uint16_t guardInterval, uint8_t ltfType)
 {
-    const auto gi = guardInterval.GetNanoSeconds();
-    if ((ltfType == 1) && (gi == 1600))
+  if (ltfType == 1 && guardInterval == 1600)
     {
-        m_giAndLtfType = 0;
+      m_giAndLtfType = 0;
     }
-    else if ((ltfType == 2) && (gi == 1600))
+  else if (ltfType == 2 && guardInterval == 1600)
     {
-        m_giAndLtfType = 1;
+      m_giAndLtfType = 1;
     }
-    else if ((ltfType == 4) && (gi == 3200))
+  else if (ltfType == 4 && guardInterval == 3200)
     {
-        m_giAndLtfType = 2;
+      m_giAndLtfType = 2;
     }
-    else
+  else
     {
-        NS_FATAL_ERROR("Invalid combination of GI and LTF type");
+      NS_FATAL_ERROR ("Invalid combination of GI and LTF type");
     }
 }
 
-Time
-CtrlTriggerHeader::GetGuardInterval() const
+uint16_t
+CtrlTriggerHeader::GetGuardInterval (void) const
 {
-    if (m_giAndLtfType == 0 || m_giAndLtfType == 1)
+  if (m_giAndLtfType == 0 || m_giAndLtfType == 1)
     {
-        return NanoSeconds(1600);
+      return 1600;
     }
-    else if (m_giAndLtfType == 2)
+  else if (m_giAndLtfType == 2)
     {
-        return NanoSeconds(3200);
+      return 3200;
     }
-    else
+  else
     {
-        NS_FATAL_ERROR("Invalid value for GI And LTF Type subfield");
+      NS_FATAL_ERROR ("Invalid value for GI And LTF Type subfield");
     }
 }
 
 uint8_t
-CtrlTriggerHeader::GetLtfType() const
+CtrlTriggerHeader::GetLtfType (void) const
 {
-    if (m_giAndLtfType == 0)
+  if (m_giAndLtfType == 0)
     {
-        return 1;
+      return 1;
     }
-    else if (m_giAndLtfType == 1)
+  else if (m_giAndLtfType == 1)
     {
-        return 2;
+      return 2;
     }
-    else if (m_giAndLtfType == 2)
+  else if (m_giAndLtfType == 2)
     {
-        return 4;
+      return 4;
     }
-    else
+  else
     {
-        NS_FATAL_ERROR("Invalid value for GI And LTF Type subfield");
+      NS_FATAL_ERROR ("Invalid value for GI And LTF Type subfield");
     }
 }
 
 void
-CtrlTriggerHeader::SetApTxPower(int8_t power)
+CtrlTriggerHeader::SetApTxPower (int8_t power)
 {
-    // see Table 9-25f "AP Tx Power subfield encoding" of 802.11ax amendment D3.0
-    NS_ABORT_MSG_IF(power < -20 || power > 40, "Out of range power values");
+  // see Table 9-25f "AP Tx Power subfield encoding" of 802.11ax amendment D3.0
+  NS_ABORT_MSG_IF (power < -20 || power > 40, "Out of range power values");
 
-    m_apTxPower = static_cast<uint8_t>(power + 20);
+  m_apTxPower = static_cast<uint8_t> (power + 20);
 }
 
 int8_t
-CtrlTriggerHeader::GetApTxPower() const
+CtrlTriggerHeader::GetApTxPower (void) const
 {
-    // see Table 9-25f "AP Tx Power subfield encoding" of 802.11ax amendment D3.0
-    return static_cast<int8_t>(m_apTxPower) - 20;
+  // see Table 9-25f "AP Tx Power subfield encoding" of 802.11ax amendment D3.0
+  return static_cast<int8_t> (m_apTxPower) - 20;
 }
 
 void
-CtrlTriggerHeader::SetUlSpatialReuse(uint16_t sr)
+CtrlTriggerHeader::SetUlSpatialReuse (uint16_t sr)
 {
-    m_ulSpatialReuse = sr;
+  m_ulSpatialReuse = sr;
 }
 
 uint16_t
-CtrlTriggerHeader::GetUlSpatialReuse() const
+CtrlTriggerHeader::GetUlSpatialReuse (void) const
 {
-    return m_ulSpatialReuse;
-}
-
-void
-CtrlTriggerHeader::SetPaddingSize(std::size_t size)
-{
-    NS_ABORT_MSG_IF(size == 1, "The Padding field, if present, shall be at least two octets");
-    m_padding = size;
-}
-
-std::size_t
-CtrlTriggerHeader::GetPaddingSize() const
-{
-    return m_padding;
+  return m_ulSpatialReuse;
 }
 
 CtrlTriggerHeader
-CtrlTriggerHeader::GetCommonInfoField() const
+CtrlTriggerHeader::GetCommonInfoField (void) const
 {
-    // make a copy of this Trigger Frame and remove the User Info fields from the copy
-    CtrlTriggerHeader trigger(*this);
-    trigger.m_userInfoFields.clear();
-    return trigger;
+  // make a copy of this Trigger Frame and remove the User Info fields from the copy
+  CtrlTriggerHeader trigger (*this);
+  trigger.m_userInfoFields.clear ();
+  return trigger;
 }
 
 CtrlTriggerUserInfoField&
-CtrlTriggerHeader::AddUserInfoField()
+CtrlTriggerHeader::AddUserInfoField (void)
 {
-    m_userInfoFields.emplace_back(m_triggerType, m_variant);
-    return m_userInfoFields.back();
+  m_userInfoFields.emplace_back (m_triggerType);
+  return m_userInfoFields.back ();
 }
 
 CtrlTriggerUserInfoField&
-CtrlTriggerHeader::AddUserInfoField(const CtrlTriggerUserInfoField& userInfo)
+CtrlTriggerHeader::AddUserInfoField (const CtrlTriggerUserInfoField& userInfo)
 {
-    NS_ABORT_MSG_IF(
-        userInfo.GetType() != m_triggerType,
-        "Trying to add a User Info field of a type other than the type of the Trigger Frame");
-    m_userInfoFields.push_back(userInfo);
-    return m_userInfoFields.back();
-}
-
-CtrlTriggerHeader::Iterator
-CtrlTriggerHeader::RemoveUserInfoField(ConstIterator userInfoIt)
-{
-    return m_userInfoFields.erase(userInfoIt);
+  NS_ABORT_MSG_IF (userInfo.GetType () != m_triggerType,
+                   "Trying to add a User Info field of a type other than the type of the Trigger Frame");
+  m_userInfoFields.push_back (userInfo);
+  return m_userInfoFields.back ();
 }
 
 CtrlTriggerHeader::ConstIterator
-CtrlTriggerHeader::begin() const
+CtrlTriggerHeader::begin (void) const
 {
-    return m_userInfoFields.begin();
+  return m_userInfoFields.begin ();
 }
 
 CtrlTriggerHeader::ConstIterator
-CtrlTriggerHeader::end() const
+CtrlTriggerHeader::end (void) const
 {
-    return m_userInfoFields.end();
+  return m_userInfoFields.end ();
 }
 
 CtrlTriggerHeader::Iterator
-CtrlTriggerHeader::begin()
+CtrlTriggerHeader::begin (void)
 {
-    return m_userInfoFields.begin();
+  return m_userInfoFields.begin ();
 }
 
 CtrlTriggerHeader::Iterator
-CtrlTriggerHeader::end()
+CtrlTriggerHeader::end (void)
 {
-    return m_userInfoFields.end();
+  return m_userInfoFields.end ();
 }
 
 std::size_t
-CtrlTriggerHeader::GetNUserInfoFields() const
+CtrlTriggerHeader::GetNUserInfoFields (void) const
 {
-    return m_userInfoFields.size();
+  return m_userInfoFields.size ();
 }
 
 CtrlTriggerHeader::ConstIterator
-CtrlTriggerHeader::FindUserInfoWithAid(ConstIterator start, uint16_t aid12) const
+CtrlTriggerHeader::FindUserInfoWithAid (ConstIterator start, uint16_t aid12) const
 {
-    // the lambda function returns true if a User Info field has the AID12 subfield
-    // equal to the given aid12 value
-    return std::find_if(start, end(), [aid12](const CtrlTriggerUserInfoField& ui) -> bool {
-        return (ui.GetAid12() == aid12);
-    });
+  // the lambda function returns true if a User Info field has the AID12 subfield
+  // equal to the given aid12 value
+  return std::find_if (start, end (), [aid12] (const CtrlTriggerUserInfoField& ui) -> bool
+                                      { return (ui.GetAid12 () == aid12); });
 }
 
 CtrlTriggerHeader::ConstIterator
-CtrlTriggerHeader::FindUserInfoWithAid(uint16_t aid12) const
+CtrlTriggerHeader::FindUserInfoWithAid (uint16_t aid12) const
 {
-    return FindUserInfoWithAid(m_userInfoFields.begin(), aid12);
+  return FindUserInfoWithAid (m_userInfoFields.begin (), aid12);
 }
 
 CtrlTriggerHeader::ConstIterator
-CtrlTriggerHeader::FindUserInfoWithRaRuAssociated(ConstIterator start) const
+CtrlTriggerHeader::FindUserInfoWithRaRuAssociated (ConstIterator start) const
 {
-    return FindUserInfoWithAid(start, 0);
+  return FindUserInfoWithAid (start, 0);
 }
 
 CtrlTriggerHeader::ConstIterator
-CtrlTriggerHeader::FindUserInfoWithRaRuAssociated() const
+CtrlTriggerHeader::FindUserInfoWithRaRuAssociated (void) const
 {
-    return FindUserInfoWithAid(0);
+  return FindUserInfoWithAid (0);
 }
 
 CtrlTriggerHeader::ConstIterator
-CtrlTriggerHeader::FindUserInfoWithRaRuUnassociated(ConstIterator start) const
+CtrlTriggerHeader::FindUserInfoWithRaRuUnassociated (ConstIterator start) const
 {
-    return FindUserInfoWithAid(start, 2045);
+  return FindUserInfoWithAid (start, 2045);
 }
 
 CtrlTriggerHeader::ConstIterator
-CtrlTriggerHeader::FindUserInfoWithRaRuUnassociated() const
+CtrlTriggerHeader::FindUserInfoWithRaRuUnassociated (void) const
 {
-    return FindUserInfoWithAid(2045);
+  return FindUserInfoWithAid (2045);
 }
 
 bool
-CtrlTriggerHeader::IsValid() const
+CtrlTriggerHeader::IsValid (void) const
 {
-    if (m_triggerType == TriggerFrameType::MU_RTS_TRIGGER)
-    {
-        return true;
-    }
+  // check that allocated RUs do not overlap
+  // TODO This is not a problem in case of UL MU-MIMO
+  std::vector<HeRu::RuSpec> prevRus;
 
-    // check that allocated RUs do not overlap
-    // TODO This is not a problem in case of UL MU-MIMO
-    std::vector<HeRu::RuSpec> prevRus;
-
-    for (auto& ui : m_userInfoFields)
+  for (auto& ui : m_userInfoFields)
     {
-        if (HeRu::DoesOverlap(GetUlBandwidth(), ui.GetRuAllocation(), prevRus))
+      if (HeRu::DoesOverlap (GetUlBandwidth (), ui.GetRuAllocation (), prevRus))
         {
-            return false;
+          return false;
         }
-        prevRus.push_back(ui.GetRuAllocation());
+      prevRus.push_back (ui.GetRuAllocation ());
     }
-    return true;
+  return true;
 }
 
-} // namespace ns3
+}  //namespace ns3

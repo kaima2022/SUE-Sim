@@ -62,7 +62,7 @@ By default ``create-module.py`` creates the module skeleton in the
 .. sourcecode:: bash
 
   $ ./utils/create-module.py contrib/new-contrib
-
+  
 Let's assume we've created our new module in ``src``.
 ``cd`` into ``src/new-module``; you will find this directory layout:
 
@@ -81,19 +81,19 @@ and ``.rst`` files.  The complete module with skeleton files looks like this:
     src/
       new-module/
         doc/
-      new-module.rst
-    examples/
-      new-module-example.cc
-      CMakeLists.txt
-    helper/
-      new-module-helper.cc
-      new-module-helper.h
-    model/
-      new-module.cc
-      new-module.h
-    test/
-      new-module-test-suite.cc
-    CMakeLists.txt
+	  new-module.rst
+	examples/
+	  new-module-example.cc
+	  CMakeLists.txt
+	helper/
+	  new-module-helper.cc
+	  new-module-helper.h
+	model/
+	  new-module.cc
+	  new-module.h
+	test/
+	  new-module-test-suite.cc
+	CMakeLists.txt
 
 (If required the ``bindings/`` directory listed in
 :ref:`Step-0 <Step-0>` will be created automatically during
@@ -113,10 +113,10 @@ like this (before editing):
 .. sourcecode:: cmake
 
   build_lib(
-    LIBNAME new-module
-    SOURCE_FILES helper/new-module-helper.cc
+    LIBNAME new-module 
+    SOURCE_FILES helper/new-module-helper.cc 
                  model/new-module.cc
-    HEADER_FILES helper/new-module-helper.h
+    HEADER_FILES helper/new-module-helper.h 
                  model/new-module.h
     LIBRARIES_TO_LINK ${libcore}
     TEST_SOURCES test/new-module-test-suite.cc
@@ -129,12 +129,12 @@ should look like:
 .. sourcecode:: cmake
 
     build_lib(
-      LIBNAME new-module
-      SOURCE_FILES helper/new-module-helper.cc
+      LIBNAME new-module 
+      SOURCE_FILES helper/new-module-helper.cc 
                    model/new-module.cc
-      HEADER_FILES helper/new-module-helper.h
+      HEADER_FILES helper/new-module-helper.h 
                    model/new-module.h
-      LIBRARIES_TO_LINK
+      LIBRARIES_TO_LINK 
         ${libinternet}
         ${libmobility}
         ${libaodv}
@@ -147,7 +147,7 @@ is why we removed ``core``; the ``internet`` module in turn depends on
 
 Your module will most likely have model source files.  Initial skeletons
 (which will compile successfully) are created in ``model/new-module.cc``
-and ``model/new-module.h``.
+and ``model/new-module.h``.  
 
 If your module will have helper source files, then they will go into
 the ``helper/`` directory; again, initial skeletons are created
@@ -161,10 +161,10 @@ The skeleton test suite will contain the below constructor,
 which declares a new unit test named ``new-module``,
 with a single test case consisting of the class ``NewModuleTestCase1``::
 
-  NewModuleTestSuite::NewModuleTestSuite()
-    : TestSuite("new-module", Type::UNIT)
+  NewModuleTestSuite::NewModuleTestSuite ()
+    : TestSuite ("new-module", UNIT)
   {
-    AddTestCase(new NewModuleTestCase1);
+    AddTestCase (new NewModuleTestCase1);
   }
 
 Step 3 - Declare Source Files
@@ -213,7 +213,7 @@ with the following:
 
 Note: the ``source_files`` and ``header_files`` lists are not necessary.
 They are used keep the ``build_lib`` macro readable for modules with many
-source files.
+source files. 
 
 The objects resulting from compiling these sources will be assembled
 into a link library, which will be linked to any programs relying on this
@@ -257,7 +257,7 @@ If the list of headers is short, use the following instead:
     build_lib(
       LIBNAME spectrum
       ...
-      HEADER_FILES
+      HEADER_FILES 
         helper/adhoc-aloha-noack-ideal-phy-helper.h
         helper/spectrum-analyzer-helper.h
         ...
@@ -266,7 +266,7 @@ If the list of headers is short, use the following instead:
         model/wifi-spectrum-value-helper.h
       ...
     )
-
+    
 
 Headers made public in this way will be accessible to users of your model
 with include statements like
@@ -274,7 +274,7 @@ with include statements like
 .. sourcecode:: cpp
 
     #include "ns3/spectrum-model.h"
-
+    	
 Headers used strictly internally in your implementation should not
 be included here.  They are still accessible to your implementation by
 include statements like
@@ -307,7 +307,7 @@ The ``spectrum`` model tests are specified with the following stanza:
       test/tv-spectrum-transmitter-test.cc
   )
 
-See :doc:`Tests <tests>` for more information on how to write test cases.
+See :doc:`Tests <tests>` for more information on how to write test cases.	
 
 Step 6 - Declare Examples
 *************************
@@ -325,7 +325,7 @@ The ``spectrum`` model defines it's first example in
   build_lib_example(
     NAME adhoc-aloha-ideal-phy
     SOURCE_FILES adhoc-aloha-ideal-phy.cc
-    LIBRARIES_TO_LINK
+    LIBRARIES_TO_LINK 
       ${libspectrum}
       ${libmobility}
       ${libinternet}
@@ -335,7 +335,7 @@ The ``spectrum`` model defines it's first example in
 
 Note that the variable ``libraries_to_link`` is the list of modules that
 the program being created depends on; again, don't forget to include
-``new-module`` in the list.  It's best practice to list only the direct
+``new-module`` in the list.  It's best practice to list only the direct 
 module dependencies, and let ``CMake`` deduce the full dependency tree.
 
 Occasionally, for clarity, you may want to split the implementation
@@ -343,13 +343,13 @@ for your example among several source files.  In this case, just
 include those files as additional explicit sources of the example:
 
 .. sourcecode:: cmake
-
+ 
   build_lib_example(
     NAME new-module-example
     SOURCE_FILES new-module-example.cc
-    LIBRARIES_TO_LINK
-      ${libspectrum}
-      ${libmobility}
+    LIBRARIES_TO_LINK 
+      ${libspectrum} 
+      ${libmobility} 
       ${libinternet}
       ${libapplications}
   )
@@ -372,38 +372,33 @@ two lists of C++ and Python examples:
   # A list of C++ examples to run in order to ensure that they remain
   # buildable and runnable over time.  Each tuple in the list contains
   #
-  #     (example_name, do_run, do_valgrind_run, fullness).
+  #     (example_name, do_run, do_valgrind_run).
   #
   # See test.py for more information.
   cpp_examples = [
-      ("adhoc-aloha-ideal-phy", "True", "True", "QUICK"),
-      ("adhoc-aloha-ideal-phy-with-microwave-oven", "True", "True", "QUICK"),
-      ("adhoc-aloha-ideal-phy-matrix-propagation-loss-model", "True", "True", "QUICK"),
+      ("adhoc-aloha-ideal-phy", "True", "True"),
+      ("adhoc-aloha-ideal-phy-with-microwave-oven", "True", "True"),
+      ("adhoc-aloha-ideal-phy-matrix-propagation-loss-model", "True", "True"),
   ]
-
+  
   # A list of Python examples to run in order to ensure that they remain
   # runnable over time.  Each tuple in the list contains
   #
-  #     (example_name, do_run, fullness).
+  #     (example_name, do_run).
   #
   # See test.py for more information.
   python_examples = [
-      ("sample-simulator.py", "True", "QUICK"),
+      ("sample-simulator.py", "True"),
   ]
 
 As indicated in the comment, each entry in the C++ list of examples to run
-contains the tuple ``(example_name, do_run, do_valgrind_run, fullness)``, where
+contains the tuple ``(example_name, do_run, do_valgrind_run)``, where
 
 * ``example_name`` is the executable to be run,
 * ``do_run`` is a condition under which to run the example, and
 * ``do_valgrind_run`` is a condition under which to run the example
   under valgrind.  (This is needed because NSC causes illegal instruction
   crashes with some tests when they are run under valgrind.)
-* ``fullness`` is the optional classification of how long the example takes to
-  run, like the :doc:`Tests <tests>` fullness specifier. from
-  fastest to slowest the possible options are: ``"QUICK"``,
-  ``"EXTENSIVE"``, and ``"TAKES_FOREVER"``. If no value is
-  provided, ``"QUICK"`` is used.
 
 Note that the two conditions are Python statements that
 can depend on ``ns3`` configuration variables.  For example, using the
@@ -411,22 +406,20 @@ NSC_ENABLED variable that was defined up until ns-3.35:
 
 .. sourcecode:: python
 
-    ("tcp-nsc-lfn", "NSC_ENABLED == True", "NSC_ENABLED == False", "QUICK"),
+    ("tcp-nsc-lfn", "NSC_ENABLED == True", "NSC_ENABLED == False"),
 
 Each entry in the Python list of examples to run contains the tuple
-``(example_name, do_run, fullness)``, where, as for the C++ examples,
+``(example_name, do_run)``, where, as for the C++ examples,
 
 * ``example_name`` is the Python script to be run, and
 * ``do_run`` is a condition under which to run the example.
-* ``fullness`` is the same as ``fullness`` for C++ examples.
-  If no value is provided, ``"QUICK"`` is used
 
 Again, the condition is a Python statement that can
 depend on ``ns3`` configuration variables.  For example,
 
 .. sourcecode:: python
 
-    ("brite-generic-example.py", "ENABLE_BRITE == True", "QUICK"),
+    ("realtime-udp-echo.py", "ENABLE_REAL_TIME == False"),
 
 
 Step 8 - Configure and Build
@@ -454,6 +447,6 @@ Adding Python bindings to your module is optional.
 
 If you want to include Python bindings (needed only if you want
 to write Python ns-3 programs instead of C++ ns-3 programs), you
-should scan your module to generate new bindings for the Python
-API (covered elsewhere in this manual), and they will be used
+should scan your module to generate new bindings for the Python 
+API (covered elsewhere in this manual), and they will be used 
 if NS3_PYTHON_BINDINGS is set to ON.

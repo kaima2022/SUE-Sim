@@ -57,22 +57,3 @@ build_lib_example(
     ${libapplications}
     ${libinternet-apps}
 )
-
-build_lib_example(
-  NAME wifi-phy-rx-trace-example
-  SOURCE_FILES wifi-phy-rx-trace-example.cc
-  LIBRARIES_TO_LINK
-    ${libwifi}
-    ${libinternet}
-    ${libmobility}
-)
-
-build_lib_example(
-  NAME wifi-co-trace-example
-  SOURCE_FILES wifi-co-trace-example.cc
-  LIBRARIES_TO_LINK
-    ${libwifi}
-    ${libinternet}
-    ${libmobility}
-    ${libapplications}
-)

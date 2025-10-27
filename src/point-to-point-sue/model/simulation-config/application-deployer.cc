@@ -18,6 +18,7 @@
 #include "application-deployer.h"
 #include "ns3/core-module.h"
 #include "ns3/applications-module.h"
+#include "../load-balancer.h"
 
 namespace ns3 {
 
@@ -200,7 +201,7 @@ ApplicationDeployer::CreateLoadBalancer (uint32_t xpuIdx,
     loadBalancer->SetAttribute("LocalXpuId", UintegerValue(xpuIdx));
     loadBalancer->SetAttribute("MaxXpuId", UintegerValue(nXpus - 1));
     loadBalancer->SetAttribute("HashSeed", UintegerValue(hashSeed + xpuIdx * 31)); // Use command line parameter seed
-    loadBalancer->SetAttribute("LoadBalanceAlgorithm", UintegerValue(loadBalanceAlgorithm));
+    loadBalancer->SetAttribute("LoadBalanceAlgorithm", EnumValue(static_cast<LoadBalanceAlgorithm>(loadBalanceAlgorithm)));
     loadBalancer->SetAttribute("Prime1", UintegerValue(prime1));
     loadBalancer->SetAttribute("Prime2", UintegerValue(prime2));
     loadBalancer->SetAttribute("UseVcInHash", BooleanValue(useVcInHash));

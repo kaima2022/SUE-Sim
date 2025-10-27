@@ -2,7 +2,18 @@
 //
 // Copyright (c) 2011, Deutsche Telekom Laboratories
 //
-// SPDX-License-Identifier: GPL-2.0-only
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License version
+// 2 as published by the Free Software Foundation;
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 //
 // Author: Ruben Merz <ruben@net.t-labs.tu-berlin.de>
 //
@@ -19,7 +30,7 @@ elementclass WiFiSimHost {
   arpquerier::ARPQuerier(eth0);
   arpresponder::ARPResponder(eth0);
 
-  ethout::Queue
+  ethout::Queue 	
     -> ToDump(out_eth0.pcap,PER_NODE 1)
     -> ToSimDevice(eth0);
 
@@ -36,12 +47,12 @@ elementclass WiFiSimHost {
   cl[1] -> [1]arpquerier;
 
   // All other packets get checked whether they are meant for us
-  cl[2]
+  cl[2]				
     -> Strip (14)
     -> CheckIPHeader2
     -> MarkIPHeader
     -> GetIPAddress(16) // Sets destination IP address annotation from packet data
-    -> forhost;
+    -> forhost; 
 
   // Packets for us are pushed outside
   forhost[0]
@@ -73,7 +84,7 @@ elementclass TapSimHost {
 
   // Packets go to "tap0" which sends them to the kernel
   input[0]
-    -> ToDump(tokernel.pcap,2000,IP,PER_NODE 1)
+    -> ToDump(tokernel.pcap,2000,IP,PER_NODE 1) 
     -> ToSimDevice($dev,IP);
 
   // Packets sent out by the "kernel" get pushed outside

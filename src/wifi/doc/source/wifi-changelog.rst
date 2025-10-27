@@ -17,18 +17,17 @@ Prior to ns-3.36, channels, channel widths, and operating bands were set
 separately.  As of ns-3.36, a new tuple object that we call ChannelSettings has
 consolidated all of these settings.  Users should specify the channel number,
 channel width, frequency band, and primary channel index as a tuple (and
-continue to set the Wi-Fi standard separately). Since ns-3.43, this attribute
-can contain multiple tuples to support 80+80MHz operating channels.
+continue to set the Wi-Fi standard separately).
 
 For instance, where pre-ns-3.36 code may have said::
 
     WifiPhyHelper phy;
-    phy.Set("ChannelNumber", UintegerValue(36));
+    phy.Set("ChannelNumber", UintegerValue (36));
 
 the equivalent new code is::
 
     WifiPhyHelper phy;
-    phy.Set("ChannelSettings", StringValue("{36, 20, BAND_5GHZ, 0}"));
+    phy.Set ("ChannelSettings", StringValue ("{36, 20, BAND_5GHZ, 0}"));
 
 which denotes that channel 36 is used on a 20 MHz channel in the 5GHz band,
 and because a larger channel width greater than 20 MHz is not being used, there

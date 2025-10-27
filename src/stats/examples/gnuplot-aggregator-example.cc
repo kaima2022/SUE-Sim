@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2013 University of Washington
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Mitch Watrous (watrous@u.washington.edu)
  */
@@ -11,63 +23,65 @@
 
 using namespace ns3;
 
-namespace
-{
+namespace {
 
 /**
  * This function creates a 2-Dimensional plot.
  */
-void
-Create2dPlot()
+void Create2dPlot ()
 {
-    std::string fileNameWithoutExtension = "gnuplot-aggregator";
-    std::string plotTitle = "Gnuplot Aggregator Plot";
-    std::string plotXAxisHeading = "Time (seconds)";
-    std::string plotYAxisHeading = "Double Values";
-    std::string plotDatasetLabel = "Data Values";
-    std::string datasetContext = "Dataset/Context/String";
+  using namespace std;
 
-    // Create an aggregator.
-    Ptr<GnuplotAggregator> aggregator = CreateObject<GnuplotAggregator>(fileNameWithoutExtension);
+  string fileNameWithoutExtension = "gnuplot-aggregator";
+  string plotTitle                = "Gnuplot Aggregator Plot";
+  string plotXAxisHeading         = "Time (seconds)";
+  string plotYAxisHeading         = "Double Values";
+  string plotDatasetLabel         = "Data Values";
+  string datasetContext           = "Dataset/Context/String";
 
-    // Set the aggregator's properties.
-    aggregator->SetTerminal("png");
-    aggregator->SetTitle(plotTitle);
-    aggregator->SetLegend(plotXAxisHeading, plotYAxisHeading);
+  // Create an aggregator.
+  Ptr<GnuplotAggregator> aggregator =
+    CreateObject<GnuplotAggregator> (fileNameWithoutExtension);
 
-    // Add a data set to the aggregator.
-    aggregator->Add2dDataset(datasetContext, plotDatasetLabel);
+  // Set the aggregator's properties.
+  aggregator->SetTerminal ("png");
+  aggregator->SetTitle (plotTitle);
+  aggregator->SetLegend (plotXAxisHeading, plotYAxisHeading);
 
-    // aggregator must be turned on
-    aggregator->Enable();
+  // Add a data set to the aggregator.
+  aggregator->Add2dDataset (datasetContext, plotDatasetLabel);
 
-    double time;
-    double value;
+  // aggregator must be turned on
+  aggregator->Enable ();
 
-    // Create the 2-D dataset.
-    for (time = -5.0; time <= +5.0; time += 1.0)
+  double time;
+  double value;
+
+  // Create the 2-D dataset.
+  for (time = -5.0; time <= +5.0; time += 1.0)
     {
-        // Calculate the 2-D curve
-        //
-        //                   2
-        //     value  =  time   .
-        //
-        value = time * time;
+      // Calculate the 2-D curve
+      //
+      //                   2
+      //     value  =  time   .
+      //
+      value = time * time;
 
-        // Add this point to the plot.
-        aggregator->Write2d(datasetContext, time, value);
+      // Add this point to the plot.
+      aggregator->Write2d (datasetContext, time, value);
     }
 
-    // Disable logging of data for the aggregator.
-    aggregator->Disable();
+  // Disable logging of data for the aggregator.
+  aggregator->Disable ();
 }
 
-} // unnamed namespace
 
-int
-main(int argc, char* argv[])
+}  // unnamed namespace
+
+
+int main (int argc, char *argv[])
 {
-    Create2dPlot();
+  Create2dPlot ();
 
-    return 0;
+  return 0;
 }

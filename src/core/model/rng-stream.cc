@@ -1,46 +1,55 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 //
 //  Copyright (C) 2001  Pierre L'Ecuyer (lecuyer@iro.umontreal.ca)
 //
-// SPDX-License-Identifier: GPL-2.0-only
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License version 2 as
+// published by the Free Software Foundation;
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 //
 // Modified for ns-3 by:
 //   - Rajib Bhattacharjea<raj.b@gatech.edu>
 //   - Mathieu Lacage <mathieu.lacage@gmail.com>
 //
 
+#include <cstdlib>
+#include <iostream>
 #include "rng-stream.h"
-
 #include "fatal-error.h"
 #include "log.h"
 
-#include <cstdlib>
-#include <iostream>
-
 /**
- * @file
- * @ingroup rngimpl
+ * \file
+ * \ingroup rngimpl
  * ns3::RngStream and MRG32k3a implementations.
  */
 
-namespace ns3
-{
+namespace ns3 {
 
 // Note:  Logging in this file is largely avoided due to the
 // number of calls that are made to these functions and the possibility
 // of causing recursions leading to stack overflow
-NS_LOG_COMPONENT_DEFINE("RngStream");
+NS_LOG_COMPONENT_DEFINE ("RngStream");
 
 } // namespace ns3
 
+
 /**
- * @ingroup rngimpl
+ * \ingroup rngimpl
  * @{
  */
 /** Namespace for MRG32k3a implementation details. */
-namespace MRG32k3a
-{
+namespace MRG32k3a {
 
-// clang-format off
+// *NS_CHECK_STYLE_OFF*
 
 /** Type for 3x3 matrix of doubles. */
 typedef double Matrix[3][3];
@@ -123,7 +132,7 @@ double MultModM (double a, double s, double c, double m)
     {
       return v += m;
     }
-  else
+  else 
     {
       return v;
     }
@@ -172,8 +181,7 @@ void MatVecModM (const Matrix A, const double s[3], double v[3],
 void MatMatModM (const Matrix A, const Matrix B,
                  Matrix C, double m)
 {
-  int i;
-  int j;
+  int i, j;
   double V[3];
   Matrix W;
 
@@ -201,7 +209,7 @@ void MatMatModM (const Matrix A, const Matrix B,
 
 //-------------------------------------------------------------------------
 /**
- * Compute the matrix B = (A^(2^e) Mod m);  works also if A = B.
+ * Compute the matrix B = (A^(2^e) Mod m);  works also if A = B. 
  *
  * \param [in] src Matrix input argument \c A.
  * \param [out] dst Matrix output \c B.
@@ -210,8 +218,7 @@ void MatMatModM (const Matrix A, const Matrix B,
  */
 void MatTwoPowModM (const Matrix src, Matrix dst, double m, int32_t e)
 {
-  int i;
-  int j;
+  int i, j;
 
   /* initialize: dst = src */
   for (i = 0; i < 3; ++i)
@@ -240,8 +247,7 @@ void MatTwoPowModM (const Matrix src, Matrix dst, double m, int32_t e)
  */
 void MatPowModM (const double A[3][3], double B[3][3], double m, int32_t n)
 {
-  int i;
-  int j;
+  int i, j;
   double W[3][3];
 
   // initialize: W = A; B = I
@@ -286,9 +292,9 @@ struct Precalculated
  *
  * \returns The precalculated powers of the transition matrices.
  */
-Precalculated PowerOfTwoConstants ()
+struct Precalculated PowerOfTwoConstants (void)
 {
-  Precalculated precalculated;
+  struct Precalculated precalculated;
   for (int i = 0; i < 190; i++)
     {
       int power = i + 1;
@@ -306,7 +312,7 @@ Precalculated PowerOfTwoConstants ()
  */
 void PowerOfTwoMatrix (int n, Matrix a1p, Matrix a2p)
 {
-  static  Precalculated constants = PowerOfTwoConstants ();
+  static struct Precalculated constants = PowerOfTwoConstants ();
   for (int i = 0; i < 3; i ++)
     {
       for (int j = 0; j < 3; j++)
@@ -319,91 +325,87 @@ void PowerOfTwoMatrix (int n, Matrix a1p, Matrix a2p)
 
 } // namespace MRG32k3a
 
-// clang-format on
+// *NS_CHECK_STYLE_ON*
 
-namespace ns3
-{
+
+namespace ns3 {
 
 using namespace MRG32k3a;
 
-double
-RngStream::RandU01()
+double RngStream::RandU01 ()
 {
-    int32_t k;
-    double p1;
-    double p2;
-    double u;
+  int32_t k;
+  double p1, p2, u;
 
-    /* Component 1 */
-    p1 = a12 * m_currentState[1] - a13n * m_currentState[0];
-    k = static_cast<int32_t>(p1 / m1);
-    p1 -= k * m1;
-    if (p1 < 0.0)
+  /* Component 1 */
+  p1 = a12 * m_currentState[1] - a13n * m_currentState[0];
+  k = static_cast<int32_t> (p1 / m1);
+  p1 -= k * m1;
+  if (p1 < 0.0)
     {
-        p1 += m1;
+      p1 += m1;
     }
-    m_currentState[0] = m_currentState[1];
-    m_currentState[1] = m_currentState[2];
-    m_currentState[2] = p1;
+  m_currentState[0] = m_currentState[1];
+  m_currentState[1] = m_currentState[2];
+  m_currentState[2] = p1;
 
-    /* Component 2 */
-    p2 = a21 * m_currentState[5] - a23n * m_currentState[3];
-    k = static_cast<int32_t>(p2 / m2);
-    p2 -= k * m2;
-    if (p2 < 0.0)
+  /* Component 2 */
+  p2 = a21 * m_currentState[5] - a23n * m_currentState[3];
+  k = static_cast<int32_t> (p2 / m2);
+  p2 -= k * m2;
+  if (p2 < 0.0)
     {
-        p2 += m2;
+      p2 += m2;
     }
-    m_currentState[3] = m_currentState[4];
-    m_currentState[4] = m_currentState[5];
-    m_currentState[5] = p2;
+  m_currentState[3] = m_currentState[4];
+  m_currentState[4] = m_currentState[5];
+  m_currentState[5] = p2;
 
-    /* Combination */
-    u = ((p1 > p2) ? (p1 - p2) * MRG32k3a::norm : (p1 - p2 + m1) * MRG32k3a::norm);
+  /* Combination */
+  u = ((p1 > p2) ? (p1 - p2) * norm : (p1 - p2 + m1) * norm);
 
-    return u;
+  return u;
 }
 
-RngStream::RngStream(uint32_t seedNumber, uint64_t stream, uint64_t substream)
+RngStream::RngStream (uint32_t seedNumber, uint64_t stream, uint64_t substream)
 {
-    if (seedNumber >= m1 || seedNumber >= m2 || seedNumber == 0)
+  if (seedNumber >= m1 || seedNumber >= m2 || seedNumber == 0)
     {
-        NS_FATAL_ERROR("invalid Seed " << seedNumber);
+      NS_FATAL_ERROR ("invalid Seed " << seedNumber);
     }
-    for (int i = 0; i < 6; ++i)
+  for (int i = 0; i < 6; ++i)
     {
-        m_currentState[i] = seedNumber;
+      m_currentState[i] = seedNumber;
     }
-    AdvanceNthBy(stream, 127, m_currentState);
-    AdvanceNthBy(substream, 76, m_currentState);
+  AdvanceNthBy (stream, 127, m_currentState);
+  AdvanceNthBy (substream, 76, m_currentState);
 }
 
-RngStream::RngStream(const RngStream& r)
+RngStream::RngStream (const RngStream& r)
 {
-    for (int i = 0; i < 6; ++i)
+  for (int i = 0; i < 6; ++i)
     {
-        m_currentState[i] = r.m_currentState[i];
+      m_currentState[i] = r.m_currentState[i];
     }
 }
 
 void
-RngStream::AdvanceNthBy(uint64_t nth, int by, double state[6])
+RngStream::AdvanceNthBy (uint64_t nth, int by, double state[6])
 {
-    Matrix matrix1;
-    Matrix matrix2;
-    for (int i = 0; i < 64; i++)
+  Matrix matrix1,matrix2;
+  for (int i = 0; i < 64; i++)
     {
-        int nbit = 63 - i;
-        int bit = (nth >> nbit) & 0x1;
-        if (bit)
+      int nbit = 63 - i;
+      int bit = (nth >> nbit) & 0x1;
+      if (bit)
         {
-            PowerOfTwoMatrix(by + nbit, matrix1, matrix2);
-            MatVecModM(matrix1, state, state, m1);
-            MatVecModM(matrix2, &state[3], &state[3], m2);
+          PowerOfTwoMatrix (by + nbit, matrix1, matrix2);
+          MatVecModM (matrix1, state, state, m1);
+          MatVecModM (matrix2, &state[3], &state[3], m2);
         }
     }
 }
 
 } // namespace ns3
 
-/**@}*/ // \ingroup rngimpl
+/**@}*/  // \ingroup rngimpl

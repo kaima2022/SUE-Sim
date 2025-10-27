@@ -14,27 +14,18 @@ find_external_library(
   HEADER_NAME Brite.h
   LIBRARY_NAME brite
   SEARCH_PATHS ${NS3_WITH_BRITE}
-  OUTPUT_VARIABLE "NS3_BRITE_REASON"
 )
 
 if((NOT
     brite_FOUND)
-   AND (NOT
-        ${brite_FOUND})
-   AND (NOT
-        ${NS3_FETCH_OPTIONAL_COMPONENTS})
+   OR (NOT
+       ${brite_FOUND})
 )
   message(
     ${HIGHLIGHTED_STATUS}
     "Skipping src/brite"
   )
   return()
-endif()
-
-if(${NS3_FETCH_OPTIONAL_COMPONENTS})
-  set(brite_LIBRARIES
-      brite
-  )
 endif()
 
 # Only process module if include folder and library have been found
@@ -50,7 +41,9 @@ build_lib(
   SOURCE_FILES helper/brite-topology-helper.cc
   HEADER_FILES helper/brite-topology-helper.h
   LIBRARIES_TO_LINK
-    ${libapplications}
+    ${libnetwork}
+    ${libcore}
+    ${libinternet}
     ${libpoint-to-point}
     ${brite_LIBRARIES}
   TEST_SOURCES test/brite-test-topology.cc

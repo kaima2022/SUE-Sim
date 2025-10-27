@@ -1,27 +1,37 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2018 Lawrence Livermore National Laboratory
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Authors: Mathew Bielejeski <bielejeski1@llnl.gov>
  */
-
-// clang-format off
 
 #ifndef NS3_VERSION_DEFINES_H_
 #define NS3_VERSION_DEFINES_H_
 
 /**
- * \file
- * \ingroup buildversion
- * Defines the macro values for printing the build version.
- * These will be populated by the build system.
- */
+  * \file
+  * \ingroup buildversion
+  * Defines the macro values for printing the build version.
+  * These will be populated by the build system.
+  */
 
 /**
- * \ingroup buildversion
- * @{
- */
+  * \ingroup buildversion
+  * @{
+  */
 
 /**
  * The first tag found which matches the pattern ns-3*.
@@ -56,7 +66,7 @@
  *
  * Type: integer
  */
-#define NS3_VERSION_MAJOR @NS3_VERSION_MAJOR@
+#cmakedefine NS3_VERSION_MAJOR @NS3_VERSION_MAJOR@
 
 /**
  * The minor version extracted from #NS3_VERSION_TAG
@@ -66,7 +76,7 @@
  *
  * Type: integer
  */
-#define NS3_VERSION_MINOR @NS3_VERSION_MINOR@
+#cmakedefine NS3_VERSION_MINOR @NS3_VERSION_MINOR@
 
 /**
  * The patch number extracted from #NS3_VERSION_TAG
@@ -79,7 +89,7 @@
  *
  * Type: integer
  */
-#define NS3_VERSION_PATCH @NS3_VERSION_PATCH@
+#cmakedefine NS3_VERSION_PATCH @NS3_VERSION_PATCH@
 
 /**
  * The portion of the #NS3_VERSION_TAG indicating the version
@@ -100,7 +110,7 @@
  *
  * Type: integer
  */
-#define NS3_VERSION_TAG_DISTANCE @NS3_VERSION_TAG_DISTANCE@
+#cmakedefine NS3_VERSION_TAG_DISTANCE @NS3_VERSION_TAG_DISTANCE@
 
 /**
  * Hash value which uniquely identifies the commit of the
@@ -133,5 +143,3 @@
 /** @} */
 
 #endif
-
-// clang-format on

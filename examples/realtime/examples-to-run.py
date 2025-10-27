@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+## -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
 
 # A list of C++ examples to run in order to ensure that they remain
 # buildable and runnable over time.  Each tuple in the list contains
@@ -7,7 +8,7 @@
 #
 # See test.py for more information.
 cpp_examples = [
-    ("realtime-udp-echo", "True", "True"),
+    ("realtime-udp-echo", "ENABLE_REAL_TIME == True", "True"),
 ]
 
 # A list of Python examples to run in order to ensure that they remain

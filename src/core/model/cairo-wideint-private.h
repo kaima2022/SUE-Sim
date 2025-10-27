@@ -1,6 +1,4 @@
-// NOLINTBEGIN
-// clang-format off
-
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /* cairo - a vector graphics library with display and print output
  *
  * Copyright © 2004 Keith Packard
@@ -28,7 +26,7 @@
  * The Initial Developer of the Original Code is Keith Packard
  *
  * Contributor(s):
- *    Keith R. Packard <keithp@keithp.com>
+ *	Keith R. Packard <keithp@keithp.com>
  *
  */
 
@@ -50,6 +48,8 @@
 // Implementation tags added below and in cairo-wideint.c:
 // extern const char * cairo_impl64;
 // extern const char * cairo_impl128;
+
+// *NS_CHECK_STYLE_OFF*
 
 /*for compatibility with MacOS and Cygwin*/
 #ifndef HAVE_STDINT_H
@@ -360,7 +360,6 @@ _cairo_int_96by64_32x64_divrem (cairo_int128_t num,
 };
 #endif
 
-#endif /* CAIRO_WIDEINT_H */
+// *NS_CHECK_STYLE_ON*
 
-// clang-format on
-// NOLINTEND
+#endif /* CAIRO_WIDEINT_H */

@@ -1,7 +1,19 @@
+/* -*-  Mode: C++; c-file-style: "gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo  <marco.miozzo@cttc.es>
  *         Nicola Baldo  <nbaldo@cttc.es>
@@ -11,50 +23,53 @@
 
 #include "ns3/tag.h"
 
-namespace ns3
-{
+namespace ns3 {
 
 /**
- * Tag used to define PHY parameters
+ * Tag used to define PHY parameters 
  */
 class LtePhyTag : public Tag
 {
-  public:
-    /**
-     * @brief Get the type ID.
-     * @return the object TypeId
-     */
-    static TypeId GetTypeId();
-    TypeId GetInstanceTypeId() const override;
+public:
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
+  virtual TypeId GetInstanceTypeId (void) const;
 
-    /**
-     * Create an empty LtePhyTag
-     */
-    LtePhyTag();
+  /**
+   * Create an empty LtePhyTag
+   */
+  LtePhyTag ();
 
-    /**
-     * Create a LtePhyTag with the given RNTI and LC id
-     * @param cellId the cell ID
-     */
-    LtePhyTag(uint16_t cellId);
+  /**
+   * Create a LtePhyTag with the given RNTI and LC id
+   * \param cellId the cell ID
+   */
+  LtePhyTag (uint16_t cellId);
 
-    ~LtePhyTag() override;
 
-    void Serialize(TagBuffer i) const override;
-    void Deserialize(TagBuffer i) override;
-    uint32_t GetSerializedSize() const override;
-    void Print(std::ostream& os) const override;
+  virtual ~LtePhyTag ();
 
-    /**
-     * Get cell ID
-     *
-     * @returns cell ID
-     */
-    uint16_t GetCellId() const;
+  virtual void Serialize (TagBuffer i) const;
+  virtual void Deserialize (TagBuffer i);
+  virtual uint32_t GetSerializedSize () const;
+  virtual void Print (std::ostream &os) const;
 
-  private:
-    uint16_t m_cellId; ///< the cell ID
+  /**
+   * Get cell ID
+   *
+   * \returns cell ID
+   */
+  uint16_t GetCellId () const;
+
+private:
+  uint16_t m_cellId; ///< the cell ID
+
 };
+
+
 
 } // namespace ns3
 

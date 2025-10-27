@@ -10,7 +10,6 @@ build_lib(
     model/constant-velocity-helper.cc
     model/constant-velocity-mobility-model.cc
     model/gauss-markov-mobility-model.cc
-    model/geocentric-constant-position-mobility-model.cc
     model/geographic-positions.cc
     model/hierarchical-mobility-model.cc
     model/mobility-model.cc
@@ -32,7 +31,6 @@ build_lib(
     model/constant-velocity-helper.h
     model/constant-velocity-mobility-model.h
     model/gauss-markov-mobility-model.h
-    model/geocentric-constant-position-mobility-model.h
     model/geographic-positions.h
     model/hierarchical-mobility-model.h
     model/mobility-model.h
@@ -44,17 +42,14 @@ build_lib(
     model/steady-state-random-waypoint-mobility-model.h
     model/waypoint-mobility-model.h
     model/waypoint.h
-  LIBRARIES_TO_LINK ${libantenna}
-                    ${libnetwork}
+  LIBRARIES_TO_LINK ${libnetwork}
   TEST_SOURCES
     test/box-line-intersection-test.cc
     test/geo-to-cartesian-test.cc
-    test/geocentric-topocentric-conversion-test.cc
     test/mobility-test-suite.cc
     test/mobility-trace-test-suite.cc
     test/ns2-mobility-helper-test-suite.cc
     test/rand-cart-around-geo-test.cc
-    test/rectangle-closest-border-test.cc
     test/steady-state-random-waypoint-mobility-model-test.cc
     test/waypoint-mobility-model-test.cc
 )

@@ -22,7 +22,7 @@ VERBLOG="$DIR/doxygen.verbose.log"
 # Options ------------------------------
 #
 
-# One line synopsis, continue
+# One line sysnopsis, continue
 function synopsis_short
 {
     echo "Usage: $me [-beithv] [-s <log-file> | -l | -w] [-m <module>] [-f <regex>] [-F <regex>]"
@@ -247,11 +247,13 @@ filter_blacklistRE=""
 REappend filter_blacklistRE "cairo-wideint"
 
 #   Functions with varying numbers of arguments
-#   Explicit template instantiation declaration
-# REappend filter_blacklistRE "MakeCallback< ObjectBase \\* >(ObjectBase \\*"
+#   This is temporary until we move to C++-14
+REappend filter_blacklistRE "Schedule(Time"
+REappend filter_blacklistRE "ScheduleWithContext(uint32_t"
+REappend filter_blacklistRE "Schedule\\(Now\\|Destroy\\)(\\(MEM\\|void\\)"
 
 #   ATTRIBUTE_HELPER_CPP( and _HEADER(
-# REappend filter_blacklistRE "ATTRIBUTE_HELPER_\\(CPP\\|HEADER\\)"
+REappend filter_blacklistRE "ATTRIBUTE_HELPER_\\(CPP\\|HEADER\\)"
 
 # Filter out regular expression for black list, -e, -t and -F
 filter_outRE=""
@@ -305,14 +307,8 @@ if [ $skip_doxy -eq 1 ]; then
 
 else
 
-    # We're going to modify doxygen.conf
-    # In case the user ^C's out of this we need to restore
-    # doxygen.conf, otherwise weird things happen.
-    # function restore_doxygen_conf defined below
-    trap restore_doxygen_conf INT
-
     # Modify doxygen.conf to generate all the warnings
-    # We keep dot active to generate graphs in the documentation
+    # We keep dot active to generate graphs in the documentaion
     # (see for example PacketTagList) and warn about ill-formed
     # graphs, but we disable all the doxygen-generated diagrams
     # to shorten the run time.
@@ -339,14 +335,6 @@ else
     DIRECTORY_GRAPH = no
 EOF
 
-    # Swap back to original config
-    function restore_doxygen_conf()
-    {
-        if [ -e $conf.bak ]; then
-            rm -f $conf
-            mv -f $conf.bak $conf
-        fi
-    }
 
     intro_h="introspected-doxygen.h"
     if [ $skip_intro -eq 1 ]; then
@@ -364,11 +352,17 @@ EOF
         status_report $? "./ns3 run print-introspected-doxygen"
     fi
 
+    # Waf insists on writing cruft to stdout
+    sed -i.bak -E '/^Waf:/d' doc/$intro_h
+    rm doc/$intro_h.bak
+
     verbose -n "Rebuilding doxygen docs with full errors"
     (cd "$ROOT" && ./ns3 docs doxygen-no-build >&6 2>&6 )
     status_report $? "./ns3 docs doxygen-no-build"
 
-    restore_doxygen_conf
+    # Swap back to original config
+    rm -f $conf
+    mv -f $conf.bak $conf
 fi
 
 # Filter log file
@@ -439,32 +433,8 @@ addlparam=$(                                  \
     sed 's/^[ \t]*//;s/[ \t]*$//'             \
     )
 
-# Sometimes doxygen can not pinpoint a warning to an exact file.
-# In this case the output is of the form:
-# "<operator==>:1: warning: parameters of member ns3::operator== are not documented"
-# or
-# "<operator==>:1: warning: return type of member ns3::operator== is not documented"
-misplacedWarns=$(                             \
-    grep ">:1:" "$LOG"                      | \
-    wc -l                                   | \
-    sed 's/^[ \t]*//;s/[ \t]*$//'             \
-    )
-
-# This is to catch LaTeX formula errors.
-# In this case the output is of the form:
-# "error: Problems running latex." followed by
-# "Check your installation or look for typos in _formulas.tex and check _formulas.log!"
-# and
-# "Check your installation or look for typos in _formulas_dark.tex and check _formulas_dark.log!"
-# Hence, the count can be two.
-latexWarns=$(                                 \
-    grep "Problems running latex" "$LOG"    | \
-    wc -l                                   | \
-    sed 's/^[ \t]*//;s/[ \t]*$//'             \
-    )
-
 # Total number of warnings
-warncount=$((modwarncount + addlparam + misplacedWarns + latexWarns))
+warncount=$((modwarncount + addlparam))
 
 # List of files appearing in the log
 if [ ! -z "$filter_log_results" ]
@@ -517,7 +487,7 @@ echo
 echo "Report of Doxygen warnings"
 echo "----------------------------------------"
 echo
-echo "(All counts are approximate.)"
+echo "(All counts are lower bounds.)"
 echo
 echo "Warnings by module/directory:"
 echo
@@ -525,7 +495,6 @@ echo "Count Directory"
 echo "----- ----------------------------------"
 echo "$undocmods"
 echo " $addlparam additional undocumented parameters."
-echo " $misplacedWarns additional warnings."
 echo "----------------------------------------"
 printf "%6d total warnings\n" $warncount
 printf "%6d directories with warnings\n" $modcount
@@ -549,27 +518,6 @@ echo "----------------------------------------"
 printf "%6d files with warnings\n" $filecount
 echo
 echo
-if [ $latexWarns -ne 0 ] ; then
-    html_output=`dirname $LOG`
-    if [ $skip_doxy -eq 1 ]; then
-        html_output+="/html"
-    else
-        html_output+="/html-warn"
-    fi
-    echo "----------------------------------------"
-    echo "There are LaTeX warnings, probably math"
-    echo "  Inspect the generated LaTeX input files"
-    echo "  '$html_output/_formulas.tex'"
-    echo "  (and '$html_output/_formulas_dark.tex')."
-    echo "  as well as the LaTeX run log"
-    echo "  '$html_output/_formulas.log'"
-    echo
-    echo "The LaTeX log is:"
-    echo "$(<$html_output/_formulas.log )"
-    echo "----------------------------------------"
-    echo
-    echo
-fi
 echo "Doxygen Warnings Summary"
 echo "----------------------------------------"
 printf "%6d directories\n" $modcount
@@ -598,12 +546,6 @@ if [ "$filterin" != "" ] ; then
     echo "Filtered Warnings"
     echo "========================================"
     echo "$filterin"
-elif [ "$filter_log_results" != "" ] ; then
-    echo
-    echo
-    echo "Warnings"
-    echo "========================================"
-    echo "$filter_log_results"
 fi
 
 status_report 0 $me

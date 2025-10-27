@@ -1,104 +1,112 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2012 University of Washington
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Mitch Watrous (watrous@u.washington.edu)
  */
 
+#include "ns3/test.h"
 #include "ns3/config.h"
 #include "ns3/double.h"
 #include "ns3/random-variable-stream.h"
-#include "ns3/test.h"
-
 #include <vector>
 
 /**
- * @file
- * @ingroup core-tests
- * @ingroup randomvariable
- * @ingroup rng-tests
+ * \file
+ * \ingroup core-tests
+ * \ingroup randomvariable
+ * \ingroup randomvariable-tests
  * Test for one uniform random variable stream.
  */
 
-namespace ns3
-{
+namespace ns3 {
 
-namespace tests
-{
+namespace tests {
+
 
 /**
- * @ingroup rng-tests
+ * \ingroup randomvariable-tests
  * Test case for one uniform distribution random variable stream generator
  */
 class OneUniformRandomVariableManyGetValueCallsTestCase : public TestCase
 {
-  public:
-    OneUniformRandomVariableManyGetValueCallsTestCase();
-    ~OneUniformRandomVariableManyGetValueCallsTestCase() override;
+public:
+  /** Constructor. */
+  OneUniformRandomVariableManyGetValueCallsTestCase ();
+  /** Destructor. */
+  virtual ~OneUniformRandomVariableManyGetValueCallsTestCase ();
 
-  private:
-    void DoRun() override;
+private:
+  virtual void DoRun (void);
 };
 
-OneUniformRandomVariableManyGetValueCallsTestCase::
-    OneUniformRandomVariableManyGetValueCallsTestCase()
-    : TestCase("One Uniform Random Variable with Many GetValue() Calls")
-{
-}
+OneUniformRandomVariableManyGetValueCallsTestCase::OneUniformRandomVariableManyGetValueCallsTestCase ()
+  : TestCase ("One Uniform Random Variable with Many GetValue() Calls")
+{}
 
-OneUniformRandomVariableManyGetValueCallsTestCase::
-    ~OneUniformRandomVariableManyGetValueCallsTestCase()
-{
-}
+OneUniformRandomVariableManyGetValueCallsTestCase::~OneUniformRandomVariableManyGetValueCallsTestCase ()
+{}
 
 void
-OneUniformRandomVariableManyGetValueCallsTestCase::DoRun()
+OneUniformRandomVariableManyGetValueCallsTestCase::DoRun (void)
 {
-    const double min = 0.0;
-    const double max = 10.0;
+  const double min = 0.0;
+  const double max = 10.0;
 
-    Config::SetDefault("ns3::UniformRandomVariable::Min", DoubleValue(min));
-    Config::SetDefault("ns3::UniformRandomVariable::Max", DoubleValue(max));
+  Config::SetDefault ("ns3::UniformRandomVariable::Min", DoubleValue (min));
+  Config::SetDefault ("ns3::UniformRandomVariable::Max", DoubleValue (max));
 
-    Ptr<UniformRandomVariable> uniform = CreateObject<UniformRandomVariable>();
+  Ptr<UniformRandomVariable> uniform = CreateObject<UniformRandomVariable> ();
 
-    // Get many values from 1 random number generator.
-    double value;
-    const int count = 100000000;
-    for (int i = 0; i < count; i++)
+  // Get many values from 1 random number generator.
+  double value;
+  const int count = 100000000;
+  for (int i = 0; i < count; i++)
     {
-        value = uniform->GetValue();
+      value = uniform->GetValue ();
 
-        NS_TEST_ASSERT_MSG_GT(value, min, "Value less than minimum.");
-        NS_TEST_ASSERT_MSG_LT(value, max, "Value greater than maximum.");
+      NS_TEST_ASSERT_MSG_GT (value, min, "Value less than minimum.");
+      NS_TEST_ASSERT_MSG_LT (value, max, "Value greater than maximum.");
     }
 }
 
 /**
- * @ingroup rng-tests
+ * \ingroup randomvariable-tests
  * Test suite for one uniform distribution random variable stream generator
  */
 class OneUniformRandomVariableManyGetValueCallsTestSuite : public TestSuite
 {
-  public:
-    OneUniformRandomVariableManyGetValueCallsTestSuite();
+public:
+  /** Constructor. */
+  OneUniformRandomVariableManyGetValueCallsTestSuite ();
 };
 
-OneUniformRandomVariableManyGetValueCallsTestSuite::
-    OneUniformRandomVariableManyGetValueCallsTestSuite()
-    : TestSuite("one-uniform-random-variable-many-get-value-calls", Type::PERFORMANCE)
+OneUniformRandomVariableManyGetValueCallsTestSuite::OneUniformRandomVariableManyGetValueCallsTestSuite ()
+  : TestSuite ("one-uniform-random-variable-many-get-value-calls", PERFORMANCE)
 {
-    AddTestCase(new OneUniformRandomVariableManyGetValueCallsTestCase);
+  AddTestCase (new OneUniformRandomVariableManyGetValueCallsTestCase);
 }
 
 /**
- * @ingroup rng-tests
+ * \ingroup randomvariable-tests
  * OneUniformRandomVariableManyGetValueCallsTestSuite instance variable.
  */
-static OneUniformRandomVariableManyGetValueCallsTestSuite
-    g_oneUniformRandomVariableManyGetValueCallsTestSuite;
+static OneUniformRandomVariableManyGetValueCallsTestSuite g_oneUniformRandomVariableManyGetValueCallsTestSuite;
 
-} // namespace tests
 
-} // namespace ns3
+}    // namespace tests
+
+}  // namespace ns3

@@ -1,99 +1,102 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2008 INRIA
  * Copyright (c) 2011 Centre Tecnologic de Telecomunicacions de Catalunya (CTTC)
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Mathieu Lacage <mathieu.lacage@sophia.inria.fr> (original node-container.cc)
  *         Nicola Baldo (wrote building-container.cc based on node-container.cc)
  */
 #include "building-container.h"
-
 #include "ns3/building-list.h"
 #include "ns3/names.h"
 
-namespace ns3
-{
+namespace ns3 {
 
-BuildingContainer::BuildingContainer()
+BuildingContainer::BuildingContainer ()
 {
 }
 
-BuildingContainer::BuildingContainer(Ptr<Building> building)
+BuildingContainer::BuildingContainer (Ptr<Building> building)
 {
-    m_buildings.push_back(building);
+  m_buildings.push_back (building);
+}
+BuildingContainer::BuildingContainer (std::string buildingName)
+{
+  Ptr<Building> building = Names::Find<Building> (buildingName);
+  m_buildings.push_back (building);
 }
 
-BuildingContainer::BuildingContainer(std::string buildingName)
+BuildingContainer::Iterator 
+BuildingContainer::Begin (void) const
 {
-    Ptr<Building> building = Names::Find<Building>(buildingName);
-    m_buildings.push_back(building);
+  return m_buildings.begin ();
+}
+BuildingContainer::Iterator 
+BuildingContainer::End (void) const
+{
+  return m_buildings.end ();
 }
 
-BuildingContainer::Iterator
-BuildingContainer::Begin() const
+uint32_t 
+BuildingContainer::GetN (void) const
 {
-    return m_buildings.begin();
+  return m_buildings.size ();
 }
-
-BuildingContainer::Iterator
-BuildingContainer::End() const
+Ptr<Building> 
+BuildingContainer::Get (uint32_t i) const
 {
-    return m_buildings.end();
+  return m_buildings[i];
 }
-
-uint32_t
-BuildingContainer::GetN() const
+void 
+BuildingContainer::Create (uint32_t n)
 {
-    return m_buildings.size();
-}
-
-Ptr<Building>
-BuildingContainer::Get(uint32_t i) const
-{
-    return m_buildings[i];
-}
-
-void
-BuildingContainer::Create(uint32_t n)
-{
-    for (uint32_t i = 0; i < n; i++)
+  for (uint32_t i = 0; i < n; i++)
     {
-        m_buildings.push_back(CreateObject<Building>());
+      m_buildings.push_back (CreateObject<Building> ());
     }
 }
-
-void
-BuildingContainer::Add(BuildingContainer other)
+void 
+BuildingContainer::Add (BuildingContainer other)
 {
-    for (auto i = other.Begin(); i != other.End(); i++)
+  for (Iterator i = other.Begin (); i != other.End (); i++)
     {
-        m_buildings.push_back(*i);
+      m_buildings.push_back (*i);
     }
 }
-
-void
-BuildingContainer::Add(Ptr<Building> building)
+void 
+BuildingContainer::Add (Ptr<Building> building)
 {
-    m_buildings.push_back(building);
+  m_buildings.push_back (building);
+}
+void 
+BuildingContainer::Add (std::string buildingName)
+{
+  Ptr<Building> building = Names::Find<Building> (buildingName);
+  m_buildings.push_back (building);
 }
 
-void
-BuildingContainer::Add(std::string buildingName)
+BuildingContainer 
+BuildingContainer::GetGlobal (void)
 {
-    Ptr<Building> building = Names::Find<Building>(buildingName);
-    m_buildings.push_back(building);
-}
-
-BuildingContainer
-BuildingContainer::GetGlobal()
-{
-    BuildingContainer c;
-    for (auto i = BuildingList::Begin(); i != BuildingList::End(); ++i)
+  BuildingContainer c;
+  for (BuildingList::Iterator i = BuildingList::Begin (); i != BuildingList::End (); ++i)
     {
-        c.Add(*i);
+      c.Add (*i);
     }
-    return c;
+  return c;
 }
 
 } // namespace ns3

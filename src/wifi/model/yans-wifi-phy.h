@@ -1,7 +1,19 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2005,2006 INRIA
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Authors: Mathieu Lacage <mathieu.lacage@sophia.inria.fr>
  *          Ghada Badawy <gbadawy@gmail.com>
@@ -13,14 +25,13 @@
 
 #include "wifi-phy.h"
 
-namespace ns3
-{
+namespace ns3 {
 
 class YansWifiChannel;
 
 /**
- * @brief 802.11 PHY layer model
- * @ingroup wifi
+ * \brief 802.11 PHY layer model
+ * \ingroup wifi
  *
  * This PHY implements a model of 802.11a. The model
  * implemented here is based on the model described
@@ -35,66 +46,37 @@ class YansWifiChannel;
  */
 class YansWifiPhy : public WifiPhy
 {
-  public:
-    /**
-     * @brief Get the type ID.
-     * @return the object TypeId
-     */
-    static TypeId GetTypeId();
+public:
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
+  static TypeId GetTypeId (void);
 
-    YansWifiPhy();
-    ~YansWifiPhy() override;
+  YansWifiPhy ();
+  virtual ~YansWifiPhy ();
 
-    void SetInterferenceHelper(const Ptr<InterferenceHelper> helper) override;
-    void StartTx(Ptr<const WifiPpdu> ppdu) override;
-    Ptr<Channel> GetChannel() const override;
-    MHz_u GetGuardBandwidth(MHz_u currentChannelWidth) const override;
-    std::tuple<dBr_u, dBr_u, dBr_u> GetTxMaskRejectionParams() const override;
-    WifiSpectrumBandInfo GetBand(MHz_u bandWidth, uint8_t bandIndex = 0) override;
-    FrequencyRange GetCurrentFrequencyRange() const override;
-    WifiSpectrumBandFrequencies ConvertIndicesToFrequencies(
-        const WifiSpectrumBandIndices& indices) const override;
+  void SetInterferenceHelper (const Ptr<InterferenceHelper> helper) override;
+  void StartTx (Ptr<WifiPpdu> ppdu) override;
+  Ptr<Channel> GetChannel (void) const override;
+  uint16_t GetGuardBandwidth (uint16_t currentChannelWidth) const override;
+  std::tuple<double, double, double> GetTxMaskRejectionParams (void) const override;
 
-    /**
-     * Set the YansWifiChannel this YansWifiPhy is to be connected to.
-     *
-     * @param channel the YansWifiChannel this YansWifiPhy is to be connected to
-     */
-    void SetChannel(const Ptr<YansWifiChannel> channel);
+  /**
+   * Set the YansWifiChannel this YansWifiPhy is to be connected to.
+   *
+   * \param channel the YansWifiChannel this YansWifiPhy is to be connected to
+   */
+  void SetChannel (const Ptr<YansWifiChannel> channel);
 
-    /**
-     * Logs the arrival of a PPDU, including its power and duration.
-     * This will also trace PPDUs below WifiPhy::RxSensitivity
-     *
-     * @param [in] ppdu The PPDU being traced upon its arrival.
-     * @param [in] rxPowerDbm The received power of the PPDU in dBm.
-     * @param [in] duration The duration of the PPDU signal.
-     */
-    void TraceSignalArrival(Ptr<const WifiPpdu> ppdu, double rxPowerDbm, Time duration);
+protected:
+  void DoDispose (void) override;
 
-    /**
-     * Callback invoked when the PHY model starts to process a signal
-     *
-     * @param ppdu The PPDU being processed
-     * @param rxPowerDbm received signal power (dBm)
-     * @param duration Signal duration
-     */
-    typedef void (*SignalArrivalCallback)(Ptr<const WifiPpdu> ppdu,
-                                          double rxPowerDbm,
-                                          Time duration);
 
-  protected:
-    void DoDispose() override;
-
-  private:
-    void FinalizeChannelSwitch() override;
-
-    Ptr<YansWifiChannel> m_channel; //!< YansWifiChannel that this YansWifiPhy is connected to
-
-    TracedCallback<Ptr<const WifiPpdu>, double, Time>
-        m_signalArrivalCb; //!< Signal Arrival callback
+private:
+  Ptr<YansWifiChannel> m_channel; //!< YansWifiChannel that this YansWifiPhy is connected to
 };
 
-} // namespace ns3
+} //namespace ns3
 
 #endif /* YANS_WIFI_PHY_H */

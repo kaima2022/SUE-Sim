@@ -1,89 +1,95 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2013 Fraunhofer FKIE
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author:
  *  Sascha Alexander Jopen <jopen@cs.uni-bonn.de>
  */
 #include "lr-wpan-lqi-tag.h"
+#include <ns3/integer.h>
 
-#include "ns3/integer.h"
+namespace ns3 {
 
-namespace ns3
-{
-namespace lrwpan
-{
-
-NS_OBJECT_ENSURE_REGISTERED(LrWpanLqiTag);
+NS_OBJECT_ENSURE_REGISTERED (LrWpanLqiTag);
 
 TypeId
-LrWpanLqiTag::GetTypeId()
+LrWpanLqiTag::GetTypeId (void)
 {
-    static TypeId tid = TypeId("ns3::lrwpan::LrWpanLqiTag")
-                            .AddDeprecatedName("ns3::LrWpanLqiTag")
-                            .SetParent<Tag>()
-                            .SetGroupName("LrWpan")
-                            .AddConstructor<LrWpanLqiTag>()
-                            .AddAttribute("Lqi",
-                                          "The lqi of the last packet received",
-                                          IntegerValue(0),
-                                          MakeIntegerAccessor(&LrWpanLqiTag::Get),
-                                          MakeIntegerChecker<uint8_t>());
-    return tid;
+  static TypeId tid = TypeId ("ns3::LrWpanLqiTag")
+    .SetParent<Tag> ()
+    .SetGroupName ("LrWpan")
+    .AddConstructor<LrWpanLqiTag> ()
+    .AddAttribute ("Lqi", "The lqi of the last packet received",
+                   IntegerValue (0),
+                   MakeIntegerAccessor (&LrWpanLqiTag::Get),
+                   MakeIntegerChecker<uint8_t> ())
+  ;
+  return tid;
 }
 
 TypeId
-LrWpanLqiTag::GetInstanceTypeId() const
+LrWpanLqiTag::GetInstanceTypeId (void) const
 {
-    return GetTypeId();
+  return GetTypeId ();
 }
 
-LrWpanLqiTag::LrWpanLqiTag()
-    : m_lqi(0)
+LrWpanLqiTag::LrWpanLqiTag (void)
+  : m_lqi (0)
 {
 }
 
-LrWpanLqiTag::LrWpanLqiTag(uint8_t lqi)
-    : m_lqi(lqi)
+LrWpanLqiTag::LrWpanLqiTag (uint8_t lqi)
+  : m_lqi (lqi)
 {
 }
 
 uint32_t
-LrWpanLqiTag::GetSerializedSize() const
+LrWpanLqiTag::GetSerializedSize (void) const
 {
-    return sizeof(uint8_t);
+  return sizeof (uint8_t);
 }
 
 void
-LrWpanLqiTag::Serialize(TagBuffer i) const
+LrWpanLqiTag::Serialize (TagBuffer i) const
 {
-    i.WriteU8(m_lqi);
+  i.WriteU8 (m_lqi);
 }
 
 void
-LrWpanLqiTag::Deserialize(TagBuffer i)
+LrWpanLqiTag::Deserialize (TagBuffer i)
 {
-    m_lqi = i.ReadU8();
+  m_lqi = i.ReadU8 ();
 }
 
 void
-LrWpanLqiTag::Print(std::ostream& os) const
+LrWpanLqiTag::Print (std::ostream &os) const
 {
-    os << "Lqi = " << m_lqi;
+  os << "Lqi = " << m_lqi;
 }
 
 void
-LrWpanLqiTag::Set(uint8_t lqi)
+LrWpanLqiTag::Set (uint8_t lqi)
 {
-    m_lqi = lqi;
+  m_lqi = lqi;
 }
 
 uint8_t
-LrWpanLqiTag::Get() const
+LrWpanLqiTag::Get (void) const
 {
-    return m_lqi;
+  return m_lqi;
 }
 
-} // namespace lrwpan
-} // namespace ns3
+}

@@ -1,145 +1,110 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
  * Copyright (c) 2005,2006 INRIA
  *
- * SPDX-License-Identifier: GPL-2.0-only
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation;
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Authors: Mathieu Lacage <mathieu.lacage@sophia.inria.fr>
  *          Ghada Badawy <gbadawy@gmail.com>
  *          Sébastien Deronne <sebastien.deronne@gmail.com>
  */
 
-#include "yans-wifi-phy.h"
-
-#include "interference-helper.h"
-#include "yans-wifi-channel.h"
-
 #include "ns3/log.h"
+#include "yans-wifi-phy.h"
+#include "yans-wifi-channel.h"
+#include "interference-helper.h"
 
-namespace ns3
-{
+namespace ns3 {
 
-NS_LOG_COMPONENT_DEFINE("YansWifiPhy");
+NS_LOG_COMPONENT_DEFINE ("YansWifiPhy");
 
-NS_OBJECT_ENSURE_REGISTERED(YansWifiPhy);
+NS_OBJECT_ENSURE_REGISTERED (YansWifiPhy);
 
 TypeId
-YansWifiPhy::GetTypeId()
+YansWifiPhy::GetTypeId (void)
 {
-    static TypeId tid =
-        TypeId("ns3::YansWifiPhy")
-            .SetParent<WifiPhy>()
-            .SetGroupName("Wifi")
-            .AddConstructor<YansWifiPhy>()
-            .AddTraceSource("SignalArrival",
-                            "Trace start of all signal arrivals, including weak signals",
-                            MakeTraceSourceAccessor(&YansWifiPhy::m_signalArrivalCb),
-                            "ns3::YansWifiPhy::SignalArrivalCallback");
-    return tid;
+  static TypeId tid = TypeId ("ns3::YansWifiPhy")
+    .SetParent<WifiPhy> ()
+    .SetGroupName ("Wifi")
+    .AddConstructor<YansWifiPhy> ()
+  ;
+  return tid;
 }
 
-YansWifiPhy::YansWifiPhy()
+YansWifiPhy::YansWifiPhy ()
 {
-    NS_LOG_FUNCTION(this);
+  NS_LOG_FUNCTION (this);
 }
 
 void
-YansWifiPhy::SetInterferenceHelper(const Ptr<InterferenceHelper> helper)
+YansWifiPhy::SetInterferenceHelper (const Ptr<InterferenceHelper> helper)
 {
-    WifiPhy::SetInterferenceHelper(helper);
-    // add dummy band for Yans
-    m_interference->AddBand({{{0, 0}},
-                             {{
-                                 Hz_u{0},
-                                 Hz_u{0},
-                             }}});
+  WifiPhy::SetInterferenceHelper (helper);
+  //add dummy band for Yans
+  WifiSpectrumBand band;
+  band.first = 0;
+  band.second = 0;
+  m_interference->AddBand (band);
 }
 
-YansWifiPhy::~YansWifiPhy()
+YansWifiPhy::~YansWifiPhy ()
 {
-    NS_LOG_FUNCTION(this);
+  NS_LOG_FUNCTION (this);
 }
 
 void
-YansWifiPhy::DoDispose()
+YansWifiPhy::DoDispose (void)
 {
-    NS_LOG_FUNCTION(this);
-    m_channel = nullptr;
-    WifiPhy::DoDispose();
+  NS_LOG_FUNCTION (this);
+  m_channel = 0;
+  WifiPhy::DoDispose ();
 }
 
 Ptr<Channel>
-YansWifiPhy::GetChannel() const
+YansWifiPhy::GetChannel (void) const
 {
-    return m_channel;
+  return m_channel;
 }
 
 void
-YansWifiPhy::SetChannel(const Ptr<YansWifiChannel> channel)
+YansWifiPhy::SetChannel (const Ptr<YansWifiChannel> channel)
 {
-    NS_LOG_FUNCTION(this << channel);
-    m_channel = channel;
-    m_channel->Add(this);
+  NS_LOG_FUNCTION (this << channel);
+  m_channel = channel;
+  m_channel->Add (this);
 }
 
 void
-YansWifiPhy::StartTx(Ptr<const WifiPpdu> ppdu)
+YansWifiPhy::StartTx (Ptr<WifiPpdu> ppdu)
 {
-    NS_LOG_FUNCTION(this << ppdu);
-    NS_LOG_DEBUG("Start transmission: signal power before antenna gain="
-                 << GetPower(ppdu->GetTxVector().GetTxPowerLevel()) << "dBm");
-    m_signalTransmissionCb(ppdu, ppdu->GetTxVector());
-    m_channel->Send(this, ppdu, GetTxPowerForTransmission(ppdu) + GetTxGain());
+  NS_LOG_FUNCTION (this << ppdu);
+  NS_LOG_DEBUG ("Start transmission: signal power before antenna gain=" << GetPowerDbm (ppdu->GetTxVector ().GetTxPowerLevel ()) << "dBm");
+  m_channel->Send (this, ppdu, GetTxPowerForTransmission (ppdu) + GetTxGain ());
 }
 
-void
-YansWifiPhy::TraceSignalArrival(Ptr<const WifiPpdu> ppdu, double rxPowerDbm, Time duration)
+uint16_t
+YansWifiPhy::GetGuardBandwidth (uint16_t currentChannelWidth) const
 {
-    NS_LOG_FUNCTION(this << ppdu);
-    m_signalArrivalCb(ppdu, rxPowerDbm, ppdu->GetTxDuration());
+  NS_ABORT_MSG ("Guard bandwidth not relevant for Yans");
+  return 0;
 }
 
-MHz_u
-YansWifiPhy::GetGuardBandwidth(MHz_u currentChannelWidth) const
+std::tuple<double, double, double>
+YansWifiPhy::GetTxMaskRejectionParams (void) const
 {
-    NS_ABORT_MSG("Guard bandwidth not relevant for Yans");
-    return MHz_u{0};
+  NS_ABORT_MSG ("Tx mask rejection params not relevant for Yans");
+  return std::make_tuple (0.0, 0.0, 0.0);
 }
 
-std::tuple<dBr_u, dBr_u, dBr_u>
-YansWifiPhy::GetTxMaskRejectionParams() const
-{
-    NS_ABORT_MSG("Tx mask rejection params not relevant for Yans");
-    return std::make_tuple(dBr_u{0.0}, dBr_u{0.0}, dBr_u{0.0});
-}
-
-WifiSpectrumBandInfo
-YansWifiPhy::GetBand(MHz_u /*bandWidth*/, uint8_t /*bandIndex*/)
-{
-    return {{{0, 0}},
-            {{
-                Hz_u{0},
-                Hz_u{0},
-            }}};
-}
-
-FrequencyRange
-YansWifiPhy::GetCurrentFrequencyRange() const
-{
-    return WHOLE_WIFI_SPECTRUM;
-}
-
-WifiSpectrumBandFrequencies
-YansWifiPhy::ConvertIndicesToFrequencies(const WifiSpectrumBandIndices& /*indices*/) const
-{
-    return {Hz_u{0}, Hz_u{0}};
-}
-
-void
-YansWifiPhy::FinalizeChannelSwitch()
-{
-    NS_LOG_FUNCTION(this);
-    NS_ABORT_MSG_IF(GetOperatingChannel().GetNSegments() > 1,
-                    "operating channel made of non-contiguous segments cannot be used with Yans");
-}
-
-} // namespace ns3
+} //namespace ns3
