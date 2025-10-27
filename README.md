@@ -1,6 +1,6 @@
 <div align="center">
 
-# **SUE-Sim: End-to-End Scale-Up Ethernet Simulation Platform**
+## **SUE-Sim: End-to-End Scale-Up Ethernet Simulation Platform**
 
 ---
 
