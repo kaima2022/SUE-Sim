@@ -20,7 +20,7 @@
 - [SUE-Sim Overview](#sue-sim-overview)
 - [System Architecture](#system-architecture)
   - [Core Components](#core-components)
-- [Project Structure](#project-structure)
+- [Repository Structure](#repository-structure)
 - [Getting Started](#getting-started)
   - [Environment Requirements](#environment-requirements)
   - [Installation](#installation)
@@ -32,7 +32,7 @@
 
 ## SUE-Sim Overview
 
-SUE-Sim is an end-to-end, high-precision network simulation platform for the [Scale-Up Ethernet(SUE) framework](https://docs.broadcom.com/docs/scale-up-ethernet-framework).
+SUE-Sim is an end-to-end, high-precision network simulation platform for the [Scale-Up Ethernet framework(SUE)](https://docs.broadcom.com/docs/scale-up-ethernet-framework).
 
 Broadcom's SUE provides a low-latency, high-bandwidth interconnect framework for Ethernet-based XPU scale-up networks, supporting efficient interconnection of large-scale XPU clusters at rack-level and even multi-rack-level. It aims to address the increasingly prominent network bottleneck issues caused by the growing complexity of AI and machine learning workloads.
 
@@ -40,11 +40,9 @@ SUE-Sim serves two primary objectives:
 
 - **Network Configuration and Performance Evaluation**: SUE-Sim provides a Scale-Up Ethernet simulation platform for GPU manufacturers, AI computing center operators, and other users. It supports constructing topologies of various scales, configuring parameters, and evaluating network performance under different workloads.
 
-- **SUE Framework Specification Optimization**: The platform enables researchers to optimize SUE framework specifications through advanced algorithms and protocol validation. 
+- **SUE Framework Specification Optimization**: The platform enables researchers to optimize SUE framework specifications through advanceing algorithms and protocol validating. 
 
 **Current Version**: SUE-Sim v1.0
-
-**Implementation Scope**: This platform implements partial core functions of the Scale-Up Ethernet framework. Other features and details are being continuously improved.
 
 ## System Architecture
 <p align="center">
@@ -58,7 +56,7 @@ SUE-Sim serves two primary objectives:
   - Continuously generates transactions according to configured data rates
 - **Load Balancer**
   - Balances traffic across SUE instances
-- **Credit-Based Flow Controller (CBFC)**
+- **Credit-Based Flow Control Module (CBFC)**
   - Maintains credit usage for each VC to control flow
 - **SUE Instance Packer**
   - Opportunistically packs transactions up to preconfigured size limits
@@ -69,7 +67,7 @@ SUE-Sim serves two primary objectives:
   - Implements a basic Layer 2 switch, supporting MAC address table lookup and frame forwarding
 
 
-## Project Structure
+## Repository Structure
 
 ```
 SUE-Sim/
@@ -78,7 +76,7 @@ SUE-Sim/
 │       └── SUE-Sim.cc              # Entry point for SUE simulation
 │
 ├── src/                              # ns-3 source code
-│   └── point-to-point-sue/           # SUE module
+│   └── sue-sim-module/                          # SUE module
 │       ├── model/                    # Core models
 │       │   ├── simulation-config/                      # Simulation framework
 │       │   │   ├── application-deployer.cc/.h          # Application deployment
@@ -97,10 +95,10 @@ SUE-Sim/
 │       │   ├── xpu-delay-tag.cc/.h                     # XPU delay tag
 |       |   └── sue-ppp-header.cc/.h                    # ppp header
 │       ├── helper/                  # Helper classes
-│       │   └── point-to-point-sue-helper.cc/.h
+│       │   └── sue-sim-module-helper.cc/.h
 │       ├── examples/                # Example code
 │       ├── test/                    # Unit tests
-│       │   └── point-to-point-sue-test.cc
+│       │   └── sue-sim-module-test.cc
 │       └── CMakeLists.txt           # Build configuration
 │
 ├── performance-data/                  # Performance analysis results
@@ -116,8 +114,6 @@ SUE-Sim/
 
 - **ns-3 v3.44**  - `main` branch
 - **ns-3 v3.36**  - `ns3-36` branch
-
-**Modular Design Features**: The point-to-point-sue module adopts a design architecture independent of the native point-to-point, with complete modular characteristics and plug-and-play capabilities. Through interface design and standardized implementation, this module can be quickly migrated to different versions of the ns-3 environment.
 
 
 ## Getting Started
@@ -202,7 +198,7 @@ The following command demonstrates a 4-node XPU test scenario:
 ./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=16 --portsPerSue=4 --threadRate=3500000 --totalBytesToSend=50" > log/sue-sim.log 2>&1
 ```
 
-NS3 logging is disabled by default, and collected data is stored in performance-data/data. For details, see [Performance Analysis Platform](#performance-analysis-platform).
+NS3 logging is disabled by default, and collected data is stored in performance-data/data. For details, see [Performance Analysis Platform](#performance-data/README.md).
 
 > **Note**: Users are advised to configure parameters according to actual test scenarios.
 
@@ -227,13 +223,6 @@ For questions, suggestions, or bug reports, please feel free to contact us:
 We look forward to hearing from you and appreciate your feedback!
 
 ---
-
-## Acknowledgments
-
-We sincerely thank the following projects and organizations:
-
-- **[ns-3](https://www.nsnam.org/)** - Excellent network simulation framework, the foundation of this simulation platform
-- **[Broadcom](https://docs.broadcom.com/docs/scale-up-ethernet-framework)** - Providing Scale-Up Ethernet framework specifications
 
 ## Citation
 
