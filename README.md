@@ -20,7 +20,7 @@
 - [SUE-Sim Overview](#sue-sim-overview)
 - [System Architecture](#system-architecture)
   - [Core Components](#core-components)
-- [Project Structure](#project-structure)
+- [Repository Structure](#repository-structure)
 - [Getting Started](#getting-started)
   - [Environment Requirements](#environment-requirements)
   - [Installation](#installation)
@@ -32,7 +32,7 @@
 
 ## SUE-Sim Overview
 
-SUE-Sim is an end-to-end, high-precision network simulation platform for the [Scale-Up Ethernet(SUE) framework](https://docs.broadcom.com/docs/scale-up-ethernet-framework).
+SUE-Sim is an end-to-end, high-precision network simulation platform for the [Scale-Up Ethernet framework(SUE)](https://docs.broadcom.com/docs/scale-up-ethernet-framework).
 
 Broadcom's SUE provides a low-latency, high-bandwidth interconnect framework for Ethernet-based XPU scale-up networks, supporting efficient interconnection of large-scale XPU clusters at rack-level and even multi-rack-level. It aims to address the increasingly prominent network bottleneck issues caused by the growing complexity of AI and machine learning workloads.
 
@@ -40,11 +40,9 @@ SUE-Sim serves two primary objectives:
 
 - **Network Configuration and Performance Evaluation**: SUE-Sim provides a Scale-Up Ethernet simulation platform for GPU manufacturers, AI computing center operators, and other users. It supports constructing topologies of various scales, configuring parameters, and evaluating network performance under different workloads.
 
-- **SUE Framework Specification Optimization**: The platform enables researchers to optimize SUE framework specifications through advanced algorithms and protocol validation. 
+- **SUE Framework Specification Optimization**: The platform enables researchers to optimize SUE framework specifications through advanceing algorithms and protocol validating. 
 
 **Current Version**: SUE-Sim v1.0
-
-**Implementation Scope**: This platform implements partial core functions of the Scale-Up Ethernet framework. Other features and details are being continuously improved.
 
 ## System Architecture
 <p align="center">
@@ -58,7 +56,7 @@ SUE-Sim serves two primary objectives:
   - Continuously generates transactions according to configured data rates
 - **Load Balancer**
   - Balances traffic across SUE instances
-- **Credit-Based Flow Controller (CBFC)**
+- **Credit-Based Flow Control Module (CBFC)**
   - Maintains credit usage for each VC to control flow
 - **SUE Instance Packer**
   - Opportunistically packs transactions up to preconfigured size limits
@@ -69,7 +67,7 @@ SUE-Sim serves two primary objectives:
   - Implements a basic Layer 2 switch, supporting MAC address table lookup and frame forwarding
 
 
-## Project Structure
+## Repository Structure
 
 ```
 SUE-Sim/
@@ -220,14 +218,7 @@ For questions, suggestions, or bug reports, please feel free to contact us:
 
 We look forward to hearing from you and appreciate your feedback!
 
----
 
-## Acknowledgments
-
-We sincerely thank the following projects and organizations:
-
-- **[ns-3](https://www.nsnam.org/)** - Excellent network simulation framework, the foundation of this simulation platform
-- **[Broadcom](https://docs.broadcom.com/docs/scale-up-ethernet-framework)** - Providing Scale-Up Ethernet framework specifications
 
 ## Citation
 
