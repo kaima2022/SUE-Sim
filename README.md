@@ -96,9 +96,6 @@ SUE-Sim/
 |       |   └── sue-ppp-header.cc/.h                    # ppp header
 │       ├── helper/                  # Helper classes
 │       │   └── sue-sim-module-helper.cc/.h
-│       ├── examples/                # Example code
-│       ├── test/                    # Unit tests
-│       │   └── sue-sim-module-test.cc
 │       └── CMakeLists.txt           # Build configuration
 │
 ├── performance-data/                  # Performance analysis results
@@ -198,7 +195,7 @@ The following command demonstrates a 4-node XPU test scenario:
 ./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=16 --portsPerSue=4 --threadRate=3500000 --totalBytesToSend=50" > log/sue-sim.log 2>&1
 ```
 
-NS3 logging is disabled by default, and collected data is stored in performance-data/data. For details, see [Performance Analysis Platform](#performance-data/README.md).
+NS3 logging is disabled by default, and collected data is stored in performance-data/data. For details, see [Performance Analysis Platform](performance-data/README.md).
 
 > **Note**: Users are advised to configure parameters according to actual test scenarios.
 
