@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-#include "point-to-point-sue-helper.h"
+#include "sue-sim-module-helper.h"
 #include "ns3/point-to-point-sue-net-device.h"
 #include "ns3/point-to-point-sue-channel.h"
 #include "ns3/node.h"

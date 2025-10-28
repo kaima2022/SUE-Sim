@@ -78,7 +78,7 @@ SUE-Sim/
 │       └── SUE-Sim.cc              # Entry point for SUE simulation
 │
 ├── src/                              # ns-3 source code
-│   └── point-to-point-sue/           # SUE module
+│   └── sue-sim-module/               # SUE module
 │       ├── model/                    # Core models
 │       │   ├── simulation-config/                      # Simulation framework
 │       │   │   ├── application-deployer.cc/.h          # Application deployment
@@ -97,10 +97,7 @@ SUE-Sim/
 │       │   ├── xpu-delay-tag.cc/.h                     # XPU delay tag
 |       |   └── sue-ppp-header.cc/.h                    # ppp header
 │       ├── helper/                  # Helper classes
-│       │   └── point-to-point-sue-helper.cc/.h
-│       ├── examples/                # Example code
-│       ├── test/                    # Unit tests
-│       │   └── point-to-point-sue-test.cc
+│       │   └── sue-sim-module-helper.cc/.h
 │       └── CMakeLists.txt           # Build configuration
 │
 ├── performance-data/                  # Performance analysis results
@@ -116,9 +113,6 @@ SUE-Sim/
 
 - **ns-3 v3.44**  - `main` branch
 - **ns-3 v3.36**  - `ns3-36` branch
-
-**Modular Design Features**: The point-to-point-sue module adopts a design architecture independent of the native point-to-point, with complete modular characteristics and plug-and-play capabilities. Through interface design and standardized implementation, this module can be quickly migrated to different versions of the ns-3 environment.
-
 
 ## Getting Started
 
@@ -202,7 +196,7 @@ The following command demonstrates a 4-node XPU test scenario:
 ./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=16 --portsPerSue=4 --threadRate=3500000 --totalBytesToSend=50" > log/sue-sim.log 2>&1
 ```
 
-NS3 logging is disabled by default, and collected data is stored in performance-data/data. For details, see [Performance Analysis Platform](#performance-analysis-platform).
+NS3 logging is disabled by default, and collected data is stored in performance-data/data. For details, see [Performance Analysis Platform](performance-data/README.md).
 
 > **Note**: Users are advised to configure parameters according to actual test scenarios.
 

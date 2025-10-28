@@ -1,5 +1,5 @@
 build_lib(
-  LIBNAME point-to-point-sue
+  LIBNAME sue-sim-module
   SOURCE_FILES
     model/point-to-point-sue-net-device.cc
     model/point-to-point-sue-channel.cc
@@ -12,7 +12,7 @@ build_lib(
     model/traffic-generator.cc
     model/load-balancer.cc
     model/sue-ppp-header.cc
-    helper/point-to-point-sue-helper.cc
+    helper/sue-sim-module-helper.cc
     model/simulation-config/application-deployer.cc
     model/simulation-config/parameter-config.cc
     model/simulation-config/sue-utils.cc
@@ -29,11 +29,11 @@ build_lib(
     model/traffic-generator.h
     model/load-balancer.h
     model/sue-ppp-header.h
-    helper/point-to-point-sue-helper.h
+    helper/sue-sim-module-helper.h
     model/simulation-config/application-deployer.h
     model/simulation-config/parameter-config.h
     model/simulation-config/sue-utils.h
     model/simulation-config/topology-builder.h
   LIBRARIES_TO_LINK ${libnetwork} ${libcore} ${libpoint-to-point}
-  TEST_SOURCES test/point-to-point-sue-test.cc
+  TEST_SOURCES test/sue-sim-module-test.cc
 )
