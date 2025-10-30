@@ -12,6 +12,7 @@ build_lib(
     model/traffic-generator.cc
     model/load-balancer.cc
     model/sue-ppp-header.cc
+    model/sue-switch.cc
     helper/sue-sim-module-helper.cc
     model/simulation-config/application-deployer.cc
     model/simulation-config/parameter-config.cc
@@ -29,6 +30,7 @@ build_lib(
     model/traffic-generator.h
     model/load-balancer.h
     model/sue-ppp-header.h
+    model/sue-switch.h
     helper/sue-sim-module-helper.h
     model/simulation-config/application-deployer.h
     model/simulation-config/parameter-config.h

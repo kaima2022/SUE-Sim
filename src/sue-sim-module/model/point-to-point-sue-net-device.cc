@@ -332,6 +332,9 @@ namespace ns3
           m_AckProcessDelay(NanoSeconds(10))
     {
         NS_LOG_FUNCTION(this);
+
+        // Initialize switch module
+        m_switch = CreateObject<SueSwitch> ();
     }
 
     PointToPointSueNetDevice::~PointToPointSueNetDevice()
@@ -711,25 +714,7 @@ namespace ns3
         m_bps = bps;
     }
 
-    bool PointToPointSueNetDevice::IsSwitchDevice() const
-    {
-        Mac48Address addr = m_address;
-        uint8_t buffer[6];
-        addr.CopyTo(buffer);
-        uint8_t lastByte = buffer[5]; // Last byte of MAC address
-        // TODO: Simplistic logic; needs modification for proper XPU/switch identification
-        return (lastByte % 2 == 0); // Even numbers are switch devices
-    }
-
-    bool PointToPointSueNetDevice::IsMacSwitchDevice(Mac48Address mac) const
-    {
-        uint8_t buffer[6];
-        mac.CopyTo(buffer);
-        uint8_t lastByte = buffer[5]; // Last byte of MAC address
-        // TODO: Simplistic logic; needs modification for proper XPU/switch identification
-        return (lastByte % 2 == 0); // Even numbers are switch devices
-    }
-
+    
     void
     PointToPointSueNetDevice::SetInterframeGap(Time t)
     {
@@ -1300,17 +1285,7 @@ namespace ns3
     }
 
     // Set complete forwarding table
-    void PointToPointSueNetDevice::SetForwardingTable(const std::map<Mac48Address, uint32_t> &table)
-    {
-        m_forwardingTable = table;
-    }
-
-    // Clear existing forwarding table
-    void PointToPointSueNetDevice::ClearForwardingTable()
-    {
-        m_forwardingTable.clear();
-    }
-
+    
     void PointToPointSueNetDevice::StartProcessing()
     {
         if (m_processingQueue.empty())
@@ -1342,85 +1317,22 @@ namespace ns3
             m_promiscCallback(this, item.packet, item.protocol, GetRemote(), GetAddress(), NetDevice::PACKET_HOST);
         }
 
-        // TODO Key part of switch two-port data transmission
-        // Layer 2 forwarding logic
+        // Switch forwarding logic - delegate to SueSwitch module
         EthernetHeader ethHeader;
-
         item.packet->PeekHeader(ethHeader);
 
-        if (IsSwitchDevice() && !m_forwardingTable.empty())
+        // Check if this device is a switch device and forward accordingly
+        if (m_switch && m_switch->IsSwitchDevice(m_address))
         {
-            // Extract destination MAC address from packet
-            if (item.packet->PeekHeader(ethHeader))
+            bool forwarded = m_switch->ProcessSwitchForwarding(item.packet, ethHeader, this, item.protocol, item.vcId);
+            if (forwarded)
             {
-                Mac48Address destination = ethHeader.GetDestination();
-
-                // Lookup in global forwarding table
-                auto it = m_forwardingTable.find(destination);
-                if (it != m_forwardingTable.end())
-                {
-                    uint32_t outPortIndex = it->second;
-                    Ptr<Node> node = GetNode();
-
-                    // Find device corresponding to the port on the node
-                    for (uint32_t i = 0; i < node->GetNDevices(); i++)
-                    {
-                        Ptr<NetDevice> dev = node->GetDevice(i);
-                        Ptr<PointToPointSueNetDevice> p2pDev = DynamicCast<PointToPointSueNetDevice>(dev);
-                        // Check if conversion is successful
-                        if (p2pDev && p2pDev->GetIfIndex() == outPortIndex)
-                        {
-                            // If current port is the egress port, directly enter VC queue
-                            // Switch egress port: replace SourceDestination MAC with current device MAC only during TransmitStart
-                            // If replaced with local MAC first, it's difficult to find the previous device's MAC later
-                            if (GetIfIndex() == outPortIndex)
-                            {
-                                // This won't actually execute here, because ingress port directly puts data into egress port's VC queue
-                                Send(item.packet->Copy(), destination, item.protocol);
-                                // Queue operations have been completed in StartProcessing
-                                HandleCreditReturn(ethHeader, item); // Only do CreditReturn when actually sent out
-                            }
-                            else
-                            { // If current port is ingress port, hand over to egress port's receive queue
-                                // When switch ingress port forwards, replace SourceDestination MAC with current device MAC
-                                // to enable universal credit calculation based on SourceMac.
-                                EthernetHeader ethTemp;
-                                item.packet->RemoveHeader(ethTemp);
-                                ethTemp.SetSource(GetLocalMac());
-                                item.packet->AddHeader(ethTemp);
-
-                                // Extract VC ID from packet
-                                uint8_t vcId = ExtractVcIdFromPacket(item.packet);
-
-                                Mac48Address mac = Mac48Address::ConvertFrom(p2pDev->GetAddress());
-
-                                // Switch internal LLR retransmission logic, ingress port -> egress port
-                                if(m_llrEnabled && llrResending[mac][vcId]){
-                                LlrResendPacket(vcId, mac);
-                                return;
-                                }
-                                // To implement switch internal LLR logic, packets need to carry sequence information
-                                Ptr<Packet> Packet = item.packet->Copy();
-                                LlrSendPacket(Packet, vcId, mac);
-                                
-
-                                if (m_txCreditsMap[mac][vcId] > 0)
-                                {
-                                    if (m_enableLinkCBFC)
-                                    {
-                                        m_txCreditsMap[mac][vcId]--;
-                                    }
-                                    // Switch forwarding delay
-                                    Simulator::Schedule(m_switchForwardDelay, &PointToPointSueNetDevice::SpecDevEnqueueToVcQueue, this, p2pDev, item.packet->Copy());
-                                    HandleCreditReturn(ethHeader, item);
-                                    // TODO delay to be set
-                                    CreditReturn(ethHeader.GetSource(), item.vcId);
-                                    // Queue operations have been completed in StartProcessing
-                                }
-                            }
-                        }
-                    }
-                }
+                // Credit return already handled in SueSwitch
+                // Continue with next packet processing
+            }
+            else
+            {
+                NS_ASSERT_MSG(false, "Switch forwarding failed - this should not happen!");
             }
         }
         else
@@ -2498,6 +2410,122 @@ namespace ns3
             }else{
                 resendPkt[mac][vcId] = Simulator::Schedule(m_llrTimeout, &PointToPointSueNetDevice::Resend, this, vcId, mac);
             }
+        }
+    }
+
+    // Switch support methods implementation
+    Ptr<SueSwitch>
+    PointToPointSueNetDevice::GetSwitch() const
+    {
+        return m_switch;
+    }
+
+    void
+    PointToPointSueNetDevice::SetSwitch(Ptr<SueSwitch> switchModule)
+    {
+        m_switch = switchModule;
+    }
+
+    bool
+    PointToPointSueNetDevice::GetLlrEnabled() const
+    {
+        return m_llrEnabled;
+    }
+
+    bool
+    PointToPointSueNetDevice::IsLlrResending(Mac48Address mac, uint8_t vcId) const
+    {
+        auto it = llrResending.find(mac);
+        if (it != llrResending.end() && it->second.size() > vcId)
+        {
+            return it->second[vcId];
+        }
+        return false;
+    }
+
+    
+    uint32_t
+    PointToPointSueNetDevice::GetTxCredits(Mac48Address mac, uint8_t vcId) const
+    {
+        auto it = m_txCreditsMap.find(mac);
+        if (it != m_txCreditsMap.end())
+        {
+            auto vcIt = it->second.find(vcId);
+            if (vcIt != it->second.end())
+            {
+                return vcIt->second;
+            }
+        }
+        return 0;
+    }
+
+    void
+    PointToPointSueNetDevice::DecrementTxCredits(Mac48Address mac, uint8_t vcId)
+    {
+        auto it = m_txCreditsMap.find(mac);
+        if (it != m_txCreditsMap.end())
+        {
+            auto vcIt = it->second.find(vcId);
+            if (vcIt != it->second.end() && vcIt->second > 0)
+            {
+                vcIt->second--;
+            }
+        }
+    }
+
+    bool
+    PointToPointSueNetDevice::IsLinkCbfcEnabled() const
+    {
+        return m_enableLinkCBFC;
+    }
+
+    Time
+    PointToPointSueNetDevice::GetSwitchForwardDelay() const
+    {
+        return m_switchForwardDelay;
+    }
+
+    void
+    PointToPointSueNetDevice::HandleCreditReturn(const EthernetHeader& ethHeader, uint8_t vcId)
+    {
+        if (m_enableLinkCBFC)
+        {
+            // Increase credit count for corresponding source address and VC
+            Mac48Address source = ethHeader.GetSource();
+
+            m_rxCreditsToReturnMap[source][vcId]++;
+        }
+    }
+
+    
+    // Temporarily keep the IsSwitchDevice and IsMacSwitchDevice methods for backward compatibility
+    bool
+    PointToPointSueNetDevice::IsSwitchDevice() const
+    {
+        return m_switch && m_switch->IsSwitchDevice(m_address);
+    }
+
+    bool
+    PointToPointSueNetDevice::IsMacSwitchDevice(Mac48Address mac) const
+    {
+        return m_switch && m_switch->IsSwitchDevice(mac);
+    }
+
+    void
+    PointToPointSueNetDevice::SetForwardingTable(const std::map<Mac48Address, uint32_t>& table)
+    {
+        if (m_switch)
+        {
+            m_switch->SetForwardingTable(table);
+        }
+    }
+
+    void
+    PointToPointSueNetDevice::ClearForwardingTable()
+    {
+        if (m_switch)
+        {
+            m_switch->ClearForwardingTable();
         }
     }
 

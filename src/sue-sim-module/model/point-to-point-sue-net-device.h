@@ -35,12 +35,14 @@
 #include "ns3/ethernet-header.h"
 #include "ns3/ipv4-header.h"
 #include "ns3/queue.h"
+#include "sue-switch.h"
 
 namespace ns3 {
 
 class PointToPointSueChannel;
 class ErrorModel;
 class SueCbfcHeader;
+class SueSwitch;
 
 /**
  * \defgroup point-to-point-sue Point-To-Point SUE Network Device
@@ -169,18 +171,7 @@ public:
    */
   void SetLoggingEnabled(bool enabled);
 
-  /**
-   * \brief Set the forwarding table for switch devices.
-   *
-   * \param table Map of destination MAC addresses to output port indices
-   */
-  void SetForwardingTable(const std::map<Mac48Address, uint32_t>& table);
-
-  /**
-   * \brief Clear the forwarding table.
-   */
-  void ClearForwardingTable();
-
+  
   /**
    * \brief Get the total number of dropped packets.
    *
@@ -202,6 +193,115 @@ public:
    * \return Corresponding MAC address
    */
   static Mac48Address GetMacForIp(Ipv4Address ip);
+
+  // Switch support methods
+  /**
+   * \brief Extract VC ID from a packet
+   *
+   * \param packet Packet to extract from
+   * \return VC ID
+   */
+  uint8_t ExtractVcIdFromPacket(Ptr<const Packet> packet);
+
+  /**
+   * \brief Get the switch module
+   *
+   * \return Pointer to the switch module
+   */
+  Ptr<SueSwitch> GetSwitch() const;
+
+  /**
+   * \brief Set the switch module
+   *
+   * \param switchModule Pointer to the switch module
+   */
+  void SetSwitch(Ptr<SueSwitch> switchModule);
+
+  // LLR support methods for switch
+  /**
+   * \brief Check if LLR is enabled
+   *
+   * \return true if LLR is enabled
+   */
+  bool GetLlrEnabled() const;
+
+  /**
+   * \brief Check if a MAC/VC is currently resending
+   *
+   * \param mac MAC address
+   * \param vcId Virtual Channel ID
+   * \return true if currently resending
+   */
+  bool IsLlrResending(Mac48Address mac, uint8_t vcId) const;
+
+  
+  /**
+   * \brief Get TX credits for a specific MAC/VC
+   *
+   * \param mac MAC address
+   * \param vcId Virtual Channel ID
+   * \return Available credits
+   */
+  uint32_t GetTxCredits(Mac48Address mac, uint8_t vcId) const;
+
+  /**
+   * \brief Decrement TX credits for a specific MAC/VC
+   *
+   * \param mac MAC address
+   * \param vcId Virtual Channel ID
+   */
+  void DecrementTxCredits(Mac48Address mac, uint8_t vcId);
+
+  /**
+   * \brief Check if CBFC is enabled
+   *
+   * \return true if CBFC is enabled
+   */
+  bool IsLinkCbfcEnabled() const;
+
+  /**
+   * \brief Get switch forwarding delay
+   *
+   * \return Switch forwarding delay
+   */
+  Time GetSwitchForwardDelay() const;
+
+  /**
+   * \brief Handle credit return
+   *
+   * \param ethHeader Ethernet header
+   * \param vcId Virtual Channel ID
+   */
+  void HandleCreditReturn(const EthernetHeader& ethHeader, uint8_t vcId);
+
+  
+  // Backward compatibility methods - delegate to SueSwitch
+  /**
+   * \brief Check if this device is a switch device.
+   *
+   * \return true if this is a switch device
+   */
+  bool IsSwitchDevice() const;
+
+  /**
+   * \brief Check if a MAC address belongs to a switch device.
+   *
+   * \param mac MAC address to check
+   * \return true if MAC belongs to a switch device
+   */
+  bool IsMacSwitchDevice(Mac48Address mac) const;
+
+  /**
+   * \brief Set the forwarding table for switch devices.
+   *
+   * \param table Map of destination MAC addresses to output port indices
+   */
+  void SetForwardingTable(const std::map<Mac48Address, uint32_t>& table);
+
+  /**
+   * \brief Clear the forwarding table.
+   */
+  void ClearForwardingTable();
 
   /**
    * \brief Receive a packet from a connected PointToPointSueChannel.
@@ -332,21 +432,7 @@ private:
    */
   void NotifyLinkUp (void);
 
-  /**
-   * \brief Check if this device is a switch device.
-   *
-   * \return true if this is a switch device
-   */
-  bool IsSwitchDevice() const;
-
-  /**
-   * \brief Check if a MAC address belongs to a switch device.
-   *
-   * \param mac MAC address to check
-   * \return true if MAC belongs to a switch device
-   */
-  bool IsMacSwitchDevice(Mac48Address mac) const;
-
+  
   /**
    * \brief Log device statistics
    */
@@ -357,6 +443,8 @@ private:
    */
   void InitializeCbfc();
 
+  public:
+
   /**
    * \brief Return credits to a target MAC for a specific VC
    *
@@ -364,14 +452,6 @@ private:
    * \param vcId Virtual Channel ID
    */
   void CreditReturn(Mac48Address targetMac, uint8_t vcId);
-
-  /**
-   * \brief Extract VC ID from a packet
-   *
-   * \param packet Packet to extract from
-   * \return VC ID
-   */
-  uint8_t ExtractVcIdFromPacket(Ptr<const Packet> packet);
 
   /**
    * \brief Extract destination IP from a packet
@@ -458,13 +538,7 @@ private:
    */
   Mac48Address GetSourceMac(Ptr<Packet> tempPacket, bool ChangeHead = false);
 
-  /**
-   * \brief Enqueue packet to appropriate VC queue
-   *
-   * \param packet Packet to enqueue
-   * \return true if successful, false otherwise
-   */
-  bool EnqueueToVcQueue(Ptr<Packet> packet);
+public:
 
   /**
    * \brief Enqueue packet to VC queue of specific device
@@ -474,7 +548,13 @@ private:
    */
   void SpecDevEnqueueToVcQueue(Ptr<PointToPointSueNetDevice> p2pDev, Ptr<Packet> packet);
 
-public:
+  /**
+   * \brief Enqueue packet to appropriate VC queue
+   *
+   * \param packet Packet to enqueue
+   * \return true if successful, false otherwise
+   */
+  bool EnqueueToVcQueue(Ptr<Packet> packet);
   /**
    * \brief Get the available capacity for a specific VC queue
    *
@@ -629,8 +709,8 @@ public:
   std::string m_processingRateString; //!< Processing rate string for compatibility
   std::string m_linkStatIntervalString; //!< Link statistic interval string for compatibility
 
-  // Switch forwarding
-  std::map<Mac48Address, uint32_t> m_forwardingTable; //!< Forwarding table for switches
+  // Switch functionality moved to SueSwitch module
+  Ptr<SueSwitch> m_switch; //!< Switch module for Layer 2 forwarding
 
   // Global mappings
   static std::map<Ipv4Address, Mac48Address> s_ipToMacMap; //!< Global IP to MAC mapping
