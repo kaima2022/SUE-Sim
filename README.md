@@ -42,7 +42,15 @@ SUE-Sim serves two primary objectives:
 
 - **SUE Framework Specification Optimization**: The platform enables researchers to optimize SUE framework specifications through advanceing algorithms and protocol validating. 
 
-**Current Version**: SUE-Sim v1.0
+**Current Version**: SUE-Sim v2.0 🎉
+
+### ✨ What's New in v2.0
+
+- **Module Decoupling**: Decoupled various modules for better maintainability and extensibility
+- **Enhanced Traffic Generation**: Added Trace-based and Configuration-based traffic generation methods
+- **Event-Driven Logging**: Transformed logging statistics from fixed-time intervals to event-driven triggers
+- **Code Optimization**: Optimized code logic for improved performance and readability
+- **Bug Fixes**: Resolved critical issues and improved overall stability 
 
 ## System Architecture
 <p align="center">
@@ -72,29 +80,39 @@ SUE-Sim serves two primary objectives:
 ```
 SUE-Sim/
 ├── scratch/                        # Simulation scripts
-│   └── SUE-Sim/                    # Main simulation script
-│       └── SUE-Sim.cc              # Entry point for SUE simulation
+│   └── SUE-Sim/                    # Main simulation script and configurations
+│       ├── SUE-Sim.cc              # Entry point for SUE simulation
+│       ├── config/                 # Simulation configuration files
+│       │   └── test-fine-grained-config.csv  # Fine-grained test configuration
+│       └── trace/                            # Traffic trace files
+│           └── all_trace_entries.csv         # Complete traffic trace data
 │
 ├── src/                              # ns-3 source code
 │   └── sue-sim-module/               # SUE module
 │       ├── model/                    # Core models
 │       │   ├── simulation-config/                      # Simulation framework
 │       │   │   ├── application-deployer.cc/.h          # Application deployment
+│       │   │   ├── common-utils.cc/.h                  # Common utility functions
 │       │   │   ├── parameter-config.cc/.h              # Configuration parameters
-│       │   │   ├── sue-utils.cc/.h                     # Utility functions
 │       │   │   └── topology-builder.cc/.h              # Network topology builder
 │       │   ├── point-to-point-sue-net-device.cc/.h     # Net device core
 │       │   ├── point-to-point-sue-channel.cc/.h        # P2P channel
+│       │   ├── sue-cbfc.cc/.h                          # Credit-based flow control
 │       │   ├── sue-cbfc-header.cc/.h                   # CBFC header
 │       │   ├── sue-header.cc/.h                        # SUE header
+│       │   ├── sue-llr.cc/.h                           # Link-level retransmission
 │       │   ├── sue-client.cc/.h                        # Multi-port client
 │       │   ├── sue-server.cc/.h                        # Unpack server
+│       │   ├── sue-switch.cc/.h                        # Basic Layer 2 switch
+│       │   ├── sue-queue-manager.cc/.h                 # Queue management system
 │       │   ├── performance-logger.cc/.h                # Performance logger
 │       │   ├── traffic-generator.cc/.h                 # Traffic generator
+│       │   ├── traffic-generator-config.cc/.h          # Traffic generator configuration
+│       │   ├── traffic-generator-trace.cc/.h           # Trace-based traffic generator
 │       │   ├── load-balancer.cc/.h                     # Load balancer
-│       │   ├── sue-switch.cc/.h                        # Switch module
-│       │   ├── xpu-delay-tag.cc/.h                     # XPU delay tag
-|       |   └── sue-ppp-header.cc/.h                    # ppp header
+│       │   ├── sue-tag.cc/.h                           # SUE timestamp and PPP sequence tag
+│       │   ├── sue-ppp-header.cc/.h                    # PPP header
+│       │   └── sue-utils.cc/.h                         # SUE utility functions
 │       ├── helper/                  # Helper classes
 │       │   └── sue-sim-module-helper.cc/.h
 │       └── CMakeLists.txt           # Build configuration
@@ -180,6 +198,8 @@ cd SUE-Sim
 ```
 
 ### Usage
+
+SUE-Sim supports three traffic modes: Uniform Traffic, Trace-based Traffic, and Configuration-based Traffic.
 The following command demonstrates a 4-node XPU test scenario:
 
 #### Topology Composition
@@ -190,14 +210,25 @@ The following command demonstrates a 4-node XPU test scenario:
   <img src="images/DisplayDiagram/Topology.png" alt="XPU Internal Architecture Diagram" width="80%">
 </p>
 
+#### 1. Uniform Traffic Mode
+Generates uniform traffic patterns across all nodes:
 ```bash
-# Run 4-node XPU test scenario
-./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=16 --portsPerSue=4 --threadRate=3500000 --totalBytesToSend=50" > log/sue-sim.log 2>&1
+./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=16 --portsPerSue=4 --threadRate=3500000 --totalBytesToSend=5" > log/sue-sim.log 2>&1
 ```
 
-NS3 logging is disabled by default, and collected data is stored in performance-data/data. For details, see [Performance Analysis Platform](performance-data/README.md).
+#### 2. Trace-based Traffic Mode
+Uses real traffic traces for realistic simulation:
+```bash
+./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=4 --portsPerSue=1 --enableTraceMode=true --traceFilePath=scratch/SUE-Sim/trace/all_trace_entries.csv" > log/sue-sim.log 2>&1
+```
 
-> **Note**: Users are advised to configure parameters according to actual test scenarios.
+#### 3. Configuration-based Traffic Mode
+Uses detailed configuration files for custom traffic patterns:
+```bash
+./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=4 --portsPerSue=1 --enableFineGrainedMode=true --fineGrainedConfigFile=scratch/SUE-Sim/config/test-fine-grained-config.csv" > log/sue-sim.log 2>&1
+```
+
+**Note**: NS3 logging is disabled by default. Performance data is automatically saved to `performance-data/data`. 
 
 
 ## Configuration Parameters

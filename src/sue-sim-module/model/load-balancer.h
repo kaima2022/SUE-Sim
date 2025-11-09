@@ -257,7 +257,12 @@ public:
   /**
    * \brief Stop all logging events for SUE clients on this XPU
    */
-  void StopAllSueLogging () const;
+  void StopAllLogging () const;
+
+  /**
+   * \brief Disable logging only for SUE clients on this XPU without canceling events
+   */
+  void DisableSueLoggingOnly () const;
 
   // Queue Management Interface
 
@@ -434,6 +439,7 @@ private:
 
   // Flow Control Members
   Ptr<TrafficGenerator> m_trafficGenerator;         ///< TrafficGenerator for flow control
+  bool m_enableAlternativePath;                     ///< Whether to search for alternative SUE path
 };
 
 } // namespace ns3

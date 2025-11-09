@@ -36,6 +36,9 @@
 #include "ns3/ipv4-header.h"
 #include "ns3/queue.h"
 #include "sue-switch.h"
+#include "sue-cbfc.h"
+#include "sue-queue-manager.h"
+#include "sue-llr.h"
 
 namespace ns3 {
 
@@ -43,6 +46,8 @@ class PointToPointSueChannel;
 class ErrorModel;
 class SueCbfcHeader;
 class SueSwitch;
+class CbfcManager;
+class SueQueueManager;
 
 /**
  * \defgroup point-to-point-sue Point-To-Point SUE Network Device
@@ -179,21 +184,7 @@ public:
    */
   uint32_t GetTotalPacketDropNum();
 
-  /**
-   * \brief Set the global IP to MAC address mapping.
-   *
-   * \param map Map of IP addresses to MAC addresses
-   */
-  static void SetGlobalIpMacMap(const std::map<Ipv4Address, Mac48Address>& map);
-
-  /**
-   * \brief Get MAC address for a given IP address.
-   *
-   * \param IP address to lookup
-   * \return Corresponding MAC address
-   */
-  static Mac48Address GetMacForIp(Ipv4Address ip);
-
+  
   // Switch support methods
   /**
    * \brief Extract VC ID from a packet
@@ -217,6 +208,14 @@ public:
    */
   void SetSwitch(Ptr<SueSwitch> switchModule);
 
+  /**
+   * \brief Check if the given MAC address belongs to a switch device
+   *
+   * \param mac The MAC address to check
+   * \return true if the MAC address belongs to a switch device
+   */
+  bool IsSwitchDevice(Mac48Address mac) const;
+
   // LLR support methods for switch
   /**
    * \brief Check if LLR is enabled
@@ -234,30 +233,18 @@ public:
    */
   bool IsLlrResending(Mac48Address mac, uint8_t vcId) const;
 
-  
   /**
-   * \brief Get TX credits for a specific MAC/VC
+   * \brief Get the CBFC manager instance
    *
-   * \param mac MAC address
-   * \param vcId Virtual Channel ID
-   * \return Available credits
+   * \return Pointer to the CBFC manager
    */
-  uint32_t GetTxCredits(Mac48Address mac, uint8_t vcId) const;
+  Ptr<CbfcManager> GetCbfcManager() const;
 
   /**
-   * \brief Decrement TX credits for a specific MAC/VC
-   *
-   * \param mac MAC address
-   * \param vcId Virtual Channel ID
+   * \brief Get the queue manager
+   * \return Pointer to the queue manager
    */
-  void DecrementTxCredits(Mac48Address mac, uint8_t vcId);
-
-  /**
-   * \brief Check if CBFC is enabled
-   *
-   * \return true if CBFC is enabled
-   */
-  bool IsLinkCbfcEnabled() const;
+  Ptr<SueQueueManager> GetQueueManager() const;
 
   /**
    * \brief Get switch forwarding delay
@@ -266,43 +253,9 @@ public:
    */
   Time GetSwitchForwardDelay() const;
 
-  /**
-   * \brief Handle credit return
-   *
-   * \param ethHeader Ethernet header
-   * \param vcId Virtual Channel ID
-   */
-  void HandleCreditReturn(const EthernetHeader& ethHeader, uint8_t vcId);
-
+  
   
   // Backward compatibility methods - delegate to SueSwitch
-  /**
-   * \brief Check if this device is a switch device.
-   *
-   * \return true if this is a switch device
-   */
-  bool IsSwitchDevice() const;
-
-  /**
-   * \brief Check if a MAC address belongs to a switch device.
-   *
-   * \param mac MAC address to check
-   * \return true if MAC belongs to a switch device
-   */
-  bool IsMacSwitchDevice(Mac48Address mac) const;
-
-  /**
-   * \brief Set the forwarding table for switch devices.
-   *
-   * \param table Map of destination MAC addresses to output port indices
-   */
-  void SetForwardingTable(const std::map<Mac48Address, uint32_t>& table);
-
-  /**
-   * \brief Clear the forwarding table.
-   */
-  void ClearForwardingTable();
-
   /**
    * \brief Receive a packet from a connected PointToPointSueChannel.
    *
@@ -341,11 +294,7 @@ public:
   virtual void SetPromiscReceiveCallback (PromiscReceiveCallback cb);
   virtual bool SupportsSendFrom (void) const;
 
-  /**
-   * \brief CBFC protocol number
-   */
-  static const uint16_t PROT_CBFC_UPDATE = 0xCBFC;
-
+  
 protected:
   /**
    * \brief Dispose of the object
@@ -380,6 +329,11 @@ private:
   PointToPointSueNetDevice& operator = (const PointToPointSueNetDevice &o);
 
   /**
+   * \brief Log statistics for the network device
+   */
+  void LogStatistics();
+
+  /**
    * \returns the address of the remote device connected to this device
    * through the point to point channel.
    */
@@ -391,17 +345,17 @@ private:
    * \param p packet
    * \param protocolNumber protocol number
    */
-  void AddHeader (Ptr<Packet> p, uint16_t protocolNumber,uint32_t seq);
+  void AddHeader (Ptr<Packet> p, uint16_t protocolNumber);
 
   /**
    * Removes, from a packet of data, all headers and trailers that
    * relate to the protocol implemented by the agent
    * \param p Packet whose headers need to be processed
-   * \param param An integer parameter that can be set by the function
+   * \param param Protocol number extracted from the packet
    * \return Returns true if the packet should be forwarded up the
    * protocol stack.
    */
-  bool ProcessHeader (Ptr<Packet> p, uint16_t& param,uint32_t& seq);
+  bool ProcessHeader (Ptr<Packet> p, uint16_t& param);
 
   /**
    * Start Sending a Packet Down the Wire.
@@ -433,25 +387,18 @@ private:
   void NotifyLinkUp (void);
 
   
-  /**
-   * \brief Log device statistics
-   */
-  void LogStatistics();
-
+  
   /**
    * \brief Initialize CBFC credits
    */
   void InitializeCbfc();
 
-  public:
-
   /**
-   * \brief Return credits to a target MAC for a specific VC
-   *
-   * \param targetMac Target MAC address
-   * \param vcId Virtual Channel ID
+   * \brief Initialize LLR managers
    */
-  void CreditReturn(Mac48Address targetMac, uint8_t vcId);
+  void InitializeLlr();
+
+  public:
 
   /**
    * \brief Extract destination IP from a packet
@@ -493,11 +440,7 @@ private:
    */
   void CompleteProcessing(ProcessItem item);
 
-  /**
-   * \brief Log device queue usage statistics
-   */
-  void LogDeviceQueueUsage();
-
+  
   /**
    * \brief Get remote MAC address
    *
@@ -521,14 +464,7 @@ private:
    */
   void FindDeviceAndSend (Ptr<Packet> packet, Mac48Address targetMac, uint16_t protocolNum);
 
-  /**
-   * \brief Handle credit return packet
-   *
-   * \param ethHeader Ethernet header
-   * \param item Processing item containing the credit packet
-   */
-  void HandleCreditReturn(const EthernetHeader& ethHeader, const ProcessItem& item);
-
+  
   /**
    * \brief Get source MAC address from packet
    *
@@ -555,51 +491,7 @@ public:
    * \return true if successful, false otherwise
    */
   bool EnqueueToVcQueue(Ptr<Packet> packet);
-  /**
-   * \brief Get the available capacity for a specific VC queue
-   *
-   * \param vcId Virtual Channel ID
-   * \return Available capacity in bytes
-   */
-  uint32_t GetVcQueueAvailableCapacity(uint8_t vcId);
-
-  /**
-   * \brief Reserve capacity for a specific VC queue
-   *
-   * This method reserves capacity for a pending send operation to prevent
-   * race conditions between capacity query and actual send.
-   *
-   * \param vcId Virtual Channel ID
-   * \param amount Amount of capacity to reserve in bytes
-   * \return true if reservation successful, false otherwise
-   */
-  bool ReserveVcCapacity(uint8_t vcId, uint32_t amount);
-
-  /**
-   * \brief Release reserved capacity for a specific VC queue
-   *
-   * This method releases previously reserved capacity after the send
-   * operation completes (either successfully or fails).
-   *
-   * \param vcId Virtual Channel ID
-   * \param amount Amount of capacity to release in bytes
-   */
-  void ReleaseVcCapacity(uint8_t vcId, uint32_t amount);
-
-  /**
-   * \brief Update send packet statistics
-   *
-   * \param packet Packet being sent
-   */
-  void SendPacketStatistic(Ptr<Packet> packet);
-
-  /**
-   * \brief Update receive packet statistics
-   *
-   * \param packet Packet being received
-   */
-  void ReceivePacketStatistic(Ptr<Packet> packet);
-
+  
   /**
    * \brief PPP to Ethernet protocol number mapping
    * \param protocol A PPP protocol number
@@ -666,16 +558,16 @@ public:
   TracedCallback<Ptr<const Packet> > m_promiscSnifferTrace; //!< Promiscuous sniffer trace
 
   // SUE-specific members
-  bool m_cbfcInitialized; //!< CBFC initialization flag
-  std::map<Mac48Address, std::map<uint8_t, uint32_t>> m_txCreditsMap; //!< TX credits: MAC -> VC -> credits
-  std::map<Mac48Address, std::map<uint8_t, uint32_t>> m_rxCreditsToReturnMap; //!< RX credits to return: MAC -> VC -> credits
-  std::map<uint8_t, Ptr<Queue<Packet>>> m_vcQueues; //!< Virtual channel queues
-  std::map<uint8_t, uint32_t> m_vcReservedCapacity; //!< VC reserved capacity for pending sends
+  Ptr<CbfcManager> m_cbfcManager;   //!< CBFC manager for credit and flow control
+  Ptr<SueQueueManager> m_queueManager; //!< Queue manager for VC operations
+
+  // CBFC configuration parameters (kept for compatibility)
   uint32_t m_initialCredits;        //!< Initial credit count
   uint8_t m_numVcs;                 //!< Number of virtual channels
   uint32_t m_creditBatchSize;       //!< Credit batch size
   uint32_t m_vcQueueMaxBytes;       //!< VC queue maximum bytes
   uint32_t m_additionalHeaderSize;  //!< Additional header size for capacity reservation
+  bool m_enableLinkCBFC;            //!< CBFC enable flag
 
   // Processing queue
   std::queue<ProcessItem> m_processingQueue; //!< Processing queue
@@ -690,7 +582,6 @@ public:
   std::map<uint8_t, uint64_t> m_vcBytesReceived;  //!< VC bytes received
   Time m_lastStatTime;                             //!< Last statistics time
   Time m_linkStatInterval;                         //!< Statistics interval
-  bool m_enableLinkCBFC;                           //!< CBFC enable flag
   std::map<uint8_t, uint32_t> m_vcDropCounts;      //!< VC drop counts
   std::map<uint8_t, uint32_t> m_vcDropCounts_SendQ; //!< VC send queue drop counts
   uint32_t m_totalPacketDropNum;                   //!< Total packet drop count
@@ -704,6 +595,8 @@ public:
 
   // Event and logging
   EventId m_logStatisticsEvent;  //!< Statistics logging event
+  EventId m_tryTransmitEvent;    //!< TryTransmit scheduling event
+  bool m_tryTransmitScheduled;   //!< Flag to track if TryTransmit is already scheduled
   bool m_loggingEnabled;         //!< Logging enabled flag
   DataRate m_processingRate;     //!< Processing rate
   std::string m_processingRateString; //!< Processing rate string for compatibility
@@ -712,53 +605,18 @@ public:
   // Switch functionality moved to SueSwitch module
   Ptr<SueSwitch> m_switch; //!< Switch module for Layer 2 forwarding
 
-  // Global mappings
-  static std::map<Ipv4Address, Mac48Address> s_ipToMacMap; //!< Global IP to MAC mapping
+  /// ---- LLR managers ----
+  Ptr<LlrNodeManager> m_llrNodeManager;         //!< LLR manager for end nodes
+  Ptr<LlrSwitchPortManager> m_llrSwitchPortManager; //!< LLR manager for switch ports
 
-  /// ---- LLR members ----
-  static const uint16_t ACK_REV = 0x1111;  //!< LLR ACK protocol number
-  static const uint16_t NACK_REV = 0x2222; //!< LLR NACK protocol number
-
-  /**
-   * \brief Structure holding info for a sent packet tracked by LLR
-   */
-
+  /// ---- LLR Configuration ----
   bool m_llrEnabled;                 //!< Whether LLR is enabled
   uint32_t m_llrWindowSize;          //!< LLR window size (max outstanding packets per VC)
-  std::map<Mac48Address,
-           std::vector<std::map<uint32_t, Ptr<Packet>>>> m_sendList; //!< Per peer MAC: per VC map seq->packet
   Time m_llrTimeout;                 //!< Retransmission timeout
   Time m_AckAddHeaderDelay;          //!< Delay to add ACK/NACK header
   Time m_AckProcessDelay;            //!< Delay to process received ACK/NACK
 
-  // Sequence tracking
-  std::map<Mac48Address,std::vector<uint32_t>> waitSeq;      //!< Per peer MAC: expected next receive sequence per VC
-  std::map<Mac48Address,std::vector<uint32_t>> sendSeq;      //!< Per peer MAC: next sequence to send per VC
-  std::map<Mac48Address,std::vector<uint32_t>> unack;        //!< Per peer MAC: outstanding unacknowledged sequences per VC
-  std::map<Mac48Address,std::vector<uint32_t>> llrResendseq; //!< Per peer MAC: sequences scheduled for resend per VC
-
-  // State flags
-  std::map<Mac48Address,std::vector<bool>> llrWait;      //!< Per peer MAC: VC waiting for ACK
-  std::map<Mac48Address,std::vector<bool>> llrResending; //!< Per peer MAC: VC currently resending
-
-  // Timing
-  std::map<Mac48Address,std::vector<Time>> lastAckedTime; //!< Per peer MAC: last ACK receive time per VC
-  std::map<Mac48Address,std::vector<Time>> lastAcksend;   //!< Per peer MAC: last ACK send time per VC
-
-  // Retransmission events
-  std::map<Mac48Address,std::vector<EventId>> resendPkt;  //!< Per peer MAC: scheduled resend events per VC
-
-  // LLR operations
-  void SendLlrAck(uint8_t vcId, uint32_t seq, Mac48Address dest);
-  void SendLlrNack(uint8_t vcId, uint32_t seq, Mac48Address dest);
-  void ProcessLlrAck(Ptr<Packet> p);
-  void ProcessLlrNack(Ptr<Packet> p);
-  void Resend(uint8_t vcId, Mac48Address dest);          //!< Timeout-based resend
-  void ResendInSwitch(uint8_t vcId, Mac48Address dest);  //!< Switch internal resend
-  void LlrSendPacket(Ptr<Packet> packet, uint8_t vcId, Mac48Address dest); //!< Initial send with sequencing
-  void LlrReceivePacket(Ptr<Packet> packet, uint8_t vcId, Mac48Address source, uint32_t seq_rev); //!< Handle received data
-  void LlrResendPacket(uint8_t vcId, Mac48Address dest); //!< Perform resend of pending sequences
-};
+  };
 
 } // namespace ns3
 

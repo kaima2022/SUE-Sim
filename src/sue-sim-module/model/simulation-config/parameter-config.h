@@ -48,6 +48,34 @@ struct NetworkConfig
 };
 
 /**
+ * \brief Fine-grained traffic flow configuration entry
+ */
+struct FineGrainedTrafficFlow
+{
+    uint32_t sourceXpuId;         //!< Source XPU ID
+    uint32_t destXpuId;           //!< Destination XPU ID
+    uint32_t sueId;               //!< SUE ID to use for sending
+    uint32_t suePort;             //!< SUE port to use for sending
+    double dataRate;              //!< Data rate for this flow (Mbps)
+    uint32_t totalBytes;          //!< Total bytes to send for this flow
+    uint8_t vcId;                 //!< Virtual channel ID (0-3, optional)
+
+    /**
+     * \brief Constructor
+     */
+    FineGrainedTrafficFlow () : sourceXpuId(0), destXpuId(0), sueId(0), suePort(0),
+                               dataRate(0.0), totalBytes(0), vcId(0) {}
+
+    /**
+     * \brief Constructor with parameters
+     */
+    FineGrainedTrafficFlow (uint32_t src, uint32_t dst, uint32_t sue, uint32_t port,
+                           double rate, uint32_t bytes, uint8_t vc = 0)
+        : sourceXpuId(src), destXpuId(dst), sueId(sue), suePort(port),
+          dataRate(rate), totalBytes(bytes), vcId(vc) {}
+};
+
+/**
  * \brief Traffic generation configuration parameters
  */
 struct TrafficConfig
@@ -58,6 +86,13 @@ struct TrafficConfig
     uint8_t vcNum;                //!< Number of virtual channels
     double threadRate;            //!< Thread rate (Mbps)
     uint32_t totalBytesToSend;    //!< Total bytes to send (MB)
+    bool enableTraceMode;         //!< Enable trace-based traffic generation
+    std::string traceFilePath;    //!< Path to trace file for trace-based generation
+
+    // New fine-grained traffic control parameters
+    bool enableFineGrainedMode;   //!< Enable fine-grained traffic control mode
+    std::string fineGrainedConfigFile; //!< Path to fine-grained traffic configuration file
+    std::vector<FineGrainedTrafficFlow> fineGrainedFlows; //!< Parsed fine-grained traffic flows
 };
 
 /**
@@ -107,6 +142,7 @@ struct LoadBalanceConfig
     uint32_t prime2;                //!< Second prime number for enhanced hash
     bool useVcInHash;               //!< Include VC ID in hash calculation
     bool enableBitOperations;       //!< Enable bit mixing operations
+    bool enableAlternativePath;     //!< Enable alternative SUE path search when target is full
 };
 
 /**
@@ -160,6 +196,20 @@ struct LlrConfig
 };
 
 /**
+ * \brief Logging configuration parameters
+ */
+struct LoggingConfig
+{
+    std::string logLevel;                 //!< Log level for all components (LOG_LEVEL_DEBUG, LOG_LEVEL_INFO, etc.)
+    bool enableAllComponents;             //!< Enable logging for all SUE simulation components
+
+    /**
+     * \brief Constructor with default values
+     */
+    LoggingConfig () : logLevel ("LOG_LEVEL_INFO"), enableAllComponents (true) {}
+};
+
+/**
  * \brief Main configuration structure containing all sub-configurations
  */
 struct SueSimulationConfig
@@ -174,6 +224,7 @@ struct SueSimulationConfig
     TraceConfig trace;          //!< Trace sampling parameters
     DelayConfig delay;          //!< Delay-related parameters
     LlrConfig llr;              //!< Llr related parameters
+    LoggingConfig logging;      //!< Logging configuration parameters
 
     /**
      * \brief Constructor with default values

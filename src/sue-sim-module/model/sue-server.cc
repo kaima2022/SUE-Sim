@@ -24,7 +24,7 @@
 #include "ns3/packet.h"
 #include "ns3/udp-socket.h"
 #include "ns3/simulator.h"
-#include "xpu-delay-tag.h"
+#include "sue-tag.h"
 #include "performance-logger.h"
 
 namespace ns3 {
@@ -110,8 +110,8 @@ void SueServer::HandleRead(Ptr<Socket> socket) {
             SueHeader requestHeader;
             packet->RemoveHeader(requestHeader);
 
-            // Try to read XPU timestamp tag
-            XpuDelayTag timestampTag;
+            // Try to read SUE timestamp tag
+            SueTag timestampTag;
             bool hasTimestamp = packet->PeekPacketTag(timestampTag);
 
             // Calculate end-to-end delay

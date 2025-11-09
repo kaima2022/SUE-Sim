@@ -27,14 +27,6 @@ namespace ns3 {
 
 NS_LOG_COMPONENT_DEFINE ("PerformanceLogger");
 
-// Helper function to create directories
-void CreateDirectory(const std::string& dir) {
-    if (access(dir.c_str(), F_OK) != 0) {
-        if (mkdir(dir.c_str(), 0777) != 0) {
-            NS_FATAL_ERROR("Failed to create directory: " << dir);
-        }
-    }
-}
 
 void PerformanceLogger::Initialize(const std::string& filename) {
     // Define new directory structure
@@ -74,7 +66,7 @@ void PerformanceLogger::Initialize(const std::string& filename) {
         NS_FATAL_ERROR("Could not open performance log file: " << m_filename);
     }
     // Write CSV header
-    m_file << "Time,XpuId,DeviceId,VCId,Direction,Rate,MacAddress\n";
+    m_file << "Time,NodeId,DeviceId,VCId,Direction,DataSize\n";
 
     // Packing delay log file - separate directory
     std::string waitTimeLogDir = dataDir + "/wait_time_logs";
@@ -136,20 +128,36 @@ void PerformanceLogger::Initialize(const std::string& filename) {
     }
     m_destinationQueueLog << "TimeNs,XpuId,SueId,DestXpuId,VcId,CurrentSize,MaxSize,Utilization(%)" << std::endl;
 
-    // Device queue utilization log file - separate directory
-    std::string deviceQueueLogDir = dataDir + "/device_queue_logs";
-    if (access(deviceQueueLogDir.c_str(), F_OK) != 0) {
-        if (mkdir(deviceQueueLogDir.c_str(), 0777) != 0) {
-            NS_FATAL_ERROR("Failed to create directory: " << deviceQueueLogDir);
+    
+    // Main queue utilization log file - separate directory
+    std::string mainQueueLogDir = dataDir + "/main_queue_logs";
+    if (access(mainQueueLogDir.c_str(), F_OK) != 0) {
+        if (mkdir(mainQueueLogDir.c_str(), 0777) != 0) {
+            NS_FATAL_ERROR("Failed to create directory: " << mainQueueLogDir);
         }
     }
-    std::ostringstream deviceQueueFilename;
-    deviceQueueFilename << deviceQueueLogDir << "/device_queue_" << timestamp.str() << ".csv";
-    m_deviceQueueLog.open(deviceQueueFilename.str(), std::ios::out | std::ios::trunc);
-    if (!m_deviceQueueLog.is_open()) {
-        NS_FATAL_ERROR("Could not open device queue log file: " << deviceQueueFilename.str());
+    std::ostringstream mainQueueFilename;
+    mainQueueFilename << mainQueueLogDir << "/main_queue_" << timestamp.str() << ".csv";
+    m_mainQueueLog.open(mainQueueFilename.str(), std::ios::out | std::ios::trunc);
+    if (!m_mainQueueLog.is_open()) {
+        NS_FATAL_ERROR("Could not open main queue log file: " << mainQueueFilename.str());
     }
-    m_deviceQueueLog << "TimeNs,XpuId,DeviceId,QueueType,VCId,CurrentSize,MaxSize,Utilization(%)" << std::endl;
+    m_mainQueueLog << "TimeNs,NodeId,DeviceId,CurrentSize,MaxSize,Utilization(%)" << std::endl;
+
+    // VC queue utilization log file - separate directory
+    std::string vcQueueLogDir = dataDir + "/vc_queue_logs";
+    if (access(vcQueueLogDir.c_str(), F_OK) != 0) {
+        if (mkdir(vcQueueLogDir.c_str(), 0777) != 0) {
+            NS_FATAL_ERROR("Failed to create directory: " << vcQueueLogDir);
+        }
+    }
+    std::ostringstream vcQueueFilename;
+    vcQueueFilename << vcQueueLogDir << "/vc_queue_" << timestamp.str() << ".csv";
+    m_vcQueueLog.open(vcQueueFilename.str(), std::ios::out | std::ios::trunc);
+    if (!m_vcQueueLog.is_open()) {
+        NS_FATAL_ERROR("Could not open VC queue log file: " << vcQueueFilename.str());
+    }
+    m_vcQueueLog << "TimeNs,NodeId,DeviceId,VCId,CurrentSize,MaxSize,Utilization(%)" << std::endl;
 
     // Link layer processing queue utilization log file - separate directory
     std::string processingQueueLogDir = dataDir + "/processing_queue_logs";
@@ -164,7 +172,7 @@ void PerformanceLogger::Initialize(const std::string& filename) {
     if (!m_processingQueueLog.is_open()) {
         NS_FATAL_ERROR("Could not open processing queue log file: " << processingQueueFilename.str());
     }
-    m_processingQueueLog << "TimeNs,XpuId,DeviceId,QueueLength,MaxSize,Utilization(%)" << std::endl;
+    m_processingQueueLog << "TimeNs,NodeId,DeviceId,QueueLength,MaxSize,Utilization(%)" << std::endl;
 
     // XPU delay monitoring log file - separate directory
     std::string xpuDelayLogDir = dataDir + "/xpu_delay_logs";
@@ -209,7 +217,22 @@ void PerformanceLogger::Initialize(const std::string& filename) {
     if (!m_linkCreditLog.is_open()) {
         NS_FATAL_ERROR("Could not open link credit log file: " << linkCreditFilename.str());
     }
-    m_linkCreditLog << "TimeNs,XpuId,DeviceId,VCId,Direction,Credits,MacAddress" << std::endl;
+    m_linkCreditLog << "TimeNs,NodeId,DeviceId,VCId,Direction,Credits,MacAddress" << std::endl;
+
+    // Initialize event-driven packet drop log file
+    std::string dropLogDir = "performance-data/data/drop_logs";
+    if (access(dropLogDir.c_str(), F_OK) != 0) {
+        if (mkdir(dropLogDir.c_str(), 0777) != 0) {
+            NS_FATAL_ERROR("Failed to create directory: " << dropLogDir);
+        }
+    }
+    std::ostringstream dropFilename;
+    dropFilename << dropLogDir << "/packet_drop_" << timestamp.str() << ".csv";
+    m_dropLog.open(dropFilename.str(), std::ios::out | std::ios::trunc);
+    if (!m_dropLog.is_open()) {
+        NS_FATAL_ERROR("Could not open packet drop log file: " << dropFilename.str());
+    }
+    m_dropLog << "TimeNs,NodeId,DeviceId,VCId,DropReason,PacketSize,QueueSize" << std::endl;
 
     // Optional: Output debug information to standard output
     // std::cout << "PerformanceLogger initialized with directories:" << std::endl;
@@ -222,24 +245,38 @@ void PerformanceLogger::LogDropStat(int64_t nanoTime, uint32_t XpuId, uint32_t d
                                    const std::string& direction, uint32_t count) {
     if (m_file.is_open()) {
         m_file << nanoTime << "," << XpuId << "," << devId << "," << static_cast<int>(vcId)
-               << "," << direction << "," << count << ",0\n";
+               << "," << direction << "," << count << "\n";
         m_file.flush(); // Ensure data is written to disk
     }
 }
 
-void PerformanceLogger::LogDeviceStat(int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
-                                    const std::string& direction, double rate) {
+
+// === EVENT-DRIVEN STATISTICS FUNCTIONS ===
+
+void PerformanceLogger::LogPacketTx(int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
+                                   const std::string& direction, uint32_t packetSizeBits) {
     if (m_file.is_open()) {
+        // Log individual packet transmission (event-driven)
         m_file << nanoTime << "," << XpuId << "," << devId << "," << static_cast<int>(vcId)
-               << "," << direction << "," << rate << ",0\n";
-        m_file.flush(); // Ensure data is written to disk
+               << "," << direction << "," << packetSizeBits << "\n";  // Use packet size as DataSize
+        m_file.flush(); // Ensure data is written to disk immediately
+    }
+}
+
+void PerformanceLogger::LogPacketRx(int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
+                                   const std::string& direction, uint32_t packetSizeBits) {
+    if (m_file.is_open()) {
+        // Log individual packet reception (event-driven)
+        m_file << nanoTime << "," << XpuId << "," << devId << "," << static_cast<int>(vcId)
+               << "," << direction << "," << packetSizeBits << "\n";  // Use packet size as DataSize
+        m_file.flush(); // Ensure data is written to disk immediately
     }
 }
 
 void PerformanceLogger::LogAppStat(int64_t nanoTime, uint32_t xpuId, uint32_t devId, uint8_t vcId, double rate) {
     if (m_file.is_open()) {
         m_file << nanoTime << "," << xpuId << "," << devId  << "," << static_cast<int>(vcId)
-               <<",APP," << rate << ",0\n";
+               <<",APP," << rate << "\n";
         m_file.flush(); // Ensure data is written to disk
     }
 }
@@ -287,44 +324,35 @@ void PerformanceLogger::LogDestinationQueueUsage(uint64_t timeNs, uint32_t xpuId
     }
 }
 
-void PerformanceLogger::LogDeviceQueueUsage(uint64_t timeNs, uint32_t xpuId, uint32_t deviceId,
-                                            uint32_t mainQueueSize, uint32_t mainQueueMaxSize,
-                                            const std::map<uint8_t, uint32_t>& vcQueueSizes,
-                                            const std::map<uint8_t, uint32_t>& vcQueueMaxSizes) {
-    if (m_deviceQueueLog.is_open()) {
-        // Record main queue usage
-        double mainUtilization = (mainQueueMaxSize > 0) ?
-            (static_cast<double>(mainQueueSize) / mainQueueMaxSize * 100.0) : 0.0;
-        m_deviceQueueLog << timeNs << "," << xpuId << "," << deviceId << ",Main,-1,"
-                        << mainQueueSize << "," << mainQueueMaxSize << ","
-                        << std::fixed << std::setprecision(2) << mainUtilization << std::endl;
-
-        // Record each VC queue usage
-        for (const auto& vcPair : vcQueueSizes) {
-            uint8_t vcId = vcPair.first;
-            uint32_t currentSize = vcPair.second;
-            uint32_t maxSize = 0;
-            auto maxIt = vcQueueMaxSizes.find(vcId);
-            if (maxIt != vcQueueMaxSizes.end()) {
-                maxSize = maxIt->second;
-            }
-
-            double utilization = (maxSize > 0) ? (static_cast<double>(currentSize) / maxSize * 100.0) : 0.0;
-            m_deviceQueueLog << timeNs << "," << xpuId << "," << deviceId << ",VC,"
-                           << static_cast<int>(vcId) << "," << currentSize << "," << maxSize << ","
-                           << std::fixed << std::setprecision(2) << utilization << std::endl;
-        }
-
-        m_deviceQueueLog.flush(); // Ensure data is written to disk
+void PerformanceLogger::LogMainQueueUsage(uint64_t timeNs, uint32_t nodeId, uint32_t deviceId,
+                                         uint32_t currentSize, uint32_t maxSize) {
+    if (m_mainQueueLog.is_open()) {
+        double utilization = (maxSize > 0) ? (static_cast<double>(currentSize) / maxSize * 100.0) : 0.0;
+        m_mainQueueLog << timeNs << "," << nodeId << "," << deviceId << ","
+                      << currentSize << "," << maxSize << ","
+                      << std::fixed << std::setprecision(2) << utilization << std::endl;
+        m_mainQueueLog.flush(); // Ensure data is written to disk
     }
 }
 
+void PerformanceLogger::LogVCQueueUsage(uint64_t timeNs, uint32_t nodeId, uint32_t deviceId,
+                                       uint8_t vcId, uint32_t currentSize, uint32_t maxSize) {
+    if (m_vcQueueLog.is_open()) {
+        double utilization = (maxSize > 0) ? (static_cast<double>(currentSize) / maxSize * 100.0) : 0.0;
+        m_vcQueueLog << timeNs << "," << nodeId << "," << deviceId << ","
+                    << static_cast<int>(vcId) << "," << currentSize << "," << maxSize << ","
+                    << std::fixed << std::setprecision(2) << utilization << std::endl;
+        m_vcQueueLog.flush(); // Ensure data is written to disk
+    }
+}
+
+
     // Link layer processing queue monitoring method implementation
-void PerformanceLogger::LogProcessingQueueUsage(uint64_t timeNs, uint32_t xpuId, uint32_t deviceId,
+void PerformanceLogger::LogProcessingQueueUsage(uint64_t timeNs, uint32_t nodeId, uint32_t deviceId,
                                                  uint32_t currentSize, uint32_t maxSize) {
     if (m_processingQueueLog.is_open()) {
         double utilization = (maxSize > 0) ? (static_cast<double>(currentSize) / maxSize * 100.0) : 0.0;
-        m_processingQueueLog << timeNs << "," << xpuId << "," << deviceId << ","
+        m_processingQueueLog << timeNs << "," << nodeId << "," << deviceId << ","
                             << currentSize << "," << maxSize << ","
                             << std::fixed << std::setprecision(2) << utilization << std::endl;
         m_processingQueueLog.flush(); // Ensure data is written to disk
@@ -356,8 +384,11 @@ PerformanceLogger::~PerformanceLogger() {
     if (m_destinationQueueLog.is_open()) {
         m_destinationQueueLog.close();
     }
-    if (m_deviceQueueLog.is_open()) {
-        m_deviceQueueLog.close();
+        if (m_mainQueueLog.is_open()) {
+        m_mainQueueLog.close();
+    }
+    if (m_vcQueueLog.is_open()) {
+        m_vcQueueLog.close();
     }
     if (m_processingQueueLog.is_open()) {
         m_processingQueueLog.close();
@@ -365,8 +396,8 @@ PerformanceLogger::~PerformanceLogger() {
     if (m_xpuDelayLog.is_open()) {
         m_xpuDelayLog.close();
     }
-    if (m_sueCreditLog.is_open()) {
-        m_sueCreditLog.close();
+    if (m_dropLog.is_open()) {
+        m_dropLog.close();
     }
     if (m_sueBufferQueueLog.is_open()) {
         m_sueBufferQueueLog.close();
@@ -377,19 +408,16 @@ PerformanceLogger::~PerformanceLogger() {
 }
 
 void
-PerformanceLogger::SueCreditChangeTraceCallback (uint32_t sueId, uint32_t currentCredits, uint32_t maxCredits, uint32_t xpuId)
+PerformanceLogger::LogPacketDrop (int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
+                                  const std::string& dropReason, uint32_t packetSize)
 {
-  NS_LOG_FUNCTION (this << sueId << currentCredits << maxCredits << xpuId);
+  NS_LOG_FUNCTION (nanoTime << XpuId << devId << (uint32_t)vcId << dropReason << packetSize);
 
-  uint64_t timeNs = Simulator::Now ().GetNanoSeconds ();
-
-  // Directly write SUE credit value data
-  if (m_sueCreditLog.is_open()) {
-      double utilization = (maxCredits > 0) ? (static_cast<double>(currentCredits) / maxCredits * 100.0) : 0.0;
-      m_sueCreditLog << timeNs << "," << xpuId << "," << sueId << ","
-                    << currentCredits << "," << maxCredits << ","
-                    << std::fixed << std::setprecision(2) << utilization << std::endl;
-      m_sueCreditLog.flush(); // Ensure data is written to disk
+  // Directly write packet drop data (event-driven)
+  if (m_dropLog.is_open()) {
+      m_dropLog << nanoTime << "," << XpuId << "," << devId << "," << (uint32_t)vcId << ","
+                << dropReason << "," << packetSize << std::endl;
+      m_dropLog.flush(); // Ensure data is written to disk
   }
 }
 

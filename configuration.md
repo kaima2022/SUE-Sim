@@ -4,15 +4,6 @@
 
 SUE-Sim supports rich configuration parameters, covering network topology, traffic generation, link layer, CBFC flow control, and other aspects. Users can adjust these parameters according to specific needs to conduct simulation experiments in different scenarios.
 
-## Network Topology Structure
-
-SUE-Sim adopts an XPU-Switch topology structure based on the SUE (Scale-Up Ethernet) framework specification:
-
-### Topology Composition
-- **XPU Nodes**: Compute Processing Units, each XPU contains multiple ports
-- **SUE Units**: Each SUE manages 1/2/4 ports
-
-
 ## Parameter Categories
 
 ### Time Parameters
@@ -42,8 +33,12 @@ SUE-Sim adopts an XPU-Switch topology structure based on the SUE (Scale-Up Ether
 | `--maxBurstSize` | 2048 | Maximum burst size (bytes) |
 | `--Mtu` | 2500 | Maximum Transmission Unit (bytes) |
 | `--vcNum` | 4 | Number of virtual channels |
-| `--threadRate` | 3500000 | Thread data rate (Mbps) |
-| `--totalBytesToSend` | 50 | Total data to send (MB) |
+| `--threadRate` | 3500000 | Traffic generation rate per thread (Mbps) |
+| `--totalBytesToSend` | 50 | Total bytes to send per XPU (MB) |
+| `--enableTraceMode` | false | Enable trace-based traffic generation |
+| `--traceFilePath` | "" | Path to trace file for trace-based generation |
+| `--enableFineGrainedMode` | false | Enable configuration-based traffic generation |
+| `--fineGrainedConfigFile` | "" | Path to configuration file for fine-grained traffic generation |
 
 ### Link Layer Parameters
 
@@ -82,6 +77,7 @@ SUE-Sim adopts an XPU-Switch topology structure based on the SUE (Scale-Up Ether
 | `--prime2` | 9973 | Second prime number for enhanced hash |
 | `--useVcInHash` | true | Include VC ID in hash calculation |
 | `--enableBitOperations` | true | Enable bit mixing operations |
+| `--enableAlternativePath` | false | Enable alternative SUE path search when target is full |
 
 
 ### Delay Parameters
@@ -107,6 +103,22 @@ SUE-Sim adopts an XPU-Switch topology structure based on the SUE (Scale-Up Ether
 | `--batchCreditAggregationDelay` | "5ns" | Batch credit aggregation delay |
 | `--switchForwardDelay` | "130ns" | Switch internal forwarding delay |
 
+### Logging Configuration Parameters
+
+| Parameter | Default Value | Description |
+|-----------|---------------|-------------|
+| `--logLevel` | "LOG_LEVEL_INFO" | Log level for all SUE simulation components |
+| `--enableAllComponents` | true | Enable logging for all SUE simulation components |
+
+**Supported Log Levels:**
+- `LOG_LEVEL_DEBUG` - Most detailed debugging information (includes FUNCTION level logging)
+- `LOG_LEVEL_INFO` - General information messages (default)
+- `LOG_LEVEL_WARN` - Warning messages
+- `LOG_LEVEL_ERROR` - Error messages only
+- `LOG_LEVEL_FUNCTION` - Function entry/exit tracing
+- `LOG_LEVEL_LOGIC` - Logic flow information
+- `LOG_LEVEL_ALL` - All log messages
+
 ### Statistics Monitoring Parameters
 
 | Parameter | Default Value | Description |
@@ -129,18 +141,6 @@ SUE-Sim adopts an XPU-Switch topology structure based on the SUE (Scale-Up Ether
 
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
-| `--additionalHeaderSize` | 52 | Capacity reservation additional header size (bytes) |
-
-## Usage Examples
-
-### Basic Run
-```bash
-./ns3 run "scratch/SUE-Sim/SUE-Sim"
-```
-
-### Custom Parameters Run
-```bash
-./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=16 --portsPerSue=4 --threadRate=3500000 --totalBytesToSend=50"
-```
+| `--additionalHeaderSize` | 44 | Capacity reservation additional header size (bytes) |
 
 ---

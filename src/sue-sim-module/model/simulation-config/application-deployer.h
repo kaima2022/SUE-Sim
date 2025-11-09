@@ -27,6 +27,8 @@
 #include "ns3/sue-client.h"
 #include "ns3/sue-server.h"
 #include "ns3/traffic-generator.h"
+#include "ns3/traffic-generator-trace.h"
+#include "ns3/traffic-generator-config.h"
 #include "ns3/load-balancer.h"
 #include "ns3/performance-logger.h"
 #include <vector>
@@ -105,10 +107,37 @@ private:
      * \param xpuIdx XPU index (0-based)
      * \param loadBalancer Pointer to load balancer
      * \param config Simulation configuration parameters
-     * \return Pointer to created traffic generator
+     * \return Pointer to created traffic generator (Application*)
      */
     Ptr<TrafficGenerator> CreateTrafficGenerator (uint32_t xpuIdx, Ptr<LoadBalancer> loadBalancer,
-                                                 const SueSimulationConfig& config);
+                                           const SueSimulationConfig& config);
+
+    /**
+     * \brief Create and configure a trace-based traffic generator for an XPU
+     * \param xpuIdx XPU index (0-based)
+     * \param loadBalancer Pointer to load balancer
+     * \param config Simulation configuration parameters
+     * \return Pointer to created trace traffic generator (as Application*)
+     */
+    Ptr<TraceTrafficGenerator> CreateTraceTrafficGenerator (uint32_t xpuIdx, Ptr<LoadBalancer> loadBalancer,
+                                                const SueSimulationConfig& config);
+
+    /**
+     * \brief Create and configure a configurable traffic generator for an XPU
+     * \param xpuIdx XPU index (0-based)
+     * \param loadBalancer Pointer to load balancer
+     * \param config Simulation configuration parameters
+     * \return Pointer to created configurable traffic generator (as Application*)
+     */
+    Ptr<ConfigurableTrafficGenerator> CreateConfigurableTrafficGenerator (uint32_t xpuIdx, Ptr<LoadBalancer> loadBalancer,
+                                                               const SueSimulationConfig& config);
+
+    /**
+     * \brief Parse fine-grained traffic configuration file
+     * \param config Simulation configuration parameters
+     * \return Vector of parsed traffic flows
+     */
+    std::vector<FineGrainedTrafficFlow> ParseFineGrainedTrafficConfig (const SueSimulationConfig& config);
 };
 
 } // namespace ns3

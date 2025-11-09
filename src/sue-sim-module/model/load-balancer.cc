@@ -84,6 +84,11 @@ LoadBalancer::GetTypeId (void)
                    MakeBooleanAccessor (&LoadBalancer::SetEnableBitOperations,
                                        &LoadBalancer::GetEnableBitOperations),
                    MakeBooleanChecker ())
+    .AddAttribute ("EnableAlternativePath",
+                   "Whether to search for alternative SUE path when target is full",
+                   BooleanValue (false),
+                   MakeBooleanAccessor (&LoadBalancer::m_enableAlternativePath),
+                   MakeBooleanChecker ())
     .AddTraceSource ("BufferQueueChange",
                      "Buffer queue size change",
                      MakeTraceSourceAccessor (&LoadBalancer::m_bufferQueueChangeTrace),
@@ -98,7 +103,8 @@ LoadBalancer::LoadBalancer ()
     m_hashSeed (12345),
     m_algorithm (ENHANCED_HASH),
     m_hashParams (),
-    m_trafficGenerationPaused (false)
+    m_trafficGenerationPaused (false),
+    m_enableAlternativePath (false)
 {
   NS_LOG_FUNCTION (this);
   m_rand = CreateObject<UniformRandomVariable> ();
@@ -145,13 +151,12 @@ LoadBalancer::DistributeTransaction (Ptr<Packet> packet, uint32_t destXpuId, uin
 {
   NS_LOG_FUNCTION (this << packet << destXpuId << vcId);
 
-  // Ensure destination XPU is not local XPU
-  if (destXpuId == m_localXpuId)
-    {
-      NS_LOG_WARN ("Destination XPU " << destXpuId << " is same as local XPU, regenerating");
-      destXpuId = GenerateRandomDestinationXpu ();
-    }
-
+  // TODO Ensure destination XPU is not local XPU
+  // NS_ASSERT_MSG (destXpuId != m_localXpuId,
+  //                "Destination XPU " << destXpuId << " is same as local XPU (" << m_localXpuId << ")");
+ if(destXpuId == m_localXpuId){
+  return;
+ }
   // Get packet size
   uint32_t packetSize = packet->GetSize ();
 
@@ -411,7 +416,7 @@ LoadBalancer::GetTotalRemainingBytes () const
 }
 
 void
-LoadBalancer::StopAllSueLogging () const
+LoadBalancer::StopAllLogging () const
 {
   NS_LOG_FUNCTION (this);
 
@@ -421,15 +426,36 @@ LoadBalancer::StopAllSueLogging () const
     if (client) {
       NS_LOG_INFO ("Stopping logging for SUE client " << pair.first);
       client->SetLoggingEnabled (false);
+
+      // Also cancel the client's log events, which will disable statistics
+      // only for devices managed by this SUE client
+      client->CancelAllLogEvents();
     }
   }
 
-  // Also stop statistics logs for all network devices on this XPU
-  // Set StatLoggingEnabled to false for all PointToPointSueNetDevice through configuration path
-  Config::Set ("/NodeList/*/DeviceList/*/$ns3::PointToPointSueNetDevice/StatLoggingEnabled", BooleanValue (false));
-
   NS_LOG_INFO ("All logging events stopped for XPU " << m_localXpuId);
-  std::cout << "All logging events stopped for XPU " << m_localXpuId << std::endl;
+  std::cout << "All logging events stopped for XPU " << m_localXpuId
+            << " (affecting " << m_sueClients.size() << " SUEs)" << std::endl;
+}
+
+void
+LoadBalancer::DisableSueLoggingOnly () const
+{
+  NS_LOG_FUNCTION (this);
+
+  // Iterate through all SUE clients and disable their logging only
+  for (const auto& pair : m_sueClients) {
+    Ptr<SueClient> client = pair.second;
+    if (client) {
+      NS_LOG_INFO ("Disabling logging for SUE client " << pair.first);
+      client->SetLoggingEnabled (false);
+      // Note: Do NOT cancel log events - just disable logging
+    }
+  }
+
+  NS_LOG_INFO ("Logging disabled for all SUE clients on XPU " << m_localXpuId);
+  std::cout << "Logging disabled for all SUE clients on XPU " << m_localXpuId
+            << " (affecting " << m_sueClients.size() << " SUEs)" << std::endl;
 }
 
 // Queue Space-Aware SUE Selection Implementation
@@ -447,9 +473,17 @@ LoadBalancer::SelectSueWithDestQueueSpace (uint32_t destXpuId, uint8_t vcId, uin
     return targetSueId;
   }
 
-  NS_LOG_DEBUG ("Target SUE " << targetSueId << " destination queue is full, trying alternatives");
-  // Try to find another SUE with available destination queue space
-  return TryNextAvailableSueWithSpace (targetSueId, destXpuId, vcId, packetSize);
+  NS_LOG_DEBUG ("Target SUE " << targetSueId << " destination queue is full");
+
+  // Check if alternative path search is enabled
+  if (m_enableAlternativePath) {
+    NS_LOG_DEBUG ("Trying alternative SUE paths");
+    // Try to find another SUE with available destination queue space
+    return TryNextAvailableSueWithSpace (targetSueId, destXpuId, vcId, packetSize);
+  } else {
+    NS_LOG_DEBUG ("Alternative path search disabled, returning failure");
+    return UINT32_MAX;  // No available SUE
+  }
 }
 
 uint32_t
@@ -555,12 +589,6 @@ LoadBalancer::ProcessBufferedTransactions ()
 }
 
 // Credit Management Implementation
-
-
-
-
-
-
 
 uint32_t
 LoadBalancer::GetBufferedTransactionCount () const

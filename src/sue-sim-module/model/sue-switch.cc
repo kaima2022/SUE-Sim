@@ -17,6 +17,9 @@
 
 #include "sue-switch.h"
 #include "point-to-point-sue-net-device.h"
+#include "sue-cbfc.h"
+#include "sue-llr.h"
+#include "sue-utils.h"
 #include "ns3/log.h"
 #include "ns3/simulator.h"
 #include "ns3/node.h"
@@ -39,6 +42,8 @@ SueSwitch::GetTypeId (void)
 }
 
 SueSwitch::SueSwitch ()
+  : m_llrNodeManager (nullptr),
+    m_llrSwitchPortManager (nullptr)
 {
   NS_LOG_FUNCTION (this);
 }
@@ -62,17 +67,6 @@ SueSwitch::ClearForwardingTable (void)
   m_forwardingTable.clear ();
 }
 
-bool
-SueSwitch::IsSwitchDevice (Mac48Address mac) const
-{
-  NS_LOG_FUNCTION (this << mac);
-
-  uint8_t buffer[6];
-  mac.CopyTo (buffer);
-  uint8_t lastByte = buffer[5]; // Last byte of MAC address
-  // TODO: Simplistic logic; needs modification for proper XPU/switch identification
-  return (lastByte % 2 == 0); // Even numbers are switch devices
-}
 
 bool
 SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
@@ -90,7 +84,7 @@ SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
   auto it = m_forwardingTable.find (destination);
   if (it == m_forwardingTable.end ())
     {
-      NS_LOG_DEBUG ("No forwarding entry for destination " << destination);
+      NS_ASSERT_MSG (false, "No forwarding entry for destination " << destination);
       return false;
     }
 
@@ -117,34 +111,36 @@ SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
             }
           else
             {
-              // If current port is ingress port, hand over to egress port's receive queue
-              // When switch ingress port forwards, replace SourceDestination MAC with current device MAC
-              // to enable universal credit calculation based on SourceMac.
-              EthernetHeader ethTemp;
-              packet->RemoveHeader (ethTemp);
-              Mac48Address currentMac = Mac48Address::ConvertFrom (currentDevice->GetAddress ());
-              ethTemp.SetSource (currentMac);
-              packet->AddHeader (ethTemp);
-
               Mac48Address mac = Mac48Address::ConvertFrom (p2pDev->GetAddress ());
 
-              // Switch internal LLR retransmission logic, ingress port -> egress port
-              if (currentDevice->GetLlrEnabled () && currentDevice->IsLlrResending (mac, vcId))
+              // Switch internal LLR processing
+              Ptr<Packet> packetCopy = packet->Copy ();
+
+              // Apply LLR processing if enabled
+              if (currentDevice->GetLlrEnabled () && m_llrSwitchPortManager)
                 {
-                  currentDevice->LlrResendPacket (vcId, mac);
-                  return true;
+                  // LLR send processing for switch internal forwarding
+                  m_llrSwitchPortManager->LlrSendPacket (packetCopy, vcId, mac);
+                  NS_LOG_DEBUG ("LLR processing applied for switch internal forwarding");
                 }
 
-              // To implement switch internal LLR logic, packets need to carry sequence information
-              Ptr<Packet> packetCopy = packet->Copy ();
-              currentDevice->LlrSendPacket (packetCopy, vcId, mac);
-
               // Check credits and forward if available
-              if (currentDevice->GetTxCredits (mac, vcId) > 0)
+              Ptr<CbfcManager> cbfcManager = currentDevice->GetCbfcManager ();
+              if (cbfcManager && cbfcManager->GetTxCredits (mac, vcId) > 0)
                 {
-                  if (currentDevice->IsLinkCbfcEnabled ())
+                  // If current port is ingress port, hand over to egress port's receive queue
+                  // When switch ingress port forwards, replace SourceDestination MAC with current device MAC
+                  // to enable universal credit calculation based on SourceMac.
+                  EthernetHeader ethTemp;
+                  packet->RemoveHeader (ethTemp);
+                  Mac48Address currentMac = Mac48Address::ConvertFrom (currentDevice->GetAddress ());
+                  ethTemp.SetSource (currentMac);
+                  packet->AddHeader (ethTemp);
+                  
+                  if (cbfcManager->IsLinkCbfcEnabled ())
                     {
-                      currentDevice->DecrementTxCredits (mac, vcId);
+                      cbfcManager->DecrementTxCredits (mac, vcId);
+                      SueStatsUtils::ProcessCreditChangeStats(mac, vcId, cbfcManager->GetTxCredits(mac, vcId), currentDevice->GetNode()->GetId(), currentDevice->GetIfIndex() - 1);
                     }
 
                   // Switch forwarding delay - schedule the packet to be enqueued after delay
@@ -152,14 +148,17 @@ SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
                                      &PointToPointSueNetDevice::SpecDevEnqueueToVcQueue,
                                      currentDevice, p2pDev, packet->Copy ());
 
-                  // Handle credit return
-                  currentDevice->HandleCreditReturn (ethHeader, vcId);
-                  // TODO delay to be set
-                  currentDevice->CreditReturn (ethHeader.GetSource (), vcId);
+                  // Handle credit return - also delay by the same amount as forwarding
+                  Simulator::Schedule (currentDevice->GetSwitchForwardDelay (),
+                                     &CbfcManager::HandleCreditReturn,
+                                     cbfcManager, ethHeader, vcId);
+                  Simulator::Schedule (currentDevice->GetSwitchForwardDelay (),
+                                     &CbfcManager::CreditReturn,
+                                     cbfcManager, ethHeader.GetSource (), vcId);
                 }
               else
                 {
-                  NS_LOG_DEBUG ("No credits available for forwarding to " << mac);
+                  NS_LOG_INFO ("No credits available for forwarding to " << mac);
                   return false;
                 }
 
@@ -168,8 +167,47 @@ SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
         }
     }
 
-  NS_LOG_DEBUG ("No output device found for port index " << outPortIndex);
+  NS_LOG_INFO ("No output device found for port index " << outPortIndex);
   return false;
+}
+
+// LLR Manager Methods
+void
+SueSwitch::SetLlrNodeManager (Ptr<LlrNodeManager> llrNodeManager)
+{
+  NS_LOG_FUNCTION (this << llrNodeManager);
+  m_llrNodeManager = llrNodeManager;
+}
+
+void
+SueSwitch::SetLlrSwitchPortManager (Ptr<LlrSwitchPortManager> llrSwitchPortManager)
+{
+  NS_LOG_FUNCTION (this << llrSwitchPortManager);
+  m_llrSwitchPortManager = llrSwitchPortManager;
+}
+
+Ptr<LlrNodeManager>
+SueSwitch::GetLlrNodeManager (void) const
+{
+  return m_llrNodeManager;
+}
+
+Ptr<LlrSwitchPortManager>
+SueSwitch::GetLlrSwitchPortManager (void) const
+{
+  return m_llrSwitchPortManager;
+}
+
+bool
+SueSwitch::IsSwitchDevice (Mac48Address mac) const
+{
+  NS_LOG_FUNCTION (this << mac);
+
+  uint8_t buffer[6];
+  mac.CopyTo (buffer);
+  uint8_t lastByte = buffer[5]; // Last byte of MAC address
+  // TODO: Simplistic logic; needs modification for proper XPU/switch identification
+  return (lastByte % 2 == 0); // Even numbers are switch devices
 }
 
 } // namespace ns3

@@ -18,6 +18,8 @@
 #include "application-deployer.h"
 #include "ns3/core-module.h"
 #include "ns3/applications-module.h"
+#include <fstream>
+#include <sstream>
 
 namespace ns3 {
 
@@ -61,7 +63,7 @@ ApplicationDeployer::InstallServers (const SueSimulationConfig& config, Topology
             Ptr<SueServer> serverApp = CreateObject<SueServer>();
             serverApp->SetAttribute("Port", UintegerValue(8080 + portIdx));
             serverApp->SetAttribute("TransactionSize", UintegerValue(transactionSize));
-            serverApp->SetPortInfo(xpuIdx+1, portIdx+1);
+            serverApp->SetPortInfo(xpuIdx, portIdx);
 
             xpuNodes->Get(xpuIdx)->AddApplication(serverApp);
             serverApp->SetStartTime(Seconds(serverStart));
@@ -97,7 +99,53 @@ ApplicationDeployer::InstallClientsAndTrafficGenerators (const SueSimulationConf
         Ptr<LoadBalancer> loadBalancer = CreateLoadBalancer (xpuIdx, sueClientsForXpu, config);
 
         // Create traffic generator for this XPU
-        Ptr<TrafficGenerator> trafficGen = CreateTrafficGenerator (xpuIdx, loadBalancer, config);
+        if (config.traffic.enableFineGrainedMode)
+        {
+            /***************************************/
+            // Fine-grained traffic control mode
+            /**************************************/
+            NS_LOG_INFO("XPU" << xpuIdx + 1 << ": Creating ConfigurableTrafficGenerator");
+            Ptr<ConfigurableTrafficGenerator> configGen = CreateConfigurableTrafficGenerator (xpuIdx, loadBalancer, config);
+
+            // Install configurable traffic generator to XPU node
+            xpuNodes->Get(xpuIdx)->AddApplication(configGen);
+            configGen->SetStartTime(Seconds(clientStart));
+            configGen->SetStopTime(Seconds(clientStop));
+
+            NS_LOG_INFO("XPU" << xpuIdx + 1 << ": Configurable traffic generator installed from "
+                    << clientStart << "s to " << clientStop << "s");
+        }
+        else if (config.traffic.enableTraceMode) {
+            /***************************************/
+            // Trace mode
+            /**************************************/
+            NS_LOG_INFO("XPU" << xpuIdx + 1 << ": Creating TraceTrafficGenerator");
+            Ptr<TraceTrafficGenerator> traceGen = CreateTraceTrafficGenerator (xpuIdx, loadBalancer, config);
+
+            // Install trace traffic generator to XPU node
+            xpuNodes->Get(xpuIdx)->AddApplication(traceGen);
+            traceGen->SetStartTime(Seconds(clientStart));
+            traceGen->SetStopTime(Seconds(clientStop));
+
+            NS_LOG_INFO("XPU" << xpuIdx + 1 << ": Trace traffic generator installed from "
+                    << clientStart << "s to " << clientStop << "s");
+        } else {
+            /***************************************/
+            // Uniform traffic generation mode
+            /**************************************/
+            NS_LOG_INFO("XPU" << xpuIdx + 1 << ": Creating traditional TrafficGenerator");
+            Ptr<TrafficGenerator> trafficGen = CreateTrafficGenerator (xpuIdx, loadBalancer, config);
+
+            // Install traditional traffic generator to XPU node
+            xpuNodes->Get(xpuIdx)->AddApplication(trafficGen);
+            trafficGen->SetStartTime(Seconds(clientStart));
+            trafficGen->SetStopTime(Seconds(clientStop));
+
+            NS_LOG_INFO("XPU" << xpuIdx + 1 << ": "
+                    << std::to_string(config.traffic.threadRate)
+                    << "Mbps traffic generator from "
+                    << clientStart << "s to " << clientStop << "s");
+        }
 
         // Set destination queue space available callback for each SUE
         for (uint32_t sueIdx = 0; sueIdx < suesPerXpu; ++sueIdx) {
@@ -115,15 +163,6 @@ ApplicationDeployer::InstallClientsAndTrafficGenerators (const SueSimulationConf
                                                 MakeCallback(&PerformanceLogger::BufferQueueChangeTraceCallback, &logger));
 
         NS_LOG_INFO("XPU" << xpuIdx + 1 << ": LoadBalancer trace callbacks connected to PerformanceLogger");
-
-        xpuNodes->Get(xpuIdx)->AddApplication(trafficGen);
-        trafficGen->SetStartTime(Seconds(clientStart));
-        trafficGen->SetStopTime(Seconds(clientStop));
-
-        NS_LOG_INFO("XPU" << xpuIdx + 1 << ": "
-                << std::to_string(config.traffic.threadRate)
-                << "Mbps traffic generator from "
-                << clientStart << "s to " << clientStop << "s");
     }
 }
 
@@ -152,8 +191,8 @@ ApplicationDeployer::CreateSueClient (uint32_t xpuIdx, uint32_t sueIdx,
     sueClient->SetAttribute("ClientStatInterval", StringValue(ClientStatInterval));
 
     // Set SUE information (no longer single port, but SUE identifier)
-    sueClient->SetXpuInfo(xpuIdx+1, sueIdx+1);
-    sueClient->SetSueId(sueIdx+1);
+    sueClient->SetXpuInfo(xpuIdx, sueIdx);
+    sueClient->SetSueId(sueIdx);
 
     // Prepare device list managed by SUE
     std::vector<std::vector<Ptr<NetDevice>>>& xpuDevices = topologyBuilder.GetXpuDevices();
@@ -205,6 +244,7 @@ ApplicationDeployer::CreateLoadBalancer (uint32_t xpuIdx,
     loadBalancer->SetAttribute("Prime2", UintegerValue(prime2));
     loadBalancer->SetAttribute("UseVcInHash", BooleanValue(useVcInHash));
     loadBalancer->SetAttribute("EnableBitOperations", BooleanValue(enableBitOperations));
+    loadBalancer->SetAttribute("EnableAlternativePath", BooleanValue(config.loadBalance.enableAlternativePath));
 
     // Register SueClient to LoadBalancer
     for (uint32_t sueIdx = 0; sueIdx < suesPerXpu; ++sueIdx) {
@@ -216,8 +256,10 @@ ApplicationDeployer::CreateLoadBalancer (uint32_t xpuIdx,
 
 Ptr<TrafficGenerator>
 ApplicationDeployer::CreateTrafficGenerator (uint32_t xpuIdx, Ptr<LoadBalancer> loadBalancer,
-                                             const SueSimulationConfig& config)
+                                           const SueSimulationConfig& config)
 {
+    // Create traditional traffic generator
+    NS_LOG_INFO("XPU" << xpuIdx + 1 << ": Creating traditional TrafficGenerator");
     uint32_t transactionSize = config.traffic.transactionSize;
     double threadRate = config.traffic.threadRate;
     uint32_t nXpus = config.network.nXpus;
@@ -244,6 +286,169 @@ ApplicationDeployer::CreateTrafficGenerator (uint32_t xpuIdx, Ptr<LoadBalancer> 
     loadBalancer->SetTrafficGenerator(trafficGen);
 
     return trafficGen;
+}
+
+Ptr<TraceTrafficGenerator>
+ApplicationDeployer::CreateTraceTrafficGenerator (uint32_t xpuIdx, Ptr<LoadBalancer> loadBalancer,
+                                                 const SueSimulationConfig& config)
+{
+    uint32_t transactionSize = config.traffic.transactionSize;
+    uint32_t nXpus = config.network.nXpus;
+    uint8_t vcNum = config.traffic.vcNum;
+    uint32_t maxBurstSize = config.traffic.maxBurstSize;
+    std::string traceFilePath = config.traffic.traceFilePath;
+
+    // Create trace traffic generator for this XPU
+    Ptr<TraceTrafficGenerator> traceTrafficGen = CreateObject<TraceTrafficGenerator>();
+    traceTrafficGen->SetAttribute("TransactionSize", UintegerValue(transactionSize));
+    traceTrafficGen->SetAttribute("MinXpuId", UintegerValue(0));
+    traceTrafficGen->SetAttribute("MaxXpuId", UintegerValue(nXpus - 1));
+    traceTrafficGen->SetAttribute("MinVcId", UintegerValue(0));
+    traceTrafficGen->SetAttribute("MaxVcId", UintegerValue(vcNum - 1));
+    traceTrafficGen->SetAttribute("MaxBurstSize", UintegerValue(maxBurstSize));
+    traceTrafficGen->SetAttribute("TraceFile", StringValue(traceFilePath));
+
+    // Configure trace traffic generator
+    traceTrafficGen->SetLoadBalancer(loadBalancer);
+    traceTrafficGen->SetLocalXpuId(xpuIdx);  // 0-based
+
+    // Note: LoadBalancer doesn't yet support SetTraceTrafficGenerator
+    // This would need to be added to LoadBalancer class for full functionality
+    
+    // Set TrafficGenerator to LoadBalancer (for traffic control)
+    loadBalancer->SetTrafficGenerator(traceTrafficGen);
+
+    return traceTrafficGen;
+}
+
+Ptr<ConfigurableTrafficGenerator>
+ApplicationDeployer::CreateConfigurableTrafficGenerator (uint32_t xpuIdx, Ptr<LoadBalancer> loadBalancer,
+                                                const SueSimulationConfig& config)
+{
+    NS_LOG_FUNCTION (this << xpuIdx << loadBalancer << &config);
+
+    uint32_t transactionSize = config.traffic.transactionSize;
+    uint32_t maxBurstSize = config.traffic.maxBurstSize;
+
+    // Parse fine-grained traffic configuration
+    std::vector<FineGrainedTrafficFlow> fineGrainedFlows = ParseFineGrainedTrafficConfig (config);
+
+    // Create configurable traffic generator
+    Ptr<ConfigurableTrafficGenerator> configTrafficGen = CreateObject<ConfigurableTrafficGenerator>();
+
+    // Set attributes
+    configTrafficGen->SetAttribute("TransactionSize", UintegerValue(transactionSize));
+    configTrafficGen->SetAttribute("MaxBurstSize", UintegerValue(maxBurstSize));
+
+    // Configure configurable traffic generator
+    configTrafficGen->SetLoadBalancer(loadBalancer);
+    configTrafficGen->SetLocalXpuId(xpuIdx);  // 0-based
+    configTrafficGen->SetFineGrainedFlows(fineGrainedFlows);
+
+    // Set TrafficGenerator to LoadBalancer (for traffic control)
+    loadBalancer->SetTrafficGenerator(configTrafficGen);
+
+    return configTrafficGen;
+}
+
+std::vector<FineGrainedTrafficFlow>
+ApplicationDeployer::ParseFineGrainedTrafficConfig (const SueSimulationConfig& config)
+{
+    NS_LOG_FUNCTION (this << &config);
+
+    std::vector<FineGrainedTrafficFlow> flows;
+
+    if (!config.traffic.enableFineGrainedMode || config.traffic.fineGrainedConfigFile.empty())
+    {
+        NS_LOG_WARN("Fine-grained mode not enabled or config file not specified");
+        return flows;
+    }
+
+    std::ifstream configFile(config.traffic.fineGrainedConfigFile);
+    if (!configFile.is_open())
+    {
+        NS_LOG_ERROR("Cannot open fine-grained traffic configuration file: " << config.traffic.fineGrainedConfigFile);
+        exit(0);
+        return flows;
+    }
+
+    std::string line;
+    uint32_t lineNumber = 0;
+
+    while (std::getline(configFile, line))
+    {
+        lineNumber++;
+
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == '#')
+        {
+            continue;
+        }
+
+        // Skip CSV header line
+        if (line.find("sourceXpuId") != std::string::npos &&
+            line.find("destXpuId") != std::string::npos)
+        {
+            continue;
+        }
+
+        // Parse line: sourceXpuId,destXpuId,sueId,suePort,vcId,dataRate,totalBytes
+        std::istringstream iss(line);
+        std::string token;
+        std::vector<std::string> tokens;
+
+        while (std::getline(iss, token, ','))
+        {
+            // Trim whitespace
+            token.erase(0, token.find_first_not_of(" \t"));
+            token.erase(token.find_last_not_of(" \t") + 1);
+            tokens.push_back(token);
+        }
+
+        if (tokens.size() < 7)
+        {
+            NS_LOG_WARN("Invalid line " << lineNumber << " in fine-grained config: " << line
+                      << " (expected at least 7 fields, got " << tokens.size() << ")");
+            continue;
+        }
+
+        try
+        {
+            FineGrainedTrafficFlow flow;
+            flow.sourceXpuId = static_cast<uint32_t>(std::stoul(tokens[0])); // 0-based
+            flow.destXpuId = static_cast<uint32_t>(std::stoul(tokens[1]));   // 0-based
+            flow.sueId = static_cast<uint32_t>(std::stoul(tokens[2]));      // 0-based
+            flow.suePort = static_cast<uint32_t>(std::stoul(tokens[3]));         // 0-based port
+            flow.vcId = static_cast<uint8_t>(std::stoul(tokens[4]));            // VC ID (0-3)
+            flow.dataRate = std::stod(tokens[5]);                                // Mbps
+            flow.totalBytes = static_cast<uint32_t>(std::stoul(tokens[6]));     // Bytes
+
+            // Validate VC ID range
+            if (flow.vcId > 3)
+            {
+                NS_LOG_WARN("VC ID " << (uint32_t)flow.vcId << " out of range (0-3) on line " << lineNumber
+                          << ", using VC 0");
+                flow.vcId = 0;
+            }
+
+            flows.push_back(flow);
+
+            NS_LOG_INFO("Parsed flow: XPU" << flow.sourceXpuId + 1 << " -> XPU" << flow.destXpuId + 1
+                      << " via SUE" << flow.sueId + 1 << ":Port" << flow.suePort << " at " << flow.dataRate << " Mbps"
+                      << " on VC" << (uint32_t)flow.vcId << " for " << flow.totalBytes << " bytes");
+        }
+        catch (const std::exception& e)
+        {
+            NS_LOG_ERROR("Error parsing line " << lineNumber << " in fine-grained config: " << e.what());
+        }
+    }
+
+    configFile.close();
+
+    NS_LOG_INFO("Parsed " << flows.size() << " fine-grained traffic flows from "
+              << config.traffic.fineGrainedConfigFile);
+
+    return flows;
 }
 
 } // namespace ns3

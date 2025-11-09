@@ -1,0 +1,4 @@
+sourceXpuId,destXpuId,sueId,suePort,vcId,dataRate,totalBytes
+1,0,0,0,0,50000,1485760
+2,0,0,0,0,50000,1485760
+3,0,0,0,0,50000,1485760

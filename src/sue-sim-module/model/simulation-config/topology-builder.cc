@@ -21,6 +21,7 @@
 #include "ns3/internet-module.h"
 #include "ns3/sue-sim-module-module.h"
 #include "ns3/sue-client.h"
+#include "../sue-utils.h"
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
@@ -192,7 +193,7 @@ TopologyBuilder::CreateConnections (const SueSimulationConfig& config)
 
     // Set global IP-MAC mapping table to SueClient and PointToPointSueNetDevice
     SueClient::SetGlobalIpMacMap(m_ipToMacMap);
-    PointToPointSueNetDevice::SetGlobalIpMacMap(m_ipToMacMap);
+    SuePacketUtils::SetGlobalIpMacMap(m_ipToMacMap);
 }
 
 void
@@ -281,7 +282,10 @@ TopologyBuilder::BuildForwardingTables (const SueSimulationConfig& config)
 
             if (p2pDev) {
                 // Set complete global forwarding table
-                p2pDev->SetForwardingTable(globalSwitchTables[switchIdx]);
+                auto switchModule = p2pDev->GetSwitch();
+                if (switchModule) {
+                    switchModule->SetForwardingTable(globalSwitchTables[switchIdx]);
+                }
 
                 // Print setting result
                 std::cout << "Switch" << switchIdx + 1 << " Dev" << devIdx + 1

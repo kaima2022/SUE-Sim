@@ -84,21 +84,19 @@ SuePppHeader::Print (std::ostream &os) const
 uint32_t
 SuePppHeader::GetSerializedSize (void) const
 {
-  return 6;
+  return 2; // Only protocol field (2 bytes)
 }
 
 void
 SuePppHeader::Serialize (Buffer::Iterator start) const
 {
   start.WriteHtonU16 (m_protocol);
-  start.WriteHtonU32(m_seq);
 }
 
 uint32_t
 SuePppHeader::Deserialize (Buffer::Iterator start)
 {
   m_protocol = start.ReadNtohU16 ();
-  m_seq = start.ReadNtohU32();
   return GetSerializedSize ();
 }
 
@@ -115,17 +113,6 @@ SuePppHeader::GetProtocol (void)
 }
 
 
-void
-SuePppHeader::SetSeq(uint32_t seq)
-{
-  m_seq=seq;
-}
-
-uint32_t
-SuePppHeader::GetSeq() const
-{
-  return m_seq;
-}
 
 
 } // namespace ns3

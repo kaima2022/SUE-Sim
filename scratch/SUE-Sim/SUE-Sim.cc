@@ -34,7 +34,7 @@
 #include "ns3/parameter-config.h"
 #include "ns3/topology-builder.h"
 #include "ns3/application-deployer.h"
-#include "ns3/sue-utils.h"
+#include "ns3/common-utils.h"
 #include <iomanip>
 #include <string>
 
@@ -54,12 +54,15 @@ main (int argc, char* argv[])
     // Initialize timing and performance logging
     std::string sessionId = SueUtils::StartTiming ();
     SueUtils::InitializePerformanceLogger ("performance.csv");
-    SueUtils::ConfigureLogging ();
 
     // === Simulation Parameters Configuration ===
     SueSimulationConfig config;
     config.ParseCommandLine (argc, argv);
     config.ValidateAndCalculate ();
+
+    // Configure logging using parsed parameters
+    SueUtils::ConfigureLogging (config);
+
     config.PrintConfiguration ();
 
     // Extract simulation time for convenience

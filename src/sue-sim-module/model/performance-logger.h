@@ -59,18 +59,36 @@ public:
    */
   void Initialize (const std::string& filename);
 
+  
+  // === EVENT-DRIVEN STATISTICS FUNCTIONS ===
+
   /**
-   * \brief Log device statistics
+   * \brief Log single packet transmission (event-driven)
+   * Records individual packet transmission events immediately
    *
    * \param nanoTime Time in nanoseconds
    * \param XpuId XPU identifier
    * \param devId Device identifier
    * \param vcId Virtual channel identifier
-   * \param direction Direction (TX/RX)
-   * \param rate Data rate
+   * \param direction Direction ("Tx")
+   * \param packetSizeBits Packet size in bits
    */
-  void LogDeviceStat (int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
-                      const std::string& direction, double rate);
+  void LogPacketTx (int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
+                    const std::string& direction, uint32_t packetSizeBits);
+
+  /**
+   * \brief Log single packet reception (event-driven)
+   * Records individual packet reception events immediately
+   *
+   * \param nanoTime Time in nanoseconds
+   * \param XpuId XPU identifier
+   * \param devId Device identifier
+   * \param vcId Virtual channel identifier
+   * \param direction Direction ("Rx")
+   * \param packetSizeBits Packet size in bits
+   */
+  void LogPacketRx (int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
+                    const std::string& direction, uint32_t packetSizeBits);
 
   /**
    * \brief Log application statistics
@@ -79,7 +97,7 @@ public:
    * \param xpuId XPU identifier
    * \param devId Device identifier
    * \param vcId Virtual channel identifier
-   * \param rate Data rate
+   * \param rate Data size
    */
   void LogAppStat (int64_t time, uint32_t xpuId, uint32_t devId, uint8_t vcId, double rate);
 
@@ -95,6 +113,19 @@ public:
    */
   void LogDropStat (int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
                     const std::string& direction, uint32_t count);
+
+  /**
+   * \brief Log packet drop statistics (event-driven)
+   *
+   * \param nanoTime Time in nanoseconds
+   * \param XpuId XPU identifier
+   * \param devId Device identifier
+   * \param vcId Virtual channel identifier
+   * \param dropReason Reason for packet drop
+   * \param packetSize Size of dropped packet
+   */
+  void LogPacketDrop (int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
+                       const std::string& dropReason, uint32_t packetSize);
 
   /**
    * \brief Log credit statistics
@@ -151,31 +182,41 @@ public:
                                  uint32_t destXpuId, uint8_t vcId, uint32_t currentBytes, uint32_t maxBytes);
 
   /**
-   * \brief Log device queue usage statistics
+   * \brief Log main queue usage statistics (event-driven)
    *
    * \param timeNs Time in nanoseconds
-   * \param xpuId XPU identifier
+   * \param nodeId Node identifier
    * \param deviceId Device identifier
-   * \param mainQueueSize Main queue size
-   * \param mainQueueMaxSize Main queue maximum size
-   * \param vcQueueSizes Virtual channel queue sizes
-   * \param vcQueueMaxSizes Virtual channel queue maximum sizes
+   * \param currentSize Current main queue size in bytes
+   * \param maxSize Maximum main queue size in bytes
    */
-  void LogDeviceQueueUsage (uint64_t timeNs, uint32_t xpuId, uint32_t deviceId,
-                            uint32_t mainQueueSize, uint32_t mainQueueMaxSize,
-                            const std::map<uint8_t, uint32_t>& vcQueueSizes,
-                            const std::map<uint8_t, uint32_t>& vcQueueMaxSizes);
+  void LogMainQueueUsage (uint64_t timeNs, uint32_t nodeId, uint32_t deviceId,
+                         uint32_t currentSize, uint32_t maxSize);
 
+  /**
+   * \brief Log VC queue usage statistics (event-driven)
+   *
+   * \param timeNs Time in nanoseconds
+   * \param nodeId Node identifier
+   * \param deviceId Device identifier
+   * \param vcId Virtual channel identifier
+   * \param currentSize Current VC queue size in bytes
+   * \param maxSize Maximum VC queue size in bytes
+   */
+  void LogVCQueueUsage (uint64_t timeNs, uint32_t nodeId, uint32_t deviceId,
+                       uint8_t vcId, uint32_t currentSize, uint32_t maxSize);
+
+  
   /**
    * \brief Log processing queue usage statistics
    *
    * \param timeNs Time in nanoseconds
-   * \param xpuId XPU identifier
+   * \param nodeId Node identifier
    * \param deviceId Device identifier
    * \param currentSize Current queue size
    * \param maxSize Maximum queue size
    */
-  void LogProcessingQueueUsage (uint64_t timeNs, uint32_t xpuId, uint32_t deviceId,
+  void LogProcessingQueueUsage (uint64_t timeNs, uint32_t nodeId, uint32_t deviceId,
                                 uint32_t currentSize, uint32_t maxSize);
 
   /**
@@ -188,16 +229,7 @@ public:
    */
   void LogXpuDelay (uint64_t timeNs, uint32_t xpuId, uint32_t portId, double delayNs);
 
-  /**
-   * \brief SUE credit change trace callback
-   *
-   * \param sueId SUE identifier
-   * \param currentCredits Current available credits
-   * \param maxCredits Maximum credits
-   * \param xpuId XPU identifier
-   */
-  void SueCreditChangeTraceCallback (uint32_t sueId, uint32_t currentCredits, uint32_t maxCredits, uint32_t xpuId);
-
+  
   /**
    * \brief Buffer queue change trace callback
    *
@@ -244,7 +276,8 @@ private:
 
   // Queue usage monitoring log files
   std::ofstream m_destinationQueueLog;     //!< Destination queue log file stream
-  std::ofstream m_deviceQueueLog;          //!< Device queue log file stream
+  std::ofstream m_mainQueueLog;            //!< Main queue log file stream
+  std::ofstream m_vcQueueLog;              //!< VC queue log file stream
 
   // Link layer processing queue monitoring log file
   std::ofstream m_processingQueueLog;      //!< Processing queue log file stream
@@ -252,8 +285,10 @@ private:
   // XPU delay monitoring log file
   std::ofstream m_xpuDelayLog;             //!< XPU end-to-end delay log file stream
 
+  // Event-driven packet drop monitoring log file
+  std::ofstream m_dropLog;                 //!< Packet drop log file stream
+
   // LoadBalancer monitoring log files
-  std::ofstream m_sueCreditLog;            //!< SUE credit statistics log file stream
   std::ofstream m_sueBufferQueueLog;       //!< SUE buffer queue statistics log file stream
 
   // Link layer credit monitoring log file

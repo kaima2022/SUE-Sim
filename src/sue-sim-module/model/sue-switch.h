@@ -29,6 +29,8 @@ namespace ns3 {
 
 // Forward declarations
 class PointToPointSueNetDevice;
+class LlrNodeManager;
+class LlrSwitchPortManager;
 
 /**
  * \ingroup sue-sim-module
@@ -71,13 +73,7 @@ public:
    */
   void ClearForwardingTable (void);
 
-  /**
-   * \brief Check if this device is a switch device
-   *
-   * \return true if this is a switch device
-   */
-  bool IsSwitchDevice (Mac48Address mac) const;
-
+  
   /**
    * \brief Process packet forwarding through switch
    *
@@ -93,6 +89,42 @@ public:
                                 Ptr<PointToPointSueNetDevice> currentDevice,
                                 uint16_t protocol,
                                 uint8_t vcId);
+
+  /**
+   * \brief Set LLR node manager for switch
+   *
+   * \param llrNodeManager Pointer to LLR node manager
+   */
+  void SetLlrNodeManager (Ptr<LlrNodeManager> llrNodeManager);
+
+  /**
+   * \brief Set LLR switch port manager for switch
+   *
+   * \param llrSwitchPortManager Pointer to LLR switch port manager
+   */
+  void SetLlrSwitchPortManager (Ptr<LlrSwitchPortManager> llrSwitchPortManager);
+
+  /**
+   * \brief Get LLR node manager
+   *
+   * \return Pointer to LLR node manager
+   */
+  Ptr<LlrNodeManager> GetLlrNodeManager (void) const;
+
+  /**
+   * \brief Get LLR switch port manager
+   *
+   * \return Pointer to LLR switch port manager
+   */
+  Ptr<LlrSwitchPortManager> GetLlrSwitchPortManager (void) const;
+
+  /**
+   * \brief Check if a MAC address belongs to a switch device
+   *
+   * \param MAC address to check
+   * \return true if the MAC address belongs to a switch device
+   */
+  bool IsSwitchDevice (Mac48Address mac) const;
 
 private:
   /**
@@ -119,6 +151,10 @@ private:
    * Maps destination MAC addresses to output port indices
    */
   std::map<Mac48Address, uint32_t> m_forwardingTable;
+
+  /// ---- LLR managers ----
+  Ptr<LlrNodeManager> m_llrNodeManager;         //!< LLR manager for end nodes
+  Ptr<LlrSwitchPortManager> m_llrSwitchPortManager; //!< LLR manager for switch ports
 };
 
 } // namespace ns3

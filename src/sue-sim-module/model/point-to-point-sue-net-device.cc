@@ -33,6 +33,8 @@
 #include "ns3/drop-tail-queue.h"
 #include "performance-logger.h"
 #include "sue-header.h"
+#include "sue-cbfc.h"
+#include "sue-queue-manager.h"
 #include "ns3/network-module.h"
 #include "ns3/ipv4-header.h"
 #include "ns3/ipv4.h"
@@ -41,14 +43,12 @@
 #include "ns3/ethernet-header.h"
 #include "sue-ppp-header.h"
 #include "ns3/performance-logger.h"
-#include "xpu-delay-tag.h"
+#include "sue-tag.h"
+#include "sue-utils.h"
 
-namespace ns3
-{
+namespace ns3 {
 
     NS_LOG_COMPONENT_DEFINE("PointToPointSueNetDevice");
-
-    std::map<Ipv4Address, Mac48Address> PointToPointSueNetDevice::s_ipToMacMap;
 
     NS_OBJECT_ENSURE_REGISTERED(PointToPointSueNetDevice);
 
@@ -290,30 +290,25 @@ namespace ns3
         return tid;
     }
 
-    // Define declared static constants
-    const uint16_t PointToPointSueNetDevice::PROT_CBFC_UPDATE;
-    const uint16_t PointToPointSueNetDevice::ACK_REV;
-    const uint16_t PointToPointSueNetDevice::NACK_REV;
-
+    
     PointToPointSueNetDevice::PointToPointSueNetDevice()
         : m_txMachineState(READY),
           m_channel(0),
           m_linkUp(false),
           m_currentPkt(0),
-          // CBFC
-          m_cbfcInitialized(false),
+          // CBFC configuration values (in header file order)
           m_initialCredits(0),
           m_numVcs(0),
           m_creditBatchSize(10),
           m_vcQueueMaxBytes(2 * 1024 * 1024), // Default VC queue max capacity 2MB (2*1024*1024 bytes)
           m_additionalHeaderSize(46), // Default 46 bytes
+          m_enableLinkCBFC(false),
           m_currentProcessingQueueSize(0),
           m_currentProcessingQueueBytes(0),
           m_isProcessing(false),
           m_processingDelay(NanoSeconds(10)),
           m_processingQueueMaxBytes(2 * 1024 * 1024), // Default processing queue max capacity 2MB
           m_linkStatInterval(MilliSeconds(10)),
-          m_enableLinkCBFC(false),
           m_totalPacketDropNum(0),
           m_creUpdateAddHeadDelay(NanoSeconds(3)),
           m_dataAddHeadDelay(NanoSeconds(5)),
@@ -333,8 +328,22 @@ namespace ns3
     {
         NS_LOG_FUNCTION(this);
 
+        // Initialize CBFC manager
+        m_cbfcManager = CreateObject<CbfcManager> ();
+
+        // Initialize queue manager
+        m_queueManager = CreateObject<SueQueueManager> ();
+
         // Initialize switch module
         m_switch = CreateObject<SueSwitch> ();
+
+        // Initialize LLR managers
+        m_llrNodeManager = CreateObject<LlrNodeManager> ();
+        m_llrSwitchPortManager = CreateObject<LlrSwitchPortManager> ();
+
+        // Initialize TryTransmit event tracking
+        m_tryTransmitEvent = EventId();
+        m_tryTransmitScheduled = false;
     }
 
     PointToPointSueNetDevice::~PointToPointSueNetDevice()
@@ -346,184 +355,103 @@ namespace ns3
     void
     PointToPointSueNetDevice::InitializeCbfc()
     {
-        if (m_cbfcInitialized)
+        if (m_cbfcManager->IsInitialized())
             return;
 
-        // Convert processing rate string to DataRate for compatibility
-        if (!m_processingRateString.empty())
-        {
-            try
-            {
-                // Convert processing rate string to DataRate - handle Gbps format manually
-                std::string rateStr = m_processingRateString;
-                uint64_t bps = 0;
+        // Convert strings using SueStringUtils
+        m_processingRate = SueStringUtils::ParseDataRateString(m_processingRateString);
+        m_linkStatInterval = SueStringUtils::ParseTimeIntervalString(m_linkStatIntervalString);
 
-                if (rateStr.find("Gbps") != std::string::npos)
-                {
-                    size_t pos = rateStr.find("Gbps");
-                    std::string number = rateStr.substr(0, pos);
-                    double value = std::stod(number);
-                    bps = static_cast<uint64_t>(value * 1000000000); // Convert Gbps to bps
-                }
-                else if (rateStr.find("Mbps") != std::string::npos)
-                {
-                    size_t pos = rateStr.find("Mbps");
-                    std::string number = rateStr.substr(0, pos);
-                    double value = std::stod(number);
-                    bps = static_cast<uint64_t>(value * 1000000); // Convert Mbps to bps
-                }
-                else if (rateStr.find("Kbps") != std::string::npos)
-                {
-                    size_t pos = rateStr.find("Kbps");
-                    std::string number = rateStr.substr(0, pos);
-                    double value = std::stod(number);
-                    bps = static_cast<uint64_t>(value * 1000); // Convert Kbps to bps
-                }
-                else if (rateStr.find("bps") != std::string::npos)
-                {
-                    size_t pos = rateStr.find("bps");
-                    std::string number = rateStr.substr(0, pos);
-                    bps = static_cast<uint64_t>(std::stod(number));
-                }
+        // Initialize CBFC with configuration, callbacks, and peer device credits
+        m_cbfcManager->Initialize (
+            m_numVcs, m_initialCredits, m_enableLinkCBFC,
+            m_creditBatchSize,
+            [this]() { return GetLocalMac(); },                    // GetLocalMac callback
+            [this]() { return GetNode(); },                        // GetNode callback
+            [this](Ptr<Packet> packet, Mac48Address targetMac, uint16_t protocolNum) {
+                FindDeviceAndSend(packet, targetMac, protocolNum); // SendPacket callback
+            },
+            m_creditGenerateDelay,                                 // Credit generation delay
+            SuePacketUtils::PROT_CBFC_UPDATE,                                      // Protocol number
+            [this]() { return GetRemoteMac(); },           // GetRemoteMac callback
+            [this]() { return IsSwitchDevice(m_address); },        // IsSwitchDevice callback
+            85                                              // Switch default credits
+        );
 
-                if (bps > 0)
-                {
-                    m_processingRate = DataRate(bps);
-                }
-                else
-                {
-                    throw std::invalid_argument("Unknown rate format");
-                }
-                NS_LOG_INFO("Processing rate set to: " << m_processingRateString << " (" << m_processingRate.GetBitRate() << " bps)");
-            }
-            catch (const std::exception& e)
-            {
-                NS_LOG_WARN("Invalid processing rate format: " << m_processingRateString << ", using default value");
-                m_processingRate = DataRate("200Gb/s");
-            }
-        }
+        // Initialize queue manager directly with drop callback
+        m_queueManager->Initialize(m_numVcs, m_vcQueueMaxBytes, m_additionalHeaderSize,
+                                 MakeCallback(&PointToPointSueNetDevice::HandlePacketDrop, this));
 
-        // Convert link stat interval string to Time for compatibility
-        if (!m_linkStatIntervalString.empty())
-        {
-            try
-            {
-                // Convert "us" to ns3 compatible format
-                std::string timeStr = m_linkStatIntervalString;
-                if (timeStr.find("us") != std::string::npos)
-                {
-                    // Convert microseconds to nanoseconds for ns3 compatibility
-                    size_t pos = timeStr.find("us");
-                    std::string number = timeStr.substr(0, pos);
-                    try
-                    {
-                        double value = std::stod(number);
-                        timeStr = std::to_string(static_cast<uint64_t>(value * 1000)) + "ns";
-                    }
-                    catch (...)
-                    {
-                        timeStr = "10000ns"; // Default 10 microseconds in nanoseconds
-                    }
-                }
-                m_linkStatInterval = Time(timeStr);
-                NS_LOG_INFO("Link stat interval set to: " << m_linkStatIntervalString << " (" << m_linkStatInterval.GetNanoSeconds() << " ns)");
-            }
-            catch (const std::exception& e)
-            {
-                NS_LOG_WARN("Invalid link stat interval format: " << m_linkStatIntervalString << ", using default value");
-                m_linkStatInterval = MilliSeconds(10);
-            }
-        }
-
-        // Initialize peer device credits regardless of whether this is a switch device
-        Mac48Address peerMac = GetRemoteMac();
-        for (uint8_t vc = 0; vc < m_numVcs; vc++)
-        {
-            m_txCreditsMap[peerMac][vc] = m_initialCredits;
-            m_rxCreditsToReturnMap[peerMac][vc] = 0;
-            if (m_llrEnabled)
-            {
-                // llr structure
-                waitSeq[peerMac] = std::vector<uint32_t>(m_numVcs, 0);
-                sendSeq[peerMac] = std::vector<uint32_t>(m_numVcs, 0);
-                unack[peerMac] = std::vector<uint32_t>(m_numVcs, 0);
-                llrResendseq[peerMac] = std::vector<uint32_t>(m_numVcs, -1);
-                llrWait[peerMac] = std::vector<bool>(m_numVcs, false);
-                llrResending[peerMac] = std::vector<bool>(m_numVcs, false);
-                lastAckedTime[peerMac] = std::vector<Time>(m_numVcs, Time());
-                lastAcksend[peerMac] = std::vector<Time>(m_numVcs, Time());
-                resendPkt[peerMac] = std::vector<EventId>(m_numVcs, EventId());
-                m_sendList[peerMac].resize(m_numVcs);
-            }
-        }
-
-        // If switch device, initialize credit allocation for other devices on the switch
-        if (IsSwitchDevice())
-        {
-            // Switch device: initialize credits for all peer devices on all ports
-            Ptr<Node> node = GetNode();
-            for (uint32_t i = 0; i < node->GetNDevices(); i++)
-            {
-                Ptr<NetDevice> dev = node->GetDevice(i);
-                Ptr<PointToPointSueNetDevice> p2pDev = DynamicCast<PointToPointSueNetDevice>(dev);
-                // Check if conversion is successful
-                if (p2pDev && p2pDev != this)
-                {
-                    Mac48Address mac = Mac48Address::ConvertFrom(dev->GetAddress());
-                    for (uint8_t vc = 0; vc < m_numVcs; vc++)
-                    {
-                        m_txCreditsMap[mac][vc] = 85;
-                        m_rxCreditsToReturnMap[mac][vc] = 0;
-                        if (m_llrEnabled)
-                        {
-                            // llr structure
-                            waitSeq[peerMac] = std::vector<uint32_t>(m_numVcs, 0);
-                            sendSeq[peerMac] = std::vector<uint32_t>(m_numVcs, 0);
-                            unack[peerMac] = std::vector<uint32_t>(m_numVcs, 0);
-                            llrResendseq[peerMac] = std::vector<uint32_t>(m_numVcs, -1);
-                            llrWait[peerMac] = std::vector<bool>(m_numVcs, false);
-                            llrResending[peerMac] = std::vector<bool>(m_numVcs, false);
-                            lastAckedTime[peerMac] = std::vector<Time>(m_numVcs, Time());
-                            lastAcksend[peerMac] = std::vector<Time>(m_numVcs, Time());
-                            resendPkt[peerMac] = std::vector<EventId>(m_numVcs, EventId());
-                            m_sendList[peerMac].resize(m_numVcs);
-                        }
-                    }
-                }
-            }
-        }
-
-        for (uint8_t i = 0; i < m_numVcs; ++i)
-        {
-            m_vcQueues[i] = CreateObject<DropTailQueue<Packet>>();
-            std::stringstream vcMaxSize;
-            vcMaxSize << m_vcQueueMaxBytes << "B";
-            m_vcQueues[i]->SetAttribute("MaxSize", QueueSizeValue(QueueSize(vcMaxSize.str()))); // Use parameterized VC queue size (bytes)
-
-            // Initialize reserved capacity
-            m_vcReservedCapacity[i] = 0;
-
-            // Initialize drop statistics
-            m_vcDropCounts[i] = 0;
-        }
-        // Handle link layer sender queue packet drops
-        for (auto &queuePair : m_vcQueues)
-        {
-            ns3::Ptr<ns3::Queue<ns3::Packet>> queue = queuePair.second;
-
-            // Connect Drop trace source to custom handler HandlePacketDrop
-            queue->TraceConnectWithoutContext("Drop", ns3::MakeCallback(&PointToPointSueNetDevice::HandlePacketDrop, this));
-        }
-
-        m_cbfcInitialized = true;
-        if (!IsSwitchDevice())
+        if (!m_switch || !IsSwitchDevice(m_address))
         {
             NS_LOG_INFO("Link: Initialized on Node " << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                                                      << " with " << (uint32_t)m_numVcs << " VCs and " << m_initialCredits << " initial credits.");
         }
         // Start statistics after initialization completes
         m_lastStatTime = Simulator::Now();
-        m_logStatisticsEvent = Simulator::Schedule(m_linkStatInterval, &PointToPointSueNetDevice::LogStatistics, this);
+    }
+
+    void
+    PointToPointSueNetDevice::InitializeLlr()
+    {
+        if (!m_llrEnabled)
+            return;
+
+        // Check if this is a switch device
+        bool isSwitchDevice = m_switch && IsSwitchDevice(m_address);
+
+        if (isSwitchDevice)
+        {
+            // Initialize LLR switch port manager
+            Mac48Address peerMac = GetRemoteMac();
+            m_llrSwitchPortManager->Initialize(
+                m_llrEnabled,
+                m_llrWindowSize,
+                m_llrTimeout,
+                m_AckAddHeaderDelay,
+                m_AckProcessDelay,
+                SuePacketUtils::ACK_REV,
+                m_numVcs,
+                [this]() { return GetLocalMac(); },                    // GetLocalMac callback
+                [this]() { return GetNode(); },                        // GetNode callback
+                [this]() { return m_switch; },                          // GetSwitch callback
+                [this](Ptr<Packet> packet, Mac48Address targetMac, uint16_t protocolNum) {
+                    FindDeviceAndSend(packet, targetMac, protocolNum); // SendPacket callback
+                },
+                [this]() {
+                    // TryTransmit callback - trigger transmission attempt
+                    if (m_currentPkt && m_txMachineState == READY) {
+                        TransmitStart(m_currentPkt);
+                    }
+                },
+                peerMac                                                 // Connected peer MAC
+            );
+        }
+        else
+        {
+            // Initialize LLR node manager for regular NICs
+            m_llrNodeManager->Initialize(
+                m_llrEnabled,
+                m_llrWindowSize,
+                m_llrTimeout,
+                m_AckAddHeaderDelay,
+                m_AckProcessDelay,
+                SuePacketUtils::ACK_REV,
+                m_numVcs,
+                [this]() { return GetLocalMac(); },                    // GetLocalMac callback
+                [this]() { return GetNode(); },                        // GetNode callback
+                [this]() { return GetRemoteMac(); },                   // GetRemoteMac callback
+                [this](Ptr<Packet> packet, Mac48Address targetMac, uint16_t protocolNum) {
+                    FindDeviceAndSend(packet, targetMac, protocolNum); // SendPacket callback
+                },
+                [this]() {
+                    // TryTransmit callback - trigger transmission attempt
+                    if (m_currentPkt && m_txMachineState == READY) {
+                        TransmitStart(m_currentPkt);
+                    }
+                }
+            );
+        }
     }
 
     Mac48Address PointToPointSueNetDevice::GetRemoteMac()
@@ -542,10 +470,7 @@ namespace ns3
     // Custom packet drop handler (member function)
     void PointToPointSueNetDevice::HandlePacketDrop(ns3::Ptr<const ns3::Packet> droppedPacket)
     {
-        // Extract VC ID from packet
-        uint8_t vcId = ExtractVcIdFromPacket(droppedPacket);
-        m_vcDropCounts_SendQ[vcId + 1]++;
-        m_totalPacketDropNum += 1;
+        SueStatsUtils::ProcessPacketDropStats(droppedPacket, GetNode()->GetId(), GetIfIndex() - 1, "VCQueueFull");
     }
 
     uint32_t
@@ -565,16 +490,10 @@ namespace ns3
         NS_LOG_FUNCTION(this << maxBytes);
         m_vcQueueMaxBytes = maxBytes;
 
-        // If VC queues already created, update their maximum capacity
-        for (uint8_t i = 0; i < m_numVcs; ++i)
-        {
-            if (m_vcQueues[i])
-            {
-                std::stringstream vcMaxSize;
-                vcMaxSize << m_vcQueueMaxBytes << "B";
-                m_vcQueues[i]->SetAttribute("MaxSize", QueueSizeValue(QueueSize(vcMaxSize.str())));
-            }
-        }
+        // Reconfigure CBFC manager with new queue size parameters
+        SueConfigUtils::ReconfigureCbfcWithQueueSize(m_cbfcManager, m_numVcs,
+                                                     m_initialCredits, m_enableLinkCBFC,
+                                                     m_creditBatchSize);
     }
 
     uint32_t PointToPointSueNetDevice::GetVcQueueMaxBytes(void) const
@@ -582,116 +501,25 @@ namespace ns3
         return m_vcQueueMaxBytes;
     }
 
-    void PointToPointSueNetDevice::LogStatistics()
-    {
-        // Check if logging is enabled
-        if (!m_loggingEnabled)
-        {
-            NS_LOG_INFO("Logging disabled on device " << GetIfIndex());
-            return;
-        }
-
-        Time currentTime = Simulator::Now();
-        int64_t nanoseconds = currentTime.GetNanoSeconds();
-        for (auto &entry : m_vcBytesSent)
-        {
-            double rate = (entry.second * 8) / m_linkStatInterval.GetSeconds() / 1e9; // Gbps
-            PerformanceLogger::GetInstance().LogDeviceStat(
-                nanoseconds, GetNode()->GetId() + 1, GetIfIndex(), entry.first, "Tx", rate);
-            entry.second = 0;
-        }
-        for (auto &entry : m_vcBytesReceived)
-        {
-            double rate = (entry.second * 8) / m_linkStatInterval.GetSeconds() / 1e9; // Gbps
-            PerformanceLogger::GetInstance().LogDeviceStat(
-                nanoseconds, GetNode()->GetId() + 1, GetIfIndex(), entry.first, "Rx", rate);
-            entry.second = 0;
-        }
-        // Log packet drop statistics
-        // Receiver queue drops
-        for (auto &entry : m_vcDropCounts)
-        {
-            if (entry.second > 0)
-            {
-                PerformanceLogger::GetInstance().LogDropStat(
-                    nanoseconds, GetNode()->GetId() + 1, GetIfIndex(),
-                    entry.first, "LinkReceiveDrop", entry.second);
-                entry.second = 0; // Reset counter
-            }
-        }
-        // Sender queue drops
-        for (auto &entry : m_vcDropCounts_SendQ)
-        {
-            if (entry.second > 0)
-            {
-                PerformanceLogger::GetInstance().LogDropStat(
-                    nanoseconds, GetNode()->GetId() + 1, GetIfIndex(),
-                    entry.first, "LinkSendDrop", entry.second);
-                entry.second = 0; // Reset counter
-            }
-        }
-
-        // Log device credit changes
-        // Iterate through all target device credit mappings
-        for (const auto &macEntry : m_txCreditsMap)
-        {
-            Mac48Address targetMac = macEntry.first;
-            for (const auto &vcEntry : macEntry.second)
-            {
-                uint8_t vcId = vcEntry.first;
-                uint32_t credits = vcEntry.second;
-
-                // Convert Mac48Address to string format
-                std::ostringstream macStream;
-                macStream << targetMac;
-                std::string macStr = macStream.str();
-                if(IsSwitchDevice()){
-                    // Log credit status
-                    PerformanceLogger::GetInstance().LogCreditStat(
-                        nanoseconds, GetNode()->GetId() + 1, GetIfIndex(),
-                        vcId, "SwitchCredits", credits, macStr);
-                }
-                else{
-                    // Log credit status
-                    PerformanceLogger::GetInstance().LogCreditStat(
-                        nanoseconds, GetNode()->GetId() + 1, GetIfIndex(),
-                        vcId, "XPUCredits", credits, macStr);
-                }
-
-            }
-        }
-
-        // Log queue utilization
-        LogDeviceQueueUsage();
-
-        // Only reschedule when logging is enabled
-        if (m_loggingEnabled)
-        {
-            m_logStatisticsEvent = Simulator::Schedule(m_linkStatInterval,
-                                                       &PointToPointSueNetDevice::LogStatistics, this);
-        }
-    }
-
+    
     // Add sequence number to PPP header, modify accordingly
     void
-    PointToPointSueNetDevice::AddHeader (Ptr<Packet> p, uint16_t protocolNumber, uint32_t seq)
+    PointToPointSueNetDevice::AddHeader (Ptr<Packet> p, uint16_t protocolNumber)
     {
         NS_LOG_FUNCTION (this << p << protocolNumber);
         SuePppHeader ppp;
-        ppp.SetProtocol(EtherToPpp(protocolNumber));
-        // Optional: Set sequence number, can be passed in or generated during actual use
-        ppp.SetSeq(seq); // If needed
+        ppp.SetProtocol(SuePacketUtils::EtherToPpp(protocolNumber));
         p->AddHeader(ppp);
     }
 
     bool
-    PointToPointSueNetDevice::ProcessHeader(Ptr<Packet> p, uint16_t& protocol, uint32_t& seq)
+    PointToPointSueNetDevice::ProcessHeader(Ptr<Packet> p, uint16_t& protocol)
     {
-        NS_LOG_FUNCTION(this << p << protocol << seq);
+        NS_LOG_FUNCTION(this << p << protocol);
         SuePppHeader ppp;
         p->RemoveHeader(ppp);
-        protocol = PppToEther(ppp.GetProtocol());
-        seq = ppp.GetSeq();
+        protocol = SuePacketUtils::PppToEther(ppp.GetProtocol());
+
         return true;
     }
 
@@ -714,7 +542,6 @@ namespace ns3
         m_bps = bps;
     }
 
-    
     void
     PointToPointSueNetDevice::SetInterframeGap(Time t)
     {
@@ -739,11 +566,10 @@ namespace ns3
         m_phyTxBeginTrace(m_currentPkt);
 
         // Add timestamp tag to packets sent by XPU devices
-        if (!IsSwitchDevice())
+        if (!IsSwitchDevice(m_address))
         {
-            XpuDelayTag timestampTag(Simulator::Now());
-            p->AddPacketTag(timestampTag);
-            NS_LOG_DEBUG("Added XPU timestamp tag to packet UID " << p->GetUid()
+            SueTag::UpdateTimestampInPacket(p, Simulator::Now());
+            NS_LOG_DEBUG("Updated SUE tag timestamp for packet UID " << p->GetUid()
                         << " at time " << Simulator::Now().GetNanoSeconds() << "ns");
         }
 
@@ -753,22 +579,31 @@ namespace ns3
         NS_LOG_LOGIC("Schedule TransmitCompleteEvent in " << txCompleteTime.As(Time::S));
         Simulator::Schedule(txCompleteTime, &PointToPointSueNetDevice::TransmitComplete, this);
 
-        Simulator::Schedule(txCompleteTime, &PointToPointSueNetDevice::SendPacketStatistic, this, p);
+        Simulator::Schedule(txCompleteTime, [this, p]() {
+            SueStatsUtils::ProcessSentPacketStats(p, m_vcBytesSent, GetNode()->GetId(), GetIfIndex() - 1);
+        });
 
         // Switch egress port: credit return only after packet transmission
         SuePppHeader ppp;
         p->PeekHeader(ppp);
 
-        if (IsSwitchDevice() && ppp.GetProtocol() != EtherToPpp(PROT_CBFC_UPDATE))
+        if (IsSwitchDevice(m_address) && ppp.GetProtocol() != SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_UPDATE))
         {
             // Extract VC ID from packet
-            uint8_t vcId = ExtractVcIdFromPacket(p);
+            uint8_t vcId = SuePacketUtils::ExtractVcIdFromPacket(p);
 
             // Switch egress port: replace Source Destination MAC with current device MAC
             // to enable universal credit calculation based on SourceMac.
-            Mac48Address targetMac = GetSourceMac(p, true);
+            Mac48Address targetMac = SuePacketUtils::ExtractSourceMac(p, true, GetLocalMac());
 
-            Simulator::Schedule(txCompleteTime, &PointToPointSueNetDevice::CreditReturn, this, targetMac, vcId);
+            Simulator::Schedule(txCompleteTime, [this, targetMac, vcId]() {
+                if (m_cbfcManager) {
+                    EthernetHeader tempEthHeader;
+                    tempEthHeader.SetSource(targetMac);                   
+                    m_cbfcManager->HandleCreditReturn(tempEthHeader, vcId);
+                    m_cbfcManager->CreditReturn(targetMac, vcId);
+                }
+            });
         }
 
         bool result = m_channel->TransmitStart(p, this, txTime);
@@ -780,70 +615,16 @@ namespace ns3
         return result;
     }
 
-    void PointToPointSueNetDevice::SendPacketStatistic(Ptr<Packet> packet)
-    {
-        SuePppHeader ppp;
-        packet->PeekHeader(ppp);
-
-        // Extract VC ID from packet
-        uint8_t vcId = ExtractVcIdFromPacket(packet);
-
-        if (ppp.GetProtocol() == EtherToPpp(PROT_CBFC_UPDATE))
-        { // If it's an update packet
-            // Temporarily do not count credit packets
-            // m_vcBytesSent[0] += packet->GetSize(); // VC0 is used for credit packets
-        }
-        else
-        {
-            m_vcBytesSent[vcId + 1] += packet->GetSize(); // Data packet statistics
-        }
-    }
-
-    void PointToPointSueNetDevice::ReceivePacketStatistic(Ptr<Packet> packet)
-    {
-        SuePppHeader ppp;
-        packet->PeekHeader(ppp);
-
-        // Extract VC ID from packet
-        uint8_t vcId = ExtractVcIdFromPacket(packet);
-
-        if (ppp.GetProtocol() == EtherToPpp(PROT_CBFC_UPDATE))
-        { // If it's an update packet
-            // m_vcBytesReceived[0] += packet->GetSize(); // VC0 is used for credit packets
-        }
-        else
-        {
-            m_vcBytesReceived[vcId + 1] += packet->GetSize(); // Data packet statistics
-        }
-    }
-
-    Mac48Address
-    PointToPointSueNetDevice::GetSourceMac(Ptr<Packet> p, bool ChangeHead)
-    {
-        SuePppHeader ppp;
-        SueCbfcHeader dataHeader;
-        EthernetHeader ethHeader;
-        p->RemoveHeader(ppp);
-        p->RemoveHeader(dataHeader);
-        p->RemoveHeader(ethHeader);
-        Mac48Address sourceMac = ethHeader.GetSource();
-
-        if (ChangeHead)
-        {
-            ethHeader.SetSource(GetLocalMac());
-        }
-
-        p->AddHeader(ethHeader);
-        p->AddHeader(dataHeader);
-        p->AddHeader(ppp);
-
-        return sourceMac;
-    }
-
+    
+    
+  
     // Core function to check all queues and trigger transmission
     void
     PointToPointSueNetDevice::TryTransmit()
     {
+        // Reset the scheduled flag when actually executing
+        m_tryTransmitScheduled = false;
+
         if (m_txMachineState != READY)
         {
             return;
@@ -856,22 +637,25 @@ namespace ns3
             SuePppHeader ppp;
             packet->PeekHeader(ppp);
 
-            if (!IsSwitchDevice() && ppp.GetProtocol() == EtherToPpp(PROT_CBFC_UPDATE))
+            // Trigger main queue statistics (event-driven after main queue dequeue)
+            SueStatsUtils::ProcessMainQueueStats(m_queue, GetNode()->GetId(), GetIfIndex() - 1);
+
+            if ((!IsSwitchDevice(m_address)) && ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_UPDATE))
             {
                 NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                                           << "] sending credit packet from main queue"
                                           << " (main queue size now: " << m_queue->GetNPackets() << " packets)");
             }
-            else if(!IsSwitchDevice() && ppp.GetProtocol() == EtherToPpp(ACK_REV)){
-                NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() 
+            else if ((!IsSwitchDevice(m_address)) && ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::ACK_REV)) {
+                NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                         << "] sending ACK packet from main queue"
                         << " (main queue size now: " << m_queue->GetNPackets() << " packets)");
             }
-            else{
-                NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() 
+            else {
+                NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                         << "] sending NACK packet from main queue"
                         << " (main queue size now: " << m_queue->GetNPackets() << " packets)");
-            }// Add ACK/NACK logging
+            } // Add ACK/NACK logging
 
             m_snifferTrace(packet);
             m_promiscSnifferTrace(packet);
@@ -886,115 +670,37 @@ namespace ns3
             // TODO link layer
             for (uint8_t i = 0; i < m_numVcs; ++i)
             {
-                // Get target MAC address
-                Mac48Address mac = GetRemoteMac();
-                // First check if there is an LLR retransmission task
-                if(m_llrEnabled && llrResending[mac][i]){
-                    auto it = m_sendList[mac][i].find(llrResendseq[mac][i]);
-                    if(it == m_sendList[mac][i].end()){
-                    llrResending[mac][i] = false;
-                    continue;
-                    }else{
-                    Ptr<Packet> p1 = it->second;
-                    llrResendseq[mac][i]++;
-                    NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() <<"] resending packet for VC " << (uint32_t)i
-                                << " with seq " << llrResendseq[mac][i]-1
-                                << " (VC queue size now: " << m_vcQueues[i]->GetNPackets() << " packets)");
-                    if (!p1){
-                        NS_LOG_ERROR("Link: Resend packet is null!");
-                        return;
-                    }
-                    // Set retransmission timer
-                    resendPkt[mac][i].Cancel();
-                    resendPkt[mac][i] = Simulator::Schedule(m_llrTimeout, &PointToPointSueNetDevice::Resend, this, i, mac);
-                    m_snifferTrace (p1);
-                    m_promiscSnifferTrace (p1);
-                    TransmitStart(p1);
-                    return;          
-                    }
-
-                }else{
-                    uint8_t currentVC = (lastVC + i) % m_numVcs;
-                    if (!m_vcQueues[currentVC]->IsEmpty() && m_txCreditsMap[GetRemoteMac()][currentVC] > 0)
+                uint8_t currentVC = (lastVC + i) % m_numVcs;
+                if (m_queueManager && !m_queueManager->IsVcQueueEmpty(currentVC) && m_cbfcManager->GetTxCredits(GetRemoteMac(), currentVC) > 0)
+                {
+                    if (m_enableLinkCBFC)
                     {
-                        if (m_enableLinkCBFC)
-                        {
-                            m_txCreditsMap[GetRemoteMac()][currentVC]--;
-                        }
-                        Ptr<Packet> packet = m_vcQueues[currentVC]->Dequeue();
+                        m_cbfcManager->DecrementTxCredits(GetRemoteMac(), currentVC);
+                        SueStatsUtils::ProcessCreditChangeStats(GetRemoteMac(), currentVC, m_cbfcManager->GetTxCredits(GetRemoteMac(), currentVC), GetNode()->GetId(), GetIfIndex() - 1);
+                    }
+                    Ptr<Packet> packet = m_queueManager->DequeueFromVcQueue(currentVC);
 
-                        if (!IsSwitchDevice())
+                        // Trigger VC queue statistics (event-driven after VC dequeue)
+                        SueStatsUtils::ProcessVCQueueStats(m_queueManager, m_cbfcManager,
+                                                         m_numVcs, m_vcQueueMaxBytes,
+                                                         GetNode()->GetId(), GetIfIndex() - 1);
+
+                        if (!IsSwitchDevice(m_address))
                         {
                             NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex() << "] sending packet for VC " << (uint32_t)currentVC
-                                                    << ". Credits left: " << m_txCreditsMap[GetRemoteMac()][currentVC]
-                                                    << " (VC queue size now: " << m_vcQueues[currentVC]->GetNPackets() << " packets)");
+                                                    << ". Credits left: " << m_cbfcManager->GetTxCredits(GetRemoteMac(), currentVC)
+                                                    << " (VC queue size now: " << m_queueManager->GetVcQueueSize(currentVC) << " packets)");
                         }
 
                         m_snifferTrace(packet);
                         m_promiscSnifferTrace(packet);
                         TransmitStart(packet);
-                    lastVC = (currentVC + 1) % m_numVcs; // Update last serviced VC
+                        lastVC = (currentVC + 1) % m_numVcs; // Update last serviced VC
                         return;
                     }
                 }
             }
         }
-    }
-
-    void
-    PointToPointSueNetDevice::Resend(uint8_t vcId, Mac48Address mac)
-    {
-        if(!m_llrEnabled) return;
-
-        if(m_sendList[mac][vcId].empty()) {
-        llrResending[mac][vcId] = false;
-
-        return;
-    }
-    llrResending[mac][vcId] = true;
-    llrResendseq[mac][vcId] = m_sendList[mac][vcId].begin()->first;
-    // Update next retransmission sequence number
-    llrResendseq[mac][vcId]++;
-    TryTransmit();
-    } 
-
-    void
-    PointToPointSueNetDevice::ResendInSwitch(uint8_t vcId, Mac48Address mac)
-    {
-        if(!m_llrEnabled) return;
-    // Handle switch ingress port retransmission to switch egress port
-        if(m_sendList[mac][vcId].empty()) {
-            llrResending[mac][vcId]=false;
-            return;
-        }
-    // Get egress port object
-        Ptr<Node> node = GetNode();
-        Ptr<PointToPointSueNetDevice> p2pDev = nullptr;
-        for (uint32_t i = 0; i < node->GetNDevices(); i++) {
-            Ptr<NetDevice> dev = node->GetDevice(i);
-            Ptr<PointToPointSueNetDevice> tempDev = DynamicCast<PointToPointSueNetDevice>(dev);
-            if(!tempDev) continue;
-            Mac48Address devMac = Mac48Address::ConvertFrom(dev->GetAddress());
-            if (devMac != mac && IsMacSwitchDevice(devMac)) {
-                p2pDev = tempDev;
-                break;
-            }
-        }
-        if(!p2pDev){
-            NS_LOG_ERROR("Link: Cannot find switch out port for MAC " << mac);
-            return;
-        }
-    // Retransmit
-        llrResending[mac][vcId] = true;
-        auto it = m_sendList[mac][vcId].begin();
-        llrResendseq[mac][vcId] = it->first;
-    // Switch forwarding
-    llrResendseq[mac][vcId]++; // Update next retransmission sequence number
-        Simulator::Schedule(m_switchForwardDelay, &PointToPointSueNetDevice::SpecDevEnqueueToVcQueue, this, p2pDev, it->second);
-    // Return to the handler of this port
-        StartProcessing();
-    }
-        
 
     void
     PointToPointSueNetDevice::TransmitComplete(void)
@@ -1019,11 +725,21 @@ namespace ns3
         if (m_vcSchedulingDelay > NanoSeconds(0))
         {
             NS_LOG_DEBUG("Scheduling VC transmission with " << m_vcSchedulingDelay.GetNanoSeconds() << "ns delay");
-            Simulator::Schedule(m_vcSchedulingDelay, &PointToPointSueNetDevice::TryTransmit, this);
+            // Schedule TryTransmit event if not already scheduled
+            if (!m_tryTransmitScheduled)
+            {
+                m_tryTransmitEvent = Simulator::Schedule(m_vcSchedulingDelay, &PointToPointSueNetDevice::TryTransmit, this);
+                m_tryTransmitScheduled = true;
+            }
         }
         else
         {
-            TryTransmit();
+            // Schedule TryTransmit event if not already scheduled
+            if (!m_tryTransmitScheduled)
+            {
+                m_tryTransmitEvent = Simulator::ScheduleNow(&PointToPointSueNetDevice::TryTransmit, this);
+                m_tryTransmitScheduled = true;
+            }
         }
     }
 
@@ -1059,62 +775,6 @@ namespace ns3
         m_receiveErrorModel = em;
     }
 
-    void
-    PointToPointSueNetDevice::CreditReturn(Mac48Address targetMac, uint8_t vcId)
-    {
-        if (!m_enableLinkCBFC)
-        {
-            return;
-        }
-        // Check if credit records exist for the specified target MAC and VC
-        auto macIt = m_rxCreditsToReturnMap.find(targetMac);
-        if (macIt == m_rxCreditsToReturnMap.end())
-        {
-            NS_LOG_LOGIC("No credit records for target MAC: " << targetMac);
-            return;
-        }
-
-        auto &vcMap = macIt->second;
-        auto vcIt = vcMap.find(vcId);
-        if (vcIt == vcMap.end())
-        {
-            NS_LOG_LOGIC("No credit records for VC " << static_cast<uint32_t>(vcId)
-                                                     << " on target MAC: " << targetMac);
-            return;
-        }
-
-        uint32_t creditsToSend = vcIt->second;
-
-        // Check if batch sending conditions are met
-        if (creditsToSend < m_creditBatchSize)
-        {
-            NS_LOG_LOGIC("Credits for VC " << static_cast<uint32_t>(vcId)
-                                           << " are less than batch size (" << m_creditBatchSize << ")");
-            return;
-        }
-
-        // Create credit packet
-        EthernetHeader ethHeader;
-        ethHeader.SetSource(GetLocalMac());
-        ethHeader.SetDestination(targetMac);
-        ethHeader.SetLengthType(0x0800);
-
-        SueCbfcHeader creditHeader;
-        creditHeader.SetVcId(vcId);
-        creditHeader.SetCredits(creditsToSend);
-        Ptr<Packet> creditPacket = Create<Packet>();
-
-        creditPacket->AddHeader(ethHeader);
-        creditPacket->AddHeader(creditHeader);
-
-        NS_LOG_INFO("Node " << GetNode()->GetId() << " sending "
-                            << creditsToSend << " credits to " << targetMac
-                            << " for VC " << static_cast<uint32_t>(vcId));
-
-        Simulator::Schedule(m_creditGenerateDelay, &PointToPointSueNetDevice::FindDeviceAndSend, this, creditPacket, targetMac, PROT_CBFC_UPDATE);
-
-        vcIt->second = 0; // Reset credit count after successful transmission
-    }
 
     void PointToPointSueNetDevice::FindDeviceAndSend(Ptr<Packet> packet, Mac48Address targetMac, uint16_t protocolNum)
     {
@@ -1136,7 +796,7 @@ namespace ns3
             {
                 // Send to target port
                 // Add PPP header
-                AddHeader(packet, PROT_CBFC_UPDATE, 0);
+                AddHeader(packet, SuePacketUtils::PROT_CBFC_UPDATE);
                 p2pDev->Receive(packet->Copy());
             }
         }
@@ -1144,9 +804,14 @@ namespace ns3
 
     void PointToPointSueNetDevice::Receive(Ptr<Packet> packet)
     {
-        if (!m_cbfcInitialized)
+        if (!m_cbfcManager || !m_cbfcManager->IsInitialized())
         {
             InitializeCbfc();
+        }
+        // Initialize LLR if enabled
+        if (m_llrEnabled)
+        {
+            InitializeLlr();
         }
         if (m_receiveErrorModel && m_receiveErrorModel->IsCorrupt(packet))
         {
@@ -1164,20 +829,28 @@ namespace ns3
 
         if(m_llrEnabled){
                 // Received ACK packet
-            if(ppp.GetProtocol() == EtherToPpp(ACK_REV)){
-                Simulator::Schedule(m_AckProcessDelay, &PointToPointSueNetDevice::ProcessLlrAck, this, packet);
+            if(ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::ACK_REV)){
+                if(m_switch && IsSwitchDevice(m_address) && m_llrSwitchPortManager){
+                    Simulator::Schedule(m_AckProcessDelay, &LlrSwitchPortManager::ProcessLlrAck, m_llrSwitchPortManager, packet);
+                } else if((!m_switch || !IsSwitchDevice(m_address)) && m_llrNodeManager){
+                    Simulator::Schedule(m_AckProcessDelay, &LlrNodeManager::ProcessLlrAck, m_llrNodeManager, packet);
+                }
                 return;
             }
 
             // Received NACK packet
-            if(ppp.GetProtocol() == EtherToPpp(NACK_REV)){
-                Simulator::Schedule(m_AckProcessDelay, &PointToPointSueNetDevice::ProcessLlrNack, this, packet);
+            if(ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::NACK_REV)){
+                if(m_switch && IsSwitchDevice(m_address) && m_llrSwitchPortManager){
+                    Simulator::Schedule(m_AckProcessDelay, &LlrSwitchPortManager::ProcessLlrNack, m_llrSwitchPortManager, packet);
+                } else if((!m_switch || !IsSwitchDevice(m_address)) && m_llrNodeManager){
+                    Simulator::Schedule(m_AckProcessDelay, &LlrNodeManager::ProcessLlrNack, m_llrNodeManager, packet);
+                }
                 return;
             }
         }
-        
 
-        if (ppp.GetProtocol() == EtherToPpp(PROT_CBFC_UPDATE))
+
+        if (ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_UPDATE))
         { // If it's an update packet
 
             packet->RemoveHeader(ppp);
@@ -1191,21 +864,34 @@ namespace ns3
             Mac48Address sourceMac = ethHeader.GetSource();
 
             // Do not count internal switch credit reception
-            if (!IsMacSwitchDevice(GetLocalMac()) || !IsMacSwitchDevice(sourceMac))
+            if (!IsSwitchDevice(GetLocalMac()) || !IsSwitchDevice(sourceMac))
             { // XPU or switch egress port
                 Time processingTime = m_processingRate.CalculateBytesTxTime(originalPacket->GetSize());
                 // Schedule processing completion event
-                Simulator::Schedule(processingTime, &PointToPointSueNetDevice::ReceivePacketStatistic, this, originalPacket);
+                Simulator::Schedule(processingTime, [this, originalPacket]() {
+                    SueStatsUtils::ProcessReceivedPacketStats(originalPacket, m_vcBytesReceived, GetNode()->GetId(), GetIfIndex() - 1);
+                });
             }
 
             if (credits > 0)
             {
-                m_txCreditsMap[sourceMac][vcId] += credits;
-                if (!IsSwitchDevice())
+                if (m_cbfcManager)
                 {
-                    NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex() << "] received " << credits
-                                              << " credits for VC " << (uint32_t)vcId
-                                              << ". Total now: " << m_txCreditsMap[sourceMac][vcId]);
+                    m_cbfcManager->AddTxCredits(sourceMac, vcId, credits);
+                    SueStatsUtils::ProcessCreditChangeStats(sourceMac, vcId, m_cbfcManager->GetTxCredits(sourceMac, vcId), GetNode()->GetId(), GetIfIndex() - 1);
+                    if (!IsSwitchDevice(m_address))
+                    {
+                        NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex() << "] received " << credits
+                                                  << " credits for VC " << (uint32_t)vcId
+                                                  << ". Total now: " << m_cbfcManager->GetTxCredits(sourceMac, vcId));
+                    }
+
+                    // Check if TryTransmit is not already scheduled, then schedule it
+                    if (!m_tryTransmitScheduled)
+                    {
+                        m_tryTransmitEvent = Simulator::ScheduleNow(&PointToPointSueNetDevice::TryTransmit, this);
+                        m_tryTransmitScheduled = true;
+                    }
                 }
             }
             return;
@@ -1213,41 +899,33 @@ namespace ns3
         else
         { // If it's a data packet
             packet->RemoveHeader(ppp);
-            SueCbfcHeader dataHeader;
-            packet->RemoveHeader(dataHeader);
-            uint8_t vcId = dataHeader.GetVcId();
-            uint16_t protocol = PppToEther(ppp.GetProtocol());
-            uint32_t seq = ppp.GetSeq();
-            Mac48Address mac = GetSourceMac(packet);
+
+            // Extract VC ID from packet
+            uint8_t vcId = SuePacketUtils::ExtractVcIdFromPacket(packet);
+            uint16_t protocol = SuePacketUtils::PppToEther(ppp.GetProtocol());
+            Mac48Address mac = SuePacketUtils::ExtractSourceMac(packet, false, Mac48Address());
+
+            // Read sequence from tag (required for LLR)
+            SueTag tag;
+            if (!packet->PeekPacketTag(tag)) {
+                NS_LOG_WARN("Receive: no tag found, cannot process LLR");
+                return;
+            }
+
+            uint32_t seq = tag.GetSequence();
+            NS_LOG_DEBUG("Receive: read seq " << seq << " from tag (linkType=" << (uint32_t)tag.GetLinkType() << ")");
 
             // LLR related processing, send ACK or NACK packet
             if(m_llrEnabled){
-                if(seq == waitSeq[mac][vcId]){
-                // Received in order, update expected sequence number
-                waitSeq[mac][vcId]++;
-                unack[mac][vcId]++; // Increase unacknowledged count
-                if(unack[mac][vcId] > 4 || Simulator::Now() - lastAcksend[mac][vcId] > m_llrTimeout){
-                    // If unacknowledged count exceeds threshold or time since last ACK sent exceeds threshold, send ACK
-                    SendLlrAck(vcId, seq, mac);
-                    lastAckedTime[mac][vcId] = Simulator::Now();
-                    unack[mac][vcId] = 0; // Reset unacknowledged count
+                bool shouldProcess = false;
+                if(m_switch && IsSwitchDevice(m_address) && m_llrSwitchPortManager){
+                    shouldProcess = m_llrSwitchPortManager->LlrReceivePacket(packet, vcId, seq, mac);
+                } else if((!m_switch || !IsSwitchDevice(m_address)) && m_llrNodeManager){
+                    m_llrNodeManager->LlrReceivePacket(packet, vcId, mac, seq);
+                    shouldProcess = true;
                 }
-
-                llrWait[mac][vcId] = false;
-                llrResending[mac][vcId] = false;
-                    
-                }else if(seq < waitSeq[mac][vcId]){
-                    // Received duplicate packet, discard directly
-                    NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() <<"] received duplicate packet for VC " << (uint32_t)vcId
-                                << " with seq " << seq << ", expected " << waitSeq[mac][vcId] << ". Discarding.");
-                    return;
-                }else{
-                    // Received out-of-order packet, trigger NACK
-                NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() <<"] received out-of-order packet for VC " << (uint32_t)vcId
-                            << " with seq " << seq << ", expected " << waitSeq[mac][vcId] << ". Sending NACK.");
-                SendLlrNack(vcId, waitSeq[mac][vcId], mac);
-                llrResendseq[mac][vcId] = waitSeq[mac][vcId];
-                llrWait[mac][vcId] = true;
+                if(!shouldProcess){
+                    return; // Packet was discarded by LLR (duplicate/out-of-order)
                 }
             }
 
@@ -1261,13 +939,17 @@ namespace ns3
                 m_processingQueue.push(item);
                 m_currentProcessingQueueSize++;
                 m_currentProcessingQueueBytes += packetSize;
+
+                // Trigger processing queue statistics (event-driven)
+                SueStatsUtils::ProcessProcessingQueueStats(m_currentProcessingQueueBytes, m_processingQueueMaxBytes, GetNode()->GetId(), GetIfIndex() - 1);
             }
             else
             {
                 // Queue is full, drop packet
-                m_vcDropCounts[vcId + 1]++; // Increase drop statistics
+                // Log processing queue packet drop (event-driven)
+                SueStatsUtils::ProcessPacketDropStats(packet, GetNode()->GetId(), GetIfIndex() - 1, "ProcessingQueueFull");
 
-                if (!IsSwitchDevice())
+                if (!IsSwitchDevice(m_address))
                 {
                     NS_LOG_INFO("Receive processing queue full! DROPPED packet on VC " << (uint32_t)vcId);
                 }
@@ -1285,7 +967,7 @@ namespace ns3
     }
 
     // Set complete forwarding table
-    
+
     void PointToPointSueNetDevice::StartProcessing()
     {
         if (m_processingQueue.empty())
@@ -1295,14 +977,10 @@ namespace ns3
         }
 
         ProcessItem item = m_processingQueue.front();
-        m_processingQueue.pop();
-        m_currentProcessingQueueSize--;
-        m_currentProcessingQueueBytes -= item.packet->GetSize();
 
         Time processingTime = m_processingRate.CalculateBytesTxTime(item.packet->GetSize());
 
-        // Receive queue statistics
-        Simulator::Schedule(processingTime, &PointToPointSueNetDevice::ReceivePacketStatistic, this, item.originalPacket);
+        // Processing queue statistics will be triggered in CompleteProcessing
 
         // Schedule processing completion event
         Simulator::Schedule(processingTime, &PointToPointSueNetDevice::CompleteProcessing, this, item);
@@ -1320,23 +998,30 @@ namespace ns3
         // Switch forwarding logic - delegate to SueSwitch module
         EthernetHeader ethHeader;
         item.packet->PeekHeader(ethHeader);
+        bool forward = false;
 
         // Check if this device is a switch device and forward accordingly
-        if (m_switch && m_switch->IsSwitchDevice(m_address))
+        if (IsSwitchDevice(m_address))
         {
             bool forwarded = m_switch->ProcessSwitchForwarding(item.packet, ethHeader, this, item.protocol, item.vcId);
             if (forwarded)
             {
-                // Credit return already handled in SueSwitch
-                // Continue with next packet processing
+                forward = true;
+                m_processingQueue.pop();
+                m_currentProcessingQueueSize--;
+                m_currentProcessingQueueBytes -= item.packet->GetSize();
             }
             else
             {
-                NS_ASSERT_MSG(false, "Switch forwarding failed - this should not happen!");
+                // do nothing
             }
         }
         else
         {
+            m_processingQueue.pop();
+            m_currentProcessingQueueSize--;
+            m_currentProcessingQueueBytes -= item.packet->GetSize();
+
             // Non-switch device
             // Queue operations have been completed in StartProcessing
             m_macRxTrace(item.originalPacket);
@@ -1346,15 +1031,18 @@ namespace ns3
             item.packet->RemoveHeader(removeEthHeader);
 
             m_rxCallback(this, item.packet, item.protocol, GetRemote());
-            HandleCreditReturn(ethHeader, item);
+            m_cbfcManager->HandleCreditReturn(ethHeader, item.vcId);
             // TODO delay to be set currently: receiver is XPU and directly returns credits upon reception
-            CreditReturn(ethHeader.GetSource(), item.vcId);
+            if (m_cbfcManager) {
+                m_cbfcManager->CreditReturn(ethHeader.GetSource(), item.vcId);
+            }
         }
 
-        if (!IsSwitchDevice())
-        {
-            NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex() << "] processed data packet for VC " << (uint32_t)item.vcId
-                                      << ", queuing " << m_rxCreditsToReturnMap[ethHeader.GetSource()][item.vcId] << " credit return");
+        if(forward){
+            // Trigger processing queue statistics (event-driven) - after processing completion
+            SueStatsUtils::ProcessProcessingQueueStats(m_currentProcessingQueueBytes, m_processingQueueMaxBytes, GetNode()->GetId(), GetIfIndex() - 1);
+            // Trigger receive packet statistics (event-driven) - after processing completion
+            SueStatsUtils::ProcessReceivedPacketStats(item.originalPacket, m_vcBytesReceived, GetNode()->GetId(), GetIfIndex() - 1);
         }
 
         // Immediately start processing next packet
@@ -1377,14 +1065,19 @@ namespace ns3
     bool
     PointToPointSueNetDevice::EnqueueToVcQueue(Ptr<Packet> packet)
     {
-        if (!m_cbfcInitialized)
+        if (!m_cbfcManager || !m_cbfcManager->IsInitialized())
         {
             InitializeCbfc();
+        }
+        // Initialize LLR if enabled
+        if (m_llrEnabled)
+        {
+            InitializeLlr();
         }
         NS_LOG_FUNCTION(this << packet);
 
         // Extract VC ID from packet header
-        uint8_t vcId = ExtractVcIdFromPacket(packet);
+        uint8_t vcId = SuePacketUtils::ExtractVcIdFromPacket(packet);
         uint32_t  seq_rev;
         // Safety check for valid PPP header: only considered present if protocol belongs to known set
         auto HasValidPppHeader = [this](Ptr<Packet> p, SuePppHeader &out) -> bool {
@@ -1394,8 +1087,8 @@ namespace ns3
             if (!copy->RemoveHeader(tmp)) return false; // Parsing failed
             uint16_t proto = tmp.GetProtocol();
             // Known PPP protocol set (using PPP format)
-            if (proto == EtherToPpp(0x0800) || proto == EtherToPpp(0x86DD) ||
-                proto == EtherToPpp(PROT_CBFC_UPDATE) || proto == EtherToPpp(ACK_REV) || proto == EtherToPpp(NACK_REV))
+            if (proto == SuePacketUtils::EtherToPpp(0x0800) || proto == SuePacketUtils::EtherToPpp(0x86DD) ||
+                proto == SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_UPDATE) || proto == SuePacketUtils::EtherToPpp(SuePacketUtils::ACK_REV) || proto == SuePacketUtils::EtherToPpp(SuePacketUtils::NACK_REV))
             {
                 out = tmp;
                 return true;
@@ -1407,9 +1100,19 @@ namespace ns3
         bool hasPpp = HasValidPppHeader(packet, ppp);
         if (hasPpp)
         {
-            Mac48Address mac = GetSourceMac(packet); // Extract and possibly overwrite source MAC
-            seq_rev = ppp.GetSeq();
-            uint16_t protocol = PppToEther(ppp.GetProtocol());
+            Mac48Address mac = SuePacketUtils::ExtractSourceMac(packet, false, Mac48Address()); // Extract and possibly overwrite source MAC
+
+            // Read sequence from tag (required for LLR)
+            SueTag tag;
+            if (!packet->PeekPacketTag(tag)) {
+                NS_LOG_WARN("EnqueueToVcQueue: no tag found, cannot process LLR");
+                return false;
+            }
+
+            seq_rev = tag.GetSequence();
+            NS_LOG_DEBUG("EnqueueToVcQueue: read seq " << seq_rev << " from tag (linkType=" << (uint32_t)tag.GetLinkType() << ")");
+
+            uint16_t protocol = SuePacketUtils::PppToEther(ppp.GetProtocol());
 
             NS_LOG_DEBUG("EnqueueToVcQueue: detected internal packet with PPP proto=0x" << std::hex << ppp.GetProtocol() << std::dec
                           << ", etherProto=0x" << std::hex << protocol << std::dec << ", seq=" << seq_rev);
@@ -1417,14 +1120,22 @@ namespace ns3
             // Directly handle ACK / NACK
             if (m_llrEnabled)
             {
-                if (protocol == ACK_REV)
+                if (protocol == SuePacketUtils::ACK_REV)
                 {
-                    Simulator::Schedule(m_AckProcessDelay, &PointToPointSueNetDevice::ProcessLlrAck, this, packet->Copy());
+                    if(m_switch && IsSwitchDevice(m_address) && m_llrSwitchPortManager){
+                        Simulator::Schedule(m_AckProcessDelay, &LlrSwitchPortManager::ProcessLlrAck, m_llrSwitchPortManager, packet->Copy());
+                    } else if((!m_switch || !IsSwitchDevice(m_address)) && m_llrNodeManager){
+                        Simulator::Schedule(m_AckProcessDelay, &LlrNodeManager::ProcessLlrAck, m_llrNodeManager, packet->Copy());
+                    }
                     return true;
                 }
-                if (protocol == NACK_REV)
+                if (protocol == SuePacketUtils::NACK_REV)
                 {
-                    Simulator::Schedule(m_AckProcessDelay, &PointToPointSueNetDevice::ProcessLlrNack, this, packet->Copy());
+                    if(m_switch && IsSwitchDevice(m_address) && m_llrSwitchPortManager){
+                        Simulator::Schedule(m_AckProcessDelay, &LlrSwitchPortManager::ProcessLlrNack, m_llrSwitchPortManager, packet->Copy());
+                    } else if((!m_switch || !IsSwitchDevice(m_address)) && m_llrNodeManager){
+                        Simulator::Schedule(m_AckProcessDelay, &LlrNodeManager::ProcessLlrNack, m_llrNodeManager, packet->Copy());
+                    }
                     return true;
                 }
             }
@@ -1432,31 +1143,44 @@ namespace ns3
             // Internal forwarding: receiver-side processing for LLR
             if (m_llrEnabled)
             {
-                LlrReceivePacket(packet, vcId, mac, seq_rev);
+                if(m_switch && IsSwitchDevice(m_address) && m_llrSwitchPortManager){
+                    m_llrSwitchPortManager->LlrReceivePacket(packet, vcId, seq_rev, mac);
+                } else if((!m_switch || !IsSwitchDevice(m_address)) && m_llrNodeManager){
+                    m_llrNodeManager->LlrReceivePacket(packet, vcId, mac, seq_rev);
+                }
             }
 
-            // Remove PPP + CBFC header, prepare for sending to peer (second stage)
+            // Remove PPP header, prepare for sending to peer (second stage)
             SuePppHeader ppp_rev;
             packet->RemoveHeader(ppp_rev);
-            SueCbfcHeader dataHeader;
-            packet->RemoveHeader(dataHeader);
+
+            // Extract VC ID from packet for LlrSendPacket
+            vcId = SuePacketUtils::ExtractVcIdFromPacket(packet); // Update vcId from packet
 
             Mac48Address mac_dst = GetRemoteMac();
-            LlrSendPacket(packet, vcId, mac_dst);
-
-            if (!m_vcQueues[vcId]->Enqueue(packet))
-            {
-                NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
-                                           << "] packet DROPPED (VC " << static_cast<uint32_t>(vcId) << " queue full: "
-                                           << m_vcQueues[vcId]->GetNPackets() << "/"
-                                           << m_vcQueues[vcId]->GetMaxSize().GetValue() << " packets)");
-                m_macTxDropTrace(packet);
-                return false;
+            if(m_switch && IsSwitchDevice(m_address) && m_llrSwitchPortManager){
+                m_llrSwitchPortManager->LlrSendPacket(packet, vcId, mac_dst);
+            } else if((!m_switch || !IsSwitchDevice(m_address)) && m_llrNodeManager){
+                m_llrNodeManager->LlrSendPacket(packet, vcId);
             }
+
+            m_queueManager->EnqueueToVcQueue(packet, vcId);
+            
             NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                                       << "] internal packet enqueued to VC " << static_cast<uint32_t>(vcId)
-                                      << " (queue size now: " << m_vcQueues[vcId]->GetNPackets() << " packets)");
-            Simulator::Schedule(m_dataAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
+                                      << " (queue size now: " << (m_queueManager ? m_queueManager->GetVcQueueSize(vcId) : 0) << " packets)");
+
+            // Trigger VC queue statistics (event-driven after VC enqueue)
+            SueStatsUtils::ProcessVCQueueStats(m_queueManager, m_cbfcManager,
+                                             m_numVcs, m_vcQueueMaxBytes,
+                                             GetNode()->GetId(), GetIfIndex() - 1);
+
+            // Schedule TryTransmit event if not already scheduled
+            if (!m_tryTransmitScheduled)
+            {
+                m_tryTransmitEvent = Simulator::Schedule(m_dataAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
+                m_tryTransmitScheduled = true;
+            }
             return true;
         }
         else
@@ -1470,49 +1194,45 @@ namespace ns3
     // Obtain the peer MAC to determine the sequence number for the third stage
         Mac48Address mac_dst = GetRemoteMac();
 
-        LlrSendPacket(packet, vcId, mac_dst);
+        if(m_switch && IsSwitchDevice(m_address) && m_llrSwitchPortManager){
+            m_llrSwitchPortManager->LlrSendPacket(packet, vcId, mac_dst);
+        } else if((!m_switch || !IsSwitchDevice(m_address)) && m_llrNodeManager){
+            m_llrNodeManager->LlrSendPacket(packet, vcId);
+        }
         // Get source MAC to check if it's a forwarded packet
-        Mac48Address sourceMac = GetSourceMac(packet);
-        if (IsMacSwitchDevice(sourceMac))
+        Mac48Address sourceMac = SuePacketUtils::ExtractSourceMac(packet, false, Mac48Address());
+        if (IsSwitchDevice(sourceMac) && m_cbfcManager)
         {
-            m_rxCreditsToReturnMap[sourceMac][vcId]++;
+            // For switch devices, we need to handle credit returns differently
+            // This is handled by the HandleCreditReturn method when packets are received
+            EthernetHeader tempEthHeader;
+            tempEthHeader.SetSource(sourceMac);
+            // m_cbfcManager->HandleCreditReturn(tempEthHeader, vcId);
         }
 
         m_macTxTrace(packet);
 
-        // Check if queue is full
-        if (!m_vcQueues[vcId]->Enqueue(packet))
-        {
-            NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
-                                      << "] packet DROPPED (VC " << static_cast<uint32_t>(vcId) << " queue full: "
-                                      << m_vcQueues[vcId]->GetNPackets() << "/"
-                                      << m_vcQueues[vcId]->GetMaxSize().GetValue() << " packets)");
-            m_macTxDropTrace(packet);
-            return false;
-        }
+        m_queueManager->EnqueueToVcQueue(packet, vcId);
 
         NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                                   << "] packet enqueued to VC " << static_cast<uint32_t>(vcId)
-                                  << " (queue size now: " << m_vcQueues[vcId]->GetNPackets() << " packets)");
+                                  << " (queue size now: " << (m_queueManager ? m_queueManager->GetVcQueueSize(vcId) : 0) << " packets)");
 
-        // Schedule transmission attempt
-        Simulator::Schedule(m_dataAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
+        // Trigger VC queue statistics (event-driven after VC enqueue)
+        SueStatsUtils::ProcessVCQueueStats(m_queueManager, m_cbfcManager,
+                                         m_numVcs, m_vcQueueMaxBytes,
+                                         GetNode()->GetId(), GetIfIndex() - 1);
+
+        // Schedule TryTransmit event if not already scheduled
+        if (!m_tryTransmitScheduled)
+        {
+            m_tryTransmitEvent = Simulator::Schedule(m_dataAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
+            m_tryTransmitScheduled = true;
+        }
 
         return true;
     }
 
-    void
-    PointToPointSueNetDevice::HandleCreditReturn(const EthernetHeader &ethHeader, const ProcessItem &item)
-    {
-        if (m_enableLinkCBFC)
-        {
-            // Increase credit count for corresponding source address and VC
-            Mac48Address source = ethHeader.GetSource();
-            uint16_t vcId = item.vcId;
-
-            m_rxCreditsToReturnMap[source][vcId]++;
-        }
-    }
 
     Ptr<Queue<Packet>>
     PointToPointSueNetDevice::GetQueue(void) const
@@ -1521,109 +1241,6 @@ namespace ns3
         return m_queue;
     }
 
-    uint32_t
-    PointToPointSueNetDevice::GetVcQueueAvailableCapacity(uint8_t vcId)
-    {
-        NS_LOG_FUNCTION(this << static_cast<uint32_t>(vcId));
-        
-        if (vcId >= m_numVcs)
-        {
-            NS_LOG_WARN("Invalid VC ID: " << static_cast<uint32_t>(vcId));
-            return 0;
-        }
-        
-        // Check if VC queue pointer is valid, if invalid then not initialized yet
-        if (!m_vcQueues[vcId])
-        {
-            return m_vcQueueMaxBytes;
-        }
-        
-        // Get current VC queue used bytes
-        uint32_t currentBytes = m_vcQueues[vcId]->GetNBytes();
-        // Get VC queue maximum capacity
-        uint32_t maxBytes = m_vcQueueMaxBytes;
-        // Get reserved capacity
-        uint32_t reservedBytes = m_vcReservedCapacity[vcId];
-        
-        // Calculate actual available capacity (total capacity - used - reserved)
-        uint32_t usedBytes = currentBytes + reservedBytes;
-        
-        // Return available capacity (bytes)
-        if (usedBytes >= maxBytes)
-        {
-            return 0;
-        }
-        
-        return maxBytes - usedBytes;
-    }
-
-    bool
-    PointToPointSueNetDevice::ReserveVcCapacity(uint8_t vcId, uint32_t amount)
-    {
-        NS_LOG_FUNCTION(this << static_cast<uint32_t>(vcId) << amount);
-        
-        if (vcId >= m_numVcs)
-        {
-            NS_LOG_WARN("Invalid VC ID: " << static_cast<uint32_t>(vcId));
-            return false;
-        }
-        
-        // Check if there's enough available capacity for reservation
-        // Need to reserve packet size plus additional header size
-        uint32_t totalReservationSize = amount + m_additionalHeaderSize;
-        uint32_t availableCapacity = GetVcQueueAvailableCapacity(vcId);
-        
-        if (availableCapacity >= totalReservationSize)
-        {
-            // Reserve capacity (including packet size and additional header size)
-            m_vcReservedCapacity[vcId] += totalReservationSize;
-            NS_LOG_DEBUG("Reserved " << totalReservationSize << " bytes for VC" 
-                         << static_cast<uint32_t>(vcId) << " (packet: " << amount 
-                         << ", headers: " << m_additionalHeaderSize 
-                         << "), total reserved: " << m_vcReservedCapacity[vcId]);
-            return true;
-        }
-        
-        NS_LOG_DEBUG("Failed to reserve " << totalReservationSize << " bytes for VC" 
-                     << static_cast<uint32_t>(vcId) << " (packet: " << amount 
-                     << ", headers: " << m_additionalHeaderSize 
-                     << "), available: " << availableCapacity);
-        return false;
-    }
-
-    void
-    PointToPointSueNetDevice::ReleaseVcCapacity(uint8_t vcId, uint32_t amount)
-    {
-        NS_LOG_FUNCTION(this << static_cast<uint32_t>(vcId) << amount);
-        
-        if (vcId >= m_numVcs)
-        {
-            NS_LOG_WARN("Invalid VC ID: " << static_cast<uint32_t>(vcId));
-            return;
-        }
-        
-        // Releasing capacity also needs to include additional header size
-        uint32_t totalReleaseSize = amount + m_additionalHeaderSize;
-        
-        // Prevent releasing more capacity than reserved
-        if (m_vcReservedCapacity[vcId] >= totalReleaseSize)
-        {
-            m_vcReservedCapacity[vcId] -= totalReleaseSize;
-        }
-        else
-        {
-            NS_LOG_WARN("Attempting to release more capacity than reserved for VC" 
-                        << static_cast<uint32_t>(vcId) << ", reserved: " 
-                        << m_vcReservedCapacity[vcId] << ", attempting to release: " 
-                        << totalReleaseSize);
-            m_vcReservedCapacity[vcId] = 0;
-        }
-        
-        NS_LOG_DEBUG("Released " << totalReleaseSize << " bytes for VC" 
-                     << static_cast<uint32_t>(vcId) << " (packet: " << amount 
-                     << ", headers: " << m_additionalHeaderSize 
-                     << "), total reserved: " << m_vcReservedCapacity[vcId]);
-    }
 
     void
     PointToPointSueNetDevice::NotifyLinkUp(void)
@@ -1751,23 +1368,27 @@ namespace ns3
             m_macTxDropTrace(packet);
             return false;
         }
-        if (!m_cbfcInitialized)
+        if (!m_cbfcManager || !m_cbfcManager->IsInitialized())
         {
             InitializeCbfc();
         }
+        // Initialize LLR if enabled
+        if (m_llrEnabled)
+        {
+            InitializeLlr();
+        }
 
     // Credit update packets enter high-priority main queue
-        if (protocolNumber == PROT_CBFC_UPDATE)
+        if (protocolNumber == SuePacketUtils::PROT_CBFC_UPDATE)
         {
             // Credit packet structure - only CBFC header, PPP header added below
             // PPP Header
-            AddHeader(packet, protocolNumber,0);
+            AddHeader(packet, protocolNumber);
             if (!m_queue->Enqueue(packet))
             {
-                // Record VC0 packet drops when queue is full
-                m_vcDropCounts_SendQ[0]++;
-                m_totalPacketDropNum += 1;
-                if (!IsSwitchDevice())
+                // Log main queue packet drop (event-driven)
+                SueStatsUtils::ProcessPacketDropStats(packet, GetNode()->GetId(), GetIfIndex() - 1, "MainQueueFull");
+                if (!IsSwitchDevice(m_address))
                 {
                     NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                                               << "] credit packet DROPPED (main queue full: "
@@ -1778,41 +1399,59 @@ namespace ns3
                 m_macTxDropTrace(packet);
                 return false;
             }
-            if (!IsSwitchDevice())
+            if (!IsSwitchDevice(m_address))
             {
                 NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                                           << "] credit packet enqueued to main queue"
                                           << " (size now: " << m_queue->GetNPackets() << " packets)");
             }
+
+            // Trigger main queue statistics (event-driven after main queue enqueue)
+            SueStatsUtils::ProcessMainQueueStats(m_queue, GetNode()->GetId(), GetIfIndex() - 1);
+
             // Delay is between enqueue and transmission
-            Simulator::Schedule(m_creUpdateAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
+            // Schedule TryTransmit event if not already scheduled
+            if (!m_tryTransmitScheduled)
+            {
+                m_tryTransmitEvent = Simulator::Schedule(m_creUpdateAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
+                m_tryTransmitScheduled = true;
+            }
         }
-    else if(protocolNumber == ACK_REV || protocolNumber == NACK_REV){// ACK/NACK packets enter high-priority main queue
+        else if(protocolNumber == SuePacketUtils::ACK_REV || protocolNumber == SuePacketUtils::NACK_REV){// ACK/NACK packets enter high-priority main queue
             m_queue->Enqueue(packet);
-            Simulator::Schedule(m_dataAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
+
+            // Trigger main queue statistics (event-driven after main queue enqueue)
+            SueStatsUtils::ProcessMainQueueStats(m_queue, GetNode()->GetId(), GetIfIndex() - 1);
+
+            // Schedule TryTransmit event if not already scheduled
+            if (!m_tryTransmitScheduled)
+            {
+                m_tryTransmitEvent = Simulator::Schedule(m_dataAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
+                m_tryTransmitScheduled = true;
+            }
         }
         else
         {
-            if (!IsSwitchDevice())
+            if (!IsSwitchDevice(m_address))
             { // Add EthernetHeader when XPU device sends
                 // Header processing logic: extract destination IP from IPv4 header, add EthernetHeader
                 // Packet structure: SUEHeader | UDP | IPv4 | Ethernet | CBFC | PPP
 
                 // Extract destination IP from packet
-                Ipv4Address destIp = ExtractDestIpFromPacket(packet);
+                Ipv4Address destIp = SuePacketUtils::ExtractDestIpFromPacket(packet);
 
                 // Query destination MAC address
-                Mac48Address destMac = GetMacForIp(destIp);
+                Mac48Address destMac = SuePacketUtils::GetMacForIp(destIp);
 
                 // Add Ethernet header
-                AddEthernetHeader(packet, destMac);
+                SuePacketUtils::AddEthernetHeader(packet, destMac, GetLocalMac());
 
                 NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                                           << "] added EthernetHeader for IP " << destIp << " -> MAC " << destMac);
             }
 
             // Data packet enters corresponding VC queue
-            EnqueueToVcQueue(packet); 
+            EnqueueToVcQueue(packet);
         }
 
         return true;
@@ -1907,155 +1546,6 @@ namespace ns3
         return m_mtu;
     }
 
-    uint16_t
-    PointToPointSueNetDevice::PppToEther(uint16_t proto)
-    {
-        NS_LOG_FUNCTION_NOARGS();
-        switch (proto)
-        {
-        case 0x0021:
-            return 0x0800; // IPv4
-        case 0x0057:
-            return 0x86DD; // IPv6
-        case 0x00FB:
-            return PROT_CBFC_UPDATE; // CBFC Update
-        case 0x1111:
-            return ACK_REV; // LLR ACK
-        case 0x2222:
-            return NACK_REV; // LLR NACK
-        default:
-            NS_ASSERT_MSG(false, "PPP Protocol number not defined!");
-        }
-        return 0;
-    }
-
-    uint16_t
-    PointToPointSueNetDevice::EtherToPpp(uint16_t proto)
-    {
-        NS_LOG_FUNCTION_NOARGS();
-        switch (proto)
-        {
-        case 0x0800:
-            return 0x0021; // IPv4
-        case 0x86DD:
-            return 0x0057; // IPv6
-        case PROT_CBFC_UPDATE:
-            return 0x00FB; // CBFC Update
-        case ACK_REV:
-            return 0x1111; // LLR ACK
-        case NACK_REV:
-            return 0x2222; // LLR NACK
-        default:
-            NS_ASSERT_MSG(false, "PPP Protocol number not defined!");
-        }
-        return 0;
-    }
-
-    // Packet header processing method implementation
-    uint8_t PointToPointSueNetDevice::ExtractVcIdFromPacket(Ptr<const Packet> packet)
-    {
-        Packet p = *packet;
-
-        try
-        {
-            // First check if there's a PPP header
-            SuePppHeader ppp;
-            bool hasPppHeader = true;
-
-            // Try to Peek PPP header to check protocol number
-            try
-            {
-                p.PeekHeader(ppp);
-                uint16_t protocol = ppp.GetProtocol();
-
-                // Check if protocol number is valid
-                if (!protocol)
-                {
-                    // Protocol number is 0 or invalid, indicating it's not a PPP header
-                    hasPppHeader = false;
-                }
-            }
-            catch (...)
-            {
-                // Not enough data to form PPP header
-                hasPppHeader = false;
-            }
-
-            if (hasPppHeader)
-            {
-                // Packet structure: PPP + CBFC + Ethernet + IPv4 + UDP + SueHeader(data packet)
-                // Or: PPP + CBFC + Ethernet(update packet)
-                p.RemoveHeader(ppp);
-
-                SueCbfcHeader cbfcHeader;
-                p.RemoveHeader(cbfcHeader);
-
-                EthernetHeader eth;
-                p.RemoveHeader(eth);
-
-                // Check if it's a credit packet
-                if (cbfcHeader.GetCredits() > 0)
-                {
-                    // Credit packet: vcId is in CBFC header
-                    return cbfcHeader.GetVcId();
-                }
-                else
-                {
-                    // Data packet: continue parsing to get vcId from SUE header
-                    Ipv4Header ipv4;
-                    p.RemoveHeader(ipv4);
-
-                    UdpHeader udp;
-                    p.RemoveHeader(udp);
-
-                    SueHeader sueHeader;
-                    p.RemoveHeader(sueHeader);
-                    return sueHeader.GetVc();
-                }
-            }
-            else
-            {
-                // Packet structure: Ethernet + IPv4 + UDP + SueHeader
-                EthernetHeader eth;
-                p.RemoveHeader(eth);
-
-                Ipv4Header ipv4;
-                p.RemoveHeader(ipv4);
-
-                UdpHeader udp;
-                p.RemoveHeader(udp);
-
-                SueHeader sueHeader;
-                p.RemoveHeader(sueHeader);
-                return sueHeader.GetVc();
-            }
-        }
-        catch (...)
-        {
-            NS_LOG_WARN("Failed to extract VC ID from packet");
-            return 0; // Default VC
-        }
-    }
-
-    Ipv4Address PointToPointSueNetDevice::ExtractDestIpFromPacket(Ptr<Packet> packet)
-    {
-        Packet p = *packet;
-
-        try
-        {
-            // 292(256 + SueHeader(RH) + UdpHeader + Ipv4Header)
-            // Get destination address from IPv4 header
-            Ipv4Header ipv4;
-            p.RemoveHeader(ipv4);
-            return ipv4.GetDestination();
-        }
-        catch (...)
-        {
-            NS_LOG_WARN("Failed to extract destination IP from packet");
-            return Ipv4Address::GetAny();
-        }
-    }
-
     void PointToPointSueNetDevice::AddEthernetHeader(Ptr<Packet> packet, Mac48Address destMac)
     {
         EthernetHeader ethHeader;
@@ -2063,354 +1553,6 @@ namespace ns3
         ethHeader.SetDestination(destMac);
         ethHeader.SetLengthType(0x0800); // IPv4
         packet->AddHeader(ethHeader);
-    }
-
-    // Static method: Set global IP-MAC mapping table
-    void PointToPointSueNetDevice::SetGlobalIpMacMap(const std::map<Ipv4Address, Mac48Address> &map)
-    {
-        s_ipToMacMap = map;
-        NS_LOG_INFO("SetGlobalIpMacMap - added " << map.size() << " IP-MAC entries");
-    }
-
-    // Static method: Get MAC address for IP address (lookup table approach)
-    Mac48Address PointToPointSueNetDevice::GetMacForIp(Ipv4Address ip)
-    {
-        // std::cout << ip << std::endl;
-        auto it = s_ipToMacMap.find(ip);
-        if (it != s_ipToMacMap.end())
-        {
-            return it->second;
-        }
-
-        NS_LOG_WARN("GetMacForIp - could not find MAC for IP: " << ip << ", returning broadcast");
-        return Mac48Address::GetBroadcast();
-    }
-
-    // Queue monitoring method implementation
-    void PointToPointSueNetDevice::LogDeviceQueueUsage() {
-        if (!m_loggingEnabled) {
-            return;
-        }
-
-        uint64_t timeNs = Simulator::Now().GetNanoSeconds();
-        uint32_t xpuId = GetNode()->GetId() + 1;
-        uint32_t deviceId = GetIfIndex();
-
-        // Log main queue usage
-        uint32_t mainQueueSize = 0;
-        uint32_t mainQueueMaxSize = m_queue->GetMaxSize().GetValue(); // Default queue size limit (bytes)
-        if (m_queue) {
-            // Try to get queue bytes, if not supported then estimate with packet count
-            mainQueueSize = m_queue->GetNBytes();
-        }
-
-        // Log VC queue usage
-        std::map<uint8_t, uint32_t> vcQueueSizes;
-        std::map<uint8_t, uint32_t> vcQueueMaxSizes;
-        for (const auto& vcPair : m_vcQueues) {
-            uint8_t vcId = vcPair.first;
-            Ptr<Queue<Packet>> vcQueue = vcPair.second;
-            if (vcQueue) {
-                // Get VC queue bytes
-                vcQueueSizes[vcId] = vcQueue->GetNBytes();
-                // Use actual VC queue maximum capacity configuration (bytes)
-                vcQueueMaxSizes[vcId] = m_vcQueueMaxBytes; // Use parameterized VC queue size limit (bytes)
-            }
-        }
-
-        // Log to PerformanceLogger
-        PerformanceLogger::GetInstance().LogDeviceQueueUsage(
-            timeNs, xpuId, deviceId, mainQueueSize, mainQueueMaxSize,
-            vcQueueSizes, vcQueueMaxSizes);
-
-        // Log link layer processing queue usage
-        uint32_t processingQueueSize = m_currentProcessingQueueBytes;
-        uint32_t processingQueueMaxSize = m_processingQueueMaxBytes;
-        PerformanceLogger::GetInstance().LogProcessingQueueUsage(
-            timeNs, xpuId, deviceId, processingQueueSize, processingQueueMaxSize);
-    }
-
-    // LLR abstract function
-    void
-    PointToPointSueNetDevice::LlrSendPacket(Ptr<Packet> packet,uint8_t vcId, Mac48Address dstMac){
-    // Add switch
-        if (m_llrEnabled) 
-        {
-            uint32_t seq = sendSeq[dstMac][vcId];
-            // CBFC Header
-            SueCbfcHeader dataHeader;
-            dataHeader.SetVcId(vcId);
-            dataHeader.SetCredits(0);
-            packet->AddHeader(dataHeader);
-            // PPP Header
-            AddHeader(packet, 0x0800, seq); // Add PPP header, protocol number can be adjusted as needed
-            sendSeq[dstMac][vcId]++;
-            unack[dstMac][vcId]++;
-            m_sendList[dstMac][vcId][seq] = packet->Copy();
-            resendPkt[dstMac][vcId].Cancel();
-            // For now, only add header and perform data structure operations, regardless of how it is sent
-        }
-        else
-        {
-            // Replicate original (non-LLR) behavior
-            // CBFC Header
-            SueCbfcHeader dataHeader;
-            dataHeader.SetVcId(vcId);
-            dataHeader.SetCredits(0);
-            packet->AddHeader(dataHeader);
-            // PPP Header (with seq 0, which is ignored by non-LLR receivers)
-            AddHeader(packet, 0x0800, 0);
-        }
-    }
-
-    void 
-    PointToPointSueNetDevice::LlrReceivePacket(Ptr<Packet> packet, uint8_t vcId, Mac48Address srcMac, uint32_t seq){
-        // Add switch
-        if (!m_llrEnabled) return;
-        if(seq == waitSeq[srcMac][vcId]){
-                // Received in order, update expected sequence number
-                waitSeq[srcMac][vcId]++;
-                unack[srcMac][vcId]++; // Increase unacknowledged count
-                if(unack[srcMac][vcId] > 4 || Simulator::Now() - lastAcksend[srcMac][vcId] > m_llrTimeout){
-                    // If unacknowledged count exceeds threshold, or time since last ACK sent exceeds threshold, send ACK
-                    SendLlrAck(vcId, seq, srcMac);
-                    lastAckedTime[srcMac][vcId] = Simulator::Now();
-                    unack[srcMac][vcId] = 0; // Reset unacknowledged count
-                }
-
-                llrWait[srcMac][vcId] = false;
-                llrResending[srcMac][vcId] = false;
-                
-        }else{
-            if(seq < waitSeq[srcMac][vcId]){
-                // Received duplicate packet, discard directly
-                NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() <<"] received duplicate packet for VC " << (uint32_t)vcId
-                            << " with seq " << seq << ", expected " << waitSeq[srcMac][vcId] << ". Discarding.");
-                return;
-            }
-            // Received out-of-order packet, trigger NACK
-            NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() <<"] received out-of-order packet for VC " << (uint32_t)vcId
-                        << " with seq " << seq << ", expected " << waitSeq[srcMac][vcId] << ". Sending NACK.");
-            SendLlrNack(vcId, waitSeq[srcMac][vcId], srcMac);
-            llrResendseq[srcMac][vcId] = waitSeq[srcMac][vcId];
-            llrWait[srcMac][vcId] = true;
-        }       
-    }
-
-    void
-    PointToPointSueNetDevice::LlrResendPacket(uint8_t vcId, Mac48Address mac){
-        // Add switch
-        if (!m_llrEnabled) return;
-        auto it = m_sendList[mac][vcId].find(llrResendseq[mac][vcId]);
-        if(it == m_sendList[mac][vcId].end()){
-            llrResending[mac][vcId] = false;
-        }else{
-            Ptr<Packet> p1 = it->second;
-            llrResendseq[mac][vcId]++;
-            if (!p1){
-                NS_LOG_ERROR("switch: Resend packet is null!");
-                return;
-        }
-        // Set retransmission timer
-        resendPkt[mac][vcId].Cancel();
-        // Still two cases: port and others
-        if(IsMacSwitchDevice(mac) && IsSwitchDevice()){
-            // Get the peer device of the switch
-            Ptr<Node> node = GetNode();
-            Ptr<PointToPointSueNetDevice> targetDev = nullptr;
-            for (uint32_t i = 0; i < node->GetNDevices(); i++) {
-                Ptr<NetDevice> dev = node->GetDevice(i);
-                Ptr<PointToPointSueNetDevice> p2pDev = DynamicCast<PointToPointSueNetDevice>(dev);
-                if (!p2pDev) continue;
-                Mac48Address devMac = Mac48Address::ConvertFrom(dev->GetAddress());
-                if (devMac == mac) {
-                    targetDev = p2pDev;
-                    break;
-                }
-            }
-            resendPkt[mac][vcId] = Simulator::Schedule(m_llrTimeout, &PointToPointSueNetDevice::ResendInSwitch, this, vcId, mac);
-            m_snifferTrace (p1);
-            m_promiscSnifferTrace (p1);
-            // Switch forwarding delay
-            Simulator::Schedule(m_switchForwardDelay, &PointToPointSueNetDevice::SpecDevEnqueueToVcQueue, this, targetDev, p1->Copy());
-            return;
-        }else{
-            resendPkt[mac][vcId] = Simulator::Schedule(m_llrTimeout, &PointToPointSueNetDevice::Resend, this, vcId, mac);
-        }
-        m_snifferTrace (p1);
-        m_promiscSnifferTrace (p1);
-        }
-    }
-
-    // LLR processing function
-    void
-    PointToPointSueNetDevice::SendLlrAck(uint8_t vcId, uint32_t seq, Mac48Address mac){
-        if (!m_llrEnabled) return;
-        Ptr<Packet> ackPacket = Create<Packet>();
-    // Add Ethernet header, source MAC is local port, destination MAC is target port
-        EthernetHeader ethHeader;
-        ethHeader.SetSource(GetLocalMac());
-        ethHeader.SetDestination(mac);
-        ethHeader.SetLengthType(0x0800);
-        ackPacket->AddHeader(ethHeader);
-
-    // CBFC Header
-        SueCbfcHeader AckHeader1;
-    // VC number must correspond to the data packet's VC number!!
-        AckHeader1.SetVcId(vcId);
-        AckHeader1.SetCredits(0);
-    ackPacket->AddHeader(AckHeader1); // Put vcId in CBFC header
-    AddHeader(ackPacket, ACK_REV, seq); // Put seq in PPP header
-
-    // Notify that ACK has been sent
-        lastAcksend[mac][vcId] = Simulator::Now();
-        NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() 
-                    << "] ACK packet for VC " << (uint32_t)vcId << " with seq " << seq);
-
-    // Check if mac is a port of this node
-        Ptr<Node> node = GetNode();
-        for (uint32_t i = 0; i < node->GetNDevices(); i++) {
-            Ptr<NetDevice> dev = node->GetDevice(i);
-            if (dev->GetAddress() == mac && dev != this) {
-                Ptr<PointToPointSueNetDevice> p2pDev = DynamicCast<PointToPointSueNetDevice>(dev);
-                if (IsMacSwitchDevice(mac)) {
-                    // Internal switch ACK, directly enqueue to target port
-                    // TODO: delay to be set
-                    Time delay = m_switchForwardDelay + m_AckAddHeaderDelay;
-                    Simulator::Schedule(delay, &PointToPointSueNetDevice::SpecDevEnqueueToVcQueue, this, p2pDev, ackPacket);
-                    return;
-                }
-            }
-        }
-        
-        Simulator::Schedule(m_AckAddHeaderDelay, &PointToPointSueNetDevice::Send, this, ackPacket, GetRemote(), ACK_REV);
-    }
-
-    void
-    PointToPointSueNetDevice::SendLlrNack(uint8_t vcId, uint32_t seq, Mac48Address mac){
-        if (!m_llrEnabled) return;
-        Ptr<Packet> nackPacket = Create<Packet>();
-
-    // Add Ethernet header, source MAC is local port, destination MAC is target port
-        EthernetHeader ethHeader;
-        ethHeader.SetSource(GetLocalMac());
-        ethHeader.SetDestination(mac);
-        ethHeader.SetLengthType(0x0800);
-        nackPacket->AddHeader(ethHeader);
-
-    // CBFC Header
-        SueCbfcHeader NackHeader1;
-    // VC number must correspond to the data packet's VC number!!
-        NackHeader1.SetVcId(vcId);
-        NackHeader1.SetCredits(0);
-    nackPacket->AddHeader(NackHeader1); // Put vcId in CBFC header
-    AddHeader(nackPacket, NACK_REV, seq); // Put seq in PPP header
-
-    // Notify that NACK has been sent
-        NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() 
-                    << "] NACK packet for VC " << (uint32_t)vcId << " with seq " << seq);
-        
-    // Check if mac is a port of this node
-        Ptr<Node> node = GetNode();
-        for (uint32_t i = 0; i < node->GetNDevices(); i++) {
-            Ptr<NetDevice> dev = node->GetDevice(i);
-            if (dev->GetAddress() == mac && dev != this) {
-                Ptr<PointToPointSueNetDevice> p2pDev = DynamicCast<PointToPointSueNetDevice>(dev);
-                if (p2pDev) {
-                    // Internal switch NACK, directly enqueue to target port
-                    Time delay = m_switchForwardDelay + m_AckAddHeaderDelay;
-                    Simulator::Schedule(delay, &PointToPointSueNetDevice::SpecDevEnqueueToVcQueue, this, p2pDev, nackPacket);
-                    return;
-                }
-            }
-        }
-
-        Simulator::Schedule(m_AckAddHeaderDelay, &PointToPointSueNetDevice::Send, this, nackPacket, GetRemote(), NACK_REV);
-    }
-
-    void
-    PointToPointSueNetDevice::ProcessLlrAck(Ptr<Packet> packet){
-    if(!m_llrEnabled) return; // If LLR is not enabled, return directly
-        NS_LOG_INFO("Processing LLR ACK");
-        Ptr<Packet> originalPacket = packet->Copy ();
-        SuePppHeader ppp;
-        originalPacket->RemoveHeader(ppp);
-        SueCbfcHeader ackHeader;
-        originalPacket->RemoveHeader(ackHeader);
-        uint8_t vcId = ackHeader.GetVcId();
-        uint32_t seq = ppp.GetSeq();
-    // Key: use source MAC in packet header, both switch and NIC can use
-        EthernetHeader ethHeader;
-        originalPacket->RemoveHeader(ethHeader);
-        Mac48Address mac = ethHeader.GetSource();
-        NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() 
-                    << "] received ACK for VC " << (uint32_t)vcId << " with seq " << seq);
-    // Start processing ACK sequence number
-        auto it1 = m_sendList[mac][vcId].begin();
-        auto it2 = m_sendList[mac][vcId].find(seq);
-        if(seq < waitSeq[mac][vcId]){ // Received duplicate or old ACK
-            NS_LOG_INFO("Duplicate or old ACK received for VC " << (uint32_t)vcId << " seq " << seq << ", expected " << waitSeq[mac][vcId]);
-            return;
-        }else if(it2 == m_sendList[mac][vcId].end()){ // Cannot find corresponding seq
-            NS_LOG_INFO("ACK received for VC " << (uint32_t)vcId << " seq " << seq << " which is not in send list, possible duplicate ACK or out-of-order ACK.");
-            return;
-        }else{
-            // Found corresponding seq, delete this and previous packets
-            m_sendList[mac][vcId].erase(it1, it2);
-            m_sendList[mac][vcId].erase(it2);
-            waitSeq[mac][vcId] = seq + 1;
-            NS_LOG_INFO("Updated waitSeq for VC " << (uint32_t)vcId << " to " << waitSeq[mac][vcId]);
-            llrResending[mac][vcId] = false; // Stop retransmission
-            lastAckedTime[mac][vcId] = Simulator::Now();
-            // Set retransmission timer
-            if(resendPkt[mac][vcId].IsPending()){
-                resendPkt[mac][vcId].Cancel();
-                }
-        }
-    }
-
-    void
-    PointToPointSueNetDevice::ProcessLlrNack(Ptr<Packet> packet){
-    if(!m_llrEnabled) return; // If LLR is not enabled, return directly
-        NS_LOG_INFO("Processing LLR NACK");
-        Ptr<Packet> originalPacket = packet->Copy ();
-        SuePppHeader ppp;
-        originalPacket->RemoveHeader(ppp);
-        SueCbfcHeader nackHeader;
-        originalPacket->RemoveHeader(nackHeader);
-        uint8_t vcId = nackHeader.GetVcId();
-        uint32_t seq = ppp.GetSeq();
-    // Use source MAC in packet header
-        EthernetHeader ethHeader;
-        originalPacket->RemoveHeader(ethHeader);
-        Mac48Address mac = ethHeader.GetSource();
-        NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device "<< GetIfIndex() 
-                    << "] received NACK for VC " << (uint32_t)vcId << " with seq " << seq);
-    // Start processing NACK sequence number
-        auto it1 = m_sendList[mac][vcId].begin();
-        auto it2 = m_sendList[mac][vcId].find(seq);
-        if(seq < waitSeq[mac][vcId]){
-            NS_LOG_INFO("Duplicate or old NACK received for VC " << (uint32_t)vcId << " seq " << seq << ", expected " << waitSeq[mac][vcId]);
-            return;
-        }else if(it2 == m_sendList[mac][vcId].end()){
-            NS_LOG_INFO("NACK received for VC " << (uint32_t)vcId << " seq " << seq << " which is not in send list, possible duplicate NACK or out-of-order NACK.");
-            return;
-        }else{
-            // Received NACK for seq, which means all packets before seq have been received, but seq packet is lost, retransmit seq and subsequent packets
-            m_sendList[mac][vcId].erase(it1, it2);
-            waitSeq[mac][vcId] = seq;
-            llrResendseq[mac][vcId] = seq;
-            llrResending[mac][vcId] = true;
-            NS_LOG_INFO("NACK received, will resend from seq " << seq << " for VC " << (uint32_t)vcId);
-            // Set retransmission timer
-            resendPkt[mac][vcId].Cancel(); // Cancel previous retransmission event
-            // Still two cases: port and others
-            if(IsMacSwitchDevice(mac) && IsSwitchDevice()){
-                resendPkt[mac][vcId] = Simulator::Schedule(m_llrTimeout, &PointToPointSueNetDevice::ResendInSwitch, this, vcId, mac);
-            }else{
-                resendPkt[mac][vcId] = Simulator::Schedule(m_llrTimeout, &PointToPointSueNetDevice::Resend, this, vcId, mac);
-            }
-        }
     }
 
     // Switch support methods implementation
@@ -2427,56 +1569,34 @@ namespace ns3
     }
 
     bool
-    PointToPointSueNetDevice::GetLlrEnabled() const
+    PointToPointSueNetDevice::IsSwitchDevice(Mac48Address mac) const
     {
-        return m_llrEnabled;
-    }
+        NS_LOG_FUNCTION(this << mac);
 
-    bool
-    PointToPointSueNetDevice::IsLlrResending(Mac48Address mac, uint8_t vcId) const
-    {
-        auto it = llrResending.find(mac);
-        if (it != llrResending.end() && it->second.size() > vcId)
-        {
-            return it->second[vcId];
-        }
-        return false;
+        uint8_t buffer[6];
+        mac.CopyTo(buffer);
+        uint8_t lastByte = buffer[5]; // Last byte of MAC address
+        // TODO: Simplistic logic; needs modification for proper XPU/switch identification
+        return (lastByte % 2 == 0); // Even numbers are switch devices
     }
 
     
-    uint32_t
-    PointToPointSueNetDevice::GetTxCredits(Mac48Address mac, uint8_t vcId) const
+    Ptr<CbfcManager>
+    PointToPointSueNetDevice::GetCbfcManager() const
     {
-        auto it = m_txCreditsMap.find(mac);
-        if (it != m_txCreditsMap.end())
-        {
-            auto vcIt = it->second.find(vcId);
-            if (vcIt != it->second.end())
-            {
-                return vcIt->second;
-            }
-        }
-        return 0;
+        return m_cbfcManager;
     }
 
-    void
-    PointToPointSueNetDevice::DecrementTxCredits(Mac48Address mac, uint8_t vcId)
+    Ptr<SueQueueManager>
+    PointToPointSueNetDevice::GetQueueManager() const
     {
-        auto it = m_txCreditsMap.find(mac);
-        if (it != m_txCreditsMap.end())
-        {
-            auto vcIt = it->second.find(vcId);
-            if (vcIt != it->second.end() && vcIt->second > 0)
-            {
-                vcIt->second--;
-            }
-        }
+        return m_queueManager;
     }
 
     bool
-    PointToPointSueNetDevice::IsLinkCbfcEnabled() const
+    PointToPointSueNetDevice::GetLlrEnabled() const
     {
-        return m_enableLinkCBFC;
+        return m_llrEnabled;
     }
 
     Time
@@ -2484,49 +1604,4 @@ namespace ns3
     {
         return m_switchForwardDelay;
     }
-
-    void
-    PointToPointSueNetDevice::HandleCreditReturn(const EthernetHeader& ethHeader, uint8_t vcId)
-    {
-        if (m_enableLinkCBFC)
-        {
-            // Increase credit count for corresponding source address and VC
-            Mac48Address source = ethHeader.GetSource();
-
-            m_rxCreditsToReturnMap[source][vcId]++;
-        }
-    }
-
-    
-    // Temporarily keep the IsSwitchDevice and IsMacSwitchDevice methods for backward compatibility
-    bool
-    PointToPointSueNetDevice::IsSwitchDevice() const
-    {
-        return m_switch && m_switch->IsSwitchDevice(m_address);
-    }
-
-    bool
-    PointToPointSueNetDevice::IsMacSwitchDevice(Mac48Address mac) const
-    {
-        return m_switch && m_switch->IsSwitchDevice(mac);
-    }
-
-    void
-    PointToPointSueNetDevice::SetForwardingTable(const std::map<Mac48Address, uint32_t>& table)
-    {
-        if (m_switch)
-        {
-            m_switch->SetForwardingTable(table);
-        }
-    }
-
-    void
-    PointToPointSueNetDevice::ClearForwardingTable()
-    {
-        if (m_switch)
-        {
-            m_switch->ClearForwardingTable();
-        }
-    }
-
 } // namespace ns3

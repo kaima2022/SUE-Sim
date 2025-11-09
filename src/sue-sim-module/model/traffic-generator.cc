@@ -190,7 +190,7 @@ void TrafficGenerator::GenerateTransaction() {
 
         // Stop all Performance-Logger statistics events for SUEs on this XPU
         if (m_loadBalancer) {
-            m_loadBalancer->StopAllSueLogging();
+            m_loadBalancer->StopAllLogging();
         }
 
         return;

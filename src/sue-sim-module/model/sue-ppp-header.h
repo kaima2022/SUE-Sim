@@ -97,28 +97,13 @@ public:
   uint16_t GetProtocol (void);
   
   // ...existing code...
-  /**
-   * \brief Set the sequence number carried by this PPP packet
-   *
-   * \param seq the sequence number being carried
-   */
-  void SetSeq(uint32_t seq);
-
-  /**
-   * \brief Get the sequence number carried by this PPP packet
-   *
-   * \return the sequence number being carried
-   */
-  uint32_t GetSeq() const;
-  // ...existing code...
-
+  
 private:
 
   /**
    * \brief The PPP protocol type of the payload packet
    */
   uint16_t m_protocol;
-  uint32_t m_seq; // sequence number
 };
 
 } // namespace ns3

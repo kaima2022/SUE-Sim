@@ -47,6 +47,12 @@ SueSimulationConfig::SueSimulationConfig ()
     traffic.vcNum = 4;
     traffic.threadRate = 3500000;
     traffic.totalBytesToSend = 50;
+    traffic.enableTraceMode = false;  // Default to traditional traffic generation
+    traffic.traceFilePath = "";       // Empty trace file path by default
+
+    // Initialize fine-grained traffic configuration
+    traffic.enableFineGrainedMode = false;  // Default to traditional traffic generation
+    traffic.fineGrainedConfigFile = "";     // Empty fine-grained config file path by default
 
     // Initialize link configuration
     link.errorRate = 0.00;
@@ -76,6 +82,7 @@ SueSimulationConfig::SueSimulationConfig ()
     loadBalance.prime2 = 9973;
     loadBalance.useVcInHash = true;
     loadBalance.enableBitOperations = true;
+    loadBalance.enableAlternativePath = false;
 
     // Initialize trace configuration
     trace.statLoggingEnabled = true;
@@ -91,7 +98,7 @@ SueSimulationConfig::SueSimulationConfig ()
     delay.ackProcessingDelay = "15ns";
     delay.vcSchedulingDelay = "8ns";
     delay.DataAddHeadDelay = "5ns";
-    delay.additionalHeaderSize = 52;
+    delay.additionalHeaderSize = 44;
     delay.creditGenerateDelay = "10ns";
     delay.CreUpdateAddHeadDelay = "3ns";
     delay.creditReturnProcessingDelay = "8ns";
@@ -101,10 +108,14 @@ SueSimulationConfig::SueSimulationConfig ()
     //Initialize LLR configuration
     llr.m_llrEnabled = false;
     llr.LlrTimeout = "10000ns";
-    llr.LlrWindowSize = 10;                     
-    llr.AckAddHeaderDelay = "10ns";         
-    llr.AckProcessDelay = "10ns";           
-    
+    llr.LlrWindowSize = 10;
+    llr.AckAddHeaderDelay = "10ns";
+    llr.AckProcessDelay = "10ns";
+
+    // Initialize logging configuration
+    logging.logLevel = "LOG_LEVEL_INFO";
+    logging.enableAllComponents = true;
+
 }
 
 void
@@ -132,6 +143,10 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("maxBurstSize", "Maximum burst size in bytes", traffic.maxBurstSize);
     cmd.AddValue("Mtu", "Maximum Transmission Unit in bytes", traffic.Mtu);
     cmd.AddValue("vcNum", "Number of virtual channels at application layer", traffic.vcNum);
+    cmd.AddValue("enableTraceMode", "Enable trace-based traffic generation", traffic.enableTraceMode);
+    cmd.AddValue("traceFilePath", "Path to trace file for trace-based generation", traffic.traceFilePath);
+    cmd.AddValue("enableFineGrainedMode", "Enable fine-grained traffic control mode", traffic.enableFineGrainedMode);
+    cmd.AddValue("fineGrainedConfigFile", "Path to fine-grained traffic configuration file", traffic.fineGrainedConfigFile);
 
     // Link layer parameters
     cmd.AddValue("errorRate", "The packet error rate for the links", link.errorRate);
@@ -185,6 +200,7 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("prime2", "Second prime number for enhanced hash", loadBalance.prime2);
     cmd.AddValue("useVcInHash", "Include VC ID in hash calculation", loadBalance.useVcInHash);
     cmd.AddValue("enableBitOperations", "Enable bit mixing operations in hash", loadBalance.enableBitOperations);
+    cmd.AddValue("enableAlternativePath", "Enable alternative SUE path search when target is full", loadBalance.enableAlternativePath);
 
     //Llr related parameters
     cmd.AddValue("EnableLLR", "Enable Link Layer Reliability", llr.m_llrEnabled);
@@ -192,6 +208,10 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("LlrWindowSize", "LLR window size", llr.LlrWindowSize);
     cmd.AddValue("AckAddHeaderDelay", "ACK/NACK header adding delay", llr.AckAddHeaderDelay);
     cmd.AddValue("AckProcessDelay", "ACK/NACK processing delay", llr.AckProcessDelay);
+
+    // Logging configuration parameters
+    cmd.AddValue("logLevel", "Log level for all components (LOG_LEVEL_DEBUG, LOG_LEVEL_INFO, LOG_LEVEL_WARN, LOG_LEVEL_ERROR, LOG_LEVEL_FUNCTION, LOG_LEVEL_LOGIC, LOG_LEVEL_ALL)", logging.logLevel);
+    cmd.AddValue("enableAllComponents", "Enable logging for all SUE simulation components", logging.enableAllComponents);
 
     cmd.Parse(argc, argv);
 }
@@ -235,6 +255,20 @@ SueSimulationConfig::PrintConfiguration () const
     std::cout << "  Enable Link CBFC: " << (cbfc.EnableLinkCBFC ? "true" : "false") << std::endl;
     std::cout << std::endl;
 
+    // Display Traffic Generation configuration information
+    std::cout << "Traffic Generation Configuration:" << std::endl;
+    std::cout << "  Transaction Size: " << traffic.transactionSize << " bytes" << std::endl;
+    std::cout << "  Max Burst Size: " << traffic.maxBurstSize << " bytes" << std::endl;
+    std::cout << "  MTU: " << traffic.Mtu << " bytes" << std::endl;
+    std::cout << "  Number of VCs: " << static_cast<int>(traffic.vcNum) << std::endl;
+    std::cout << "  Thread Rate: " << traffic.threadRate << " Mbps" << std::endl;
+    std::cout << "  Total Bytes to Send: " << traffic.totalBytesToSend << " MB" << std::endl;
+    std::cout << "  Trace Mode: " << (traffic.enableTraceMode ? "ENABLED" : "DISABLED") << std::endl;
+    if (traffic.enableTraceMode && !traffic.traceFilePath.empty()) {
+        std::cout << "  Trace File Path: " << traffic.traceFilePath << std::endl;
+    }
+    std::cout << std::endl;
+
     // Display LoadBalancer configuration information
     std::cout << "LoadBalancer Configuration:" << std::endl;
     std::cout << "  Algorithm: " << loadBalance.loadBalanceAlgorithm;
@@ -251,6 +285,14 @@ SueSimulationConfig::PrintConfiguration () const
     std::cout << "  Prime1: " << loadBalance.prime1 << ", Prime2: " << loadBalance.prime2 << std::endl;
     std::cout << "  Use VC in Hash: " << (loadBalance.useVcInHash ? "true" : "false") << std::endl;
     std::cout << "  Enable Bit Operations: " << (loadBalance.enableBitOperations ? "true" : "false") << std::endl;
+    std::cout << "  Enable Alternative Path: " << (loadBalance.enableAlternativePath ? "true" : "false") << std::endl;
+    std::cout << std::endl;
+
+    // Display Logging configuration information
+    std::cout << "Logging Configuration:" << std::endl;
+    std::cout << "  Log Level: " << logging.logLevel << std::endl;
+    std::cout << "  Enable All Components: " << (logging.enableAllComponents ? "true" : "false") << std::endl;
+    std::cout << std::endl;
 
     NS_LOG_INFO("Creating XPU-Switch topology with " << network.nXpus << " XPUs ("
                << network.portsPerXpu << " ports/XPU, " << network.portsPerSue << " ports/SUE, "

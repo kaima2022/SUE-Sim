@@ -231,7 +231,12 @@ public:
    */
   uint32_t GetDestQueueCurrentUsage (uint32_t destXpuId, uint8_t vcId) const;
 
-  
+  /**
+   * \brief Cancel all logging events
+   */
+  void CancelAllLogEvents ();
+
+
 
 protected:
   /**
@@ -363,11 +368,6 @@ private:
    * \return Corresponding MAC address
    */
   Mac48Address GetMacForIp (Ipv4Address ip);
-
-  /**
-   * \brief Cancel all logging events
-   */
-  void CancelAllLogEvents ();
 
   /**
    * \brief Analyze packet to count the number of transactions it contains

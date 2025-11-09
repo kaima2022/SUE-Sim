@@ -15,13 +15,14 @@
  * limitations under the License.
  */
 
-#include "sue-utils.h"
+#include "common-utils.h"
 #include "ns3/performance-logger.h"
+#include "parameter-config.h"
 #include <map>
 
 namespace ns3 {
 
-NS_LOG_COMPONENT_DEFINE ("SueUtils");
+NS_LOG_COMPONENT_DEFINE ("SueCommonUtils");
 
 // Static member initialization
 std::map<std::string, SueUtils::TimingSession> SueUtils::m_activeSessions;
@@ -90,15 +91,85 @@ SueUtils::InitializePerformanceLogger (const std::string& filename)
 }
 
 void
-SueUtils::ConfigureLogging ()
+SueUtils::ConfigureLogging (const std::string& logLevel)
 {
-    // Configure logging components
-    LogComponentEnable("SueClientApplication", LOG_LEVEL_INFO);
-    LogComponentEnable("SueServerApplication", LOG_LEVEL_INFO);
-    LogComponentEnable("SueSimulation", LOG_LEVEL_INFO);
-    LogComponentEnable("TrafficGenerator", LOG_LEVEL_INFO);
-    LogComponentEnable("LoadBalancer", LOG_LEVEL_INFO);
-    LogComponentDisableAll(LOG_ALL);
+    // Convert string to LogLevel enum
+    ns3::LogLevel level = LOG_LEVEL_INFO; // default
+
+    if (logLevel == "LOG_LEVEL_DEBUG")
+    {
+        level = LOG_LEVEL_DEBUG;
+    }
+    else if (logLevel == "LOG_LEVEL_INFO")
+    {
+        level = LOG_LEVEL_INFO;
+    }
+    else if (logLevel == "LOG_LEVEL_WARN")
+    {
+        level = LOG_LEVEL_WARN;
+    }
+    else if (logLevel == "LOG_LEVEL_ERROR")
+    {
+        level = LOG_LEVEL_ERROR;
+    }
+    else if (logLevel == "LOG_LEVEL_FUNCTION")
+    {
+        level = LOG_LEVEL_FUNCTION;
+    }
+    else if (logLevel == "LOG_LEVEL_LOGIC")
+    {
+        level = LOG_LEVEL_LOGIC;
+    }
+    else if (logLevel == "LOG_LEVEL_ALL")
+    {
+        level = LOG_LEVEL_ALL;
+    }
+    else
+    {
+        std::cerr << "Warning: Unknown log level '" << logLevel
+                  << "', using LOG_LEVEL_INFO as default" << std::endl;
+        level = LOG_LEVEL_INFO;
+    }
+
+    // Configure all logging components in src/sue-sim-module/model with specified level
+    // LogComponentEnable("TopologyBuilder", level);
+    // LogComponentEnable("ApplicationDeployer", level);
+    // LogComponentEnable("ParameterConfig", level);
+    // LogComponentEnable("SueCommonUtils", level);
+    // LogComponentEnable("SueUtils", level);
+    // LogComponentEnable("CbfcManager", level);
+    // LogComponentEnable("PointToPointSueChannel", level);
+    // LogComponentEnable("PerformanceLogger", level);
+    // LogComponentEnable("SueHeader", level);
+    LogComponentEnable("ConfigurableTrafficGenerator", level);
+    LogComponentEnable("TraceTrafficGenerator", level);
+    // LogComponentEnable("LoadBalancer", level);
+    // LogComponentEnable("SuePppHeader", level);
+    // LogComponentEnable("SueQueueManager", level);
+    // LogComponentEnable("SueServerApplication", level);
+    // LogComponentEnable("SueSwitch", level);
+    // LogComponentEnable("SueTag", level);
+    LogComponentEnable("TrafficGenerator", level);
+    // LogComponentEnable("SueClientApplication", level);
+    // LogComponentEnable("PointToPointSueNetDevice", level);
+
+    // Note: "SueSimulation" was not found in the codebase, removing it
+    // LogComponentDisableAll(LOG_ALL);
+}
+
+void
+SueUtils::ConfigureLogging (const SueSimulationConfig& config)
+{
+    if (config.logging.enableAllComponents)
+    {
+        // Use the configuration parameter for log level
+        ConfigureLogging(config.logging.logLevel);
+    }
+    else
+    {
+        // If enableAllComponents is false, disable all logging
+        LogComponentDisableAll(LOG_ALL);
+    }
 }
 
 std::string

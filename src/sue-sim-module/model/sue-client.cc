@@ -25,7 +25,7 @@
 #include "ns3/point-to-point-net-device.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/performance-logger.h"
-
+#include "sue-utils.h"
 
 
 namespace ns3 {
@@ -88,7 +88,7 @@ SueClient::SueClient()
       m_destQueueMaxBytes(30 * 1024), // Default 30KB
       m_totalBytesSent(0),
       m_lastStatTime(Seconds(0)),
-      m_clientStatInterval(MilliSeconds(10)),
+      m_clientStatInterval(MicroSeconds(10)),
           m_clientStatIntervalString("10us"),
       m_packingDelayPerPacket("3ns"),
       m_XpuDropCounts(0),
@@ -246,8 +246,11 @@ void SueClient::StartApplication(void) {
     m_totalBytesSent = 0;
     m_lastStatTime = Simulator::Now();
     
-    // Start periodic statistics
-     m_logClientStatisticsEvent = Simulator::Schedule(m_clientStatInterval, &SueClient::LogClientStatistics, this);
+    // Start periodic statistics - DISABLED by default for fine-grained mode
+    // Uncomment to enable client-level statistics
+    // if (m_loggingEnabled) {
+    //     m_logClientStatisticsEvent = Simulator::Schedule(m_clientStatInterval, &SueClient::LogClientStatistics, this);
+    // }
     
     ScheduleNextSend();
 
@@ -311,7 +314,7 @@ void SueClient::LogClientStatistics() {
     PerformanceLogger::GetInstance().LogAppStat(nanoseconds, m_xpuId, deviceIndex, 0, rate);
 
     NS_LOG_INFO("Time " << now << "s XPU" << m_xpuId << " SUE" << m_sueId
-                   << " AppTxRate: " << rate << " Mbps (Device " << deviceIndex + 1 << ")");
+                   << " AppTxRate: " << rate << " Mbps (Device " << deviceIndex << ")");
 
     // Packet loss statistics - only record devices within management range
     if(m_XpuDropCounts>0){
@@ -362,18 +365,62 @@ void SueClient::CancelAllLogEvents() {
     NS_LOG_FUNCTION(this);
     // Disable logging first
     SetLoggingEnabled(false);
-  
+
     // Cancel own log statistics events
     if (m_logClientStatisticsEvent.IsPending()) {
         Simulator::Cancel(m_logClientStatisticsEvent);
         NS_LOG_INFO("Cancelled client log statistics event");
-        
-        std::cout << Simulator::Now() << " Cancelled client log statistics event" << std::endl;
 
-        // Set StatLoggingEnabled to false for all PointToPointSueNetDevice
-        Config::Set("/NodeList/*/DeviceList/*/$ns3::PointToPointSueNetDevice/StatLoggingEnabled", BooleanValue(false));        
+        std::cout << Simulator::Now() << " Cancelled client log statistics event for XPU" << m_xpuId << std::endl;
     }
 
+    // Disable statistics only for devices managed by this SUE
+    for (size_t i = 0; i < m_managedDevices.size(); ++i) {
+        Ptr<PointToPointSueNetDevice> p2pDev = m_managedDevices[i];
+        if (p2pDev) {
+            // Verify device belongs to current node before disabling
+            if (p2pDev->GetNode() == GetNode()) {
+                // Use Config::Set to disable logging for this specific device
+                std::ostringstream configPath;
+                configPath << "/NodeList/" << GetNode()->GetId()
+                           << "/DeviceList/" << p2pDev->GetIfIndex()
+                           << "/$ns3::PointToPointSueNetDevice/StatLoggingEnabled";
+                Config::Set(configPath.str(), BooleanValue(false));
+
+                NS_LOG_INFO("Disabled statistics for managed device " << p2pDev->GetIfIndex()
+                           << " (Node " << GetNode()->GetId() << ")");
+            }
+        }
+    // Also disable statistics for switch devices
+    // Find all switch devices in the system
+    for (uint32_t nodeId = 0; nodeId < NodeList::GetNNodes(); ++nodeId) {
+            Ptr<Node> node = NodeList::GetNode(nodeId);
+            for (uint32_t j = 0; j < node->GetNDevices(); ++j) {
+                Ptr<NetDevice> dev = node->GetDevice(j);
+                Ptr<PointToPointSueNetDevice> switchP2pDev =
+                    DynamicCast<PointToPointSueNetDevice>(dev);
+
+                if (switchP2pDev) {
+                    // Try to convert address to Mac48Address
+                    Mac48Address macAddr = Mac48Address::ConvertFrom(switchP2pDev->GetAddress());
+                    if (switchP2pDev->IsSwitchDevice(macAddr)) {
+                        std::ostringstream switchConfigPath;
+                        switchConfigPath << "/NodeList/" << nodeId
+                                            << "/DeviceList/" << switchP2pDev->GetIfIndex()
+                                            << "/$ns3::PointToPointSueNetDevice/StatLoggingEnabled";
+                        Config::Set(switchConfigPath.str(), BooleanValue(false));
+
+                        NS_LOG_INFO("Disabled statistics for connected switch device "
+                                    << switchP2pDev->GetIfIndex()
+                                    << " (Switch Node " << nodeId << ")");
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << Simulator::Now() << " Disabled statistics for " << m_managedDevices.size()
+              << " managed devices by XPU" << m_xpuId << " SUE" << m_sueId << std::endl;
 }
 
 
@@ -392,8 +439,9 @@ void SueClient::AddTransaction(Ptr<Packet> transaction, uint32_t destXpuId) {
     // Check destination queue byte-level capacity limit
     uint32_t packetSize = transaction->GetSize();
     if (queueInfo.currentBurstSize + packetSize > m_destQueueMaxBytes) {
-        // Packet loss statistics
-        m_XpuDropCounts++;
+        // Log destination queue full drop (event-driven)
+        Ptr<Packet> dropPacket = Create<Packet>(packetSize);
+        SueStatsUtils::ProcessPacketDropStats(dropPacket, m_xpuId, 0, "DestQueueFull");
         NS_LOG_WARN(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << "] Destination queue for XPU" << destXpuId
                    << "-VC" << (uint32_t)vcId << " is full (" << queueInfo.currentBurstSize << " + " << packetSize << " > " << m_destQueueMaxBytes << " bytes)! Dropping transaction packet.");
         return; // Drop packet
@@ -510,7 +558,10 @@ void SueClient::ScheduleNextSend() {
             if (socketIt == m_deviceSockets.end()) {
                 NS_LOG_WARN("No socket found for selected device");
                 // Release reserved capacity
-                currentDevice->ReleaseVcCapacity(vcId, packetSize);
+                auto queueManager = currentDevice->GetQueueManager();
+                if (queueManager) {
+                    queueManager->ReleaseVcCapacity(vcId, packetSize);
+                }
                 continue;
             }
             Ptr<Socket> sendingSocket = socketIt->second;
@@ -584,14 +635,20 @@ void SueClient::DoSendBurst(Ptr<Packet> burstPacket, Ptr<Socket> sendingSocket, 
 
         // Release reserved VC capacity
         if (device) {
-            device->ReleaseVcCapacity(vcId, packetSize);
+            auto queueManager = device->GetQueueManager();
+            if (queueManager) {
+                queueManager->ReleaseVcCapacity(vcId, packetSize);
+            }
         }
 
         NS_LOG_DEBUG("Successfully sent " << transactionCount << " transactions for SUE " << m_sueId);
     } else {
         // Also release reserved VC capacity on send failure
         if (device) {
-            device->ReleaseVcCapacity(vcId, packetSize);
+            auto queueManager = device->GetQueueManager();
+            if (queueManager) {
+                queueManager->ReleaseVcCapacity(vcId, packetSize);
+            }
         }
         // Detailed error handling
         std::string errorMsg;
@@ -644,10 +701,10 @@ void SueClient::StopApplication(void) {
     }
     m_deviceSockets.clear();
     
-    NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << "] Summary: Sent "
+    NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << "-SUE" << m_sueId << "] Summary: Sent "
                << m_packetsSent << " packets");
 
-    std::cout << Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << "] Summary: Sent "
+    std::cout << Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << "-SUE" << m_sueId << "] Summary: Sent "
               << m_packetsSent << " packets" << std::endl;
 
     // Note: Packing log files are now managed by PerformanceLogger, no need to manually close
@@ -728,7 +785,8 @@ Ptr<PointToPointSueNetDevice> SueClient::SelectDeviceByVcCapacity(uint32_t packe
         
         if (device) {
             // Try to reserve VC capacity
-            if (device->ReserveVcCapacity(vcId, packetSize)) {
+            auto queueManager = device->GetQueueManager();
+            if (queueManager && queueManager->ReserveVcCapacity(vcId, packetSize)) {
                 // Successfully reserved capacity, select this device
                 m_lastUsedDeviceIndex = (deviceIndex + 1) % m_portsPerSue;
                 

@@ -6,17 +6,23 @@ build_lib(
     model/sue-cbfc-header.cc
     model/sue-header.cc
     model/performance-logger.cc
-    model/xpu-delay-tag.cc
+    model/sue-tag.cc
     model/sue-client.cc
     model/sue-server.cc
     model/traffic-generator.cc
+    model/traffic-generator-trace.cc
+    model/traffic-generator-config.cc
     model/load-balancer.cc
     model/sue-ppp-header.cc
     model/sue-switch.cc
+    model/sue-cbfc.cc
+    model/sue-queue-manager.cc
+    model/sue-utils.cc
+    model/sue-llr.cc
     helper/sue-sim-module-helper.cc
     model/simulation-config/application-deployer.cc
     model/simulation-config/parameter-config.cc
-    model/simulation-config/sue-utils.cc
+    model/simulation-config/common-utils.cc
     model/simulation-config/topology-builder.cc
   HEADER_FILES
     model/point-to-point-sue-net-device.h
@@ -24,17 +30,23 @@ build_lib(
     model/sue-cbfc-header.h
     model/sue-header.h
     model/performance-logger.h
-    model/xpu-delay-tag.h
+    model/sue-tag.h
     model/sue-client.h
     model/sue-server.h
     model/traffic-generator.h
+    model/traffic-generator-trace.h
+    model/traffic-generator-config.h
     model/load-balancer.h
     model/sue-ppp-header.h
     model/sue-switch.h
+    model/sue-cbfc.h
+    model/sue-queue-manager.h
+    model/sue-utils.h
+    model/sue-llr.h
     helper/sue-sim-module-helper.h
     model/simulation-config/application-deployer.h
     model/simulation-config/parameter-config.h
-    model/simulation-config/sue-utils.h
+    model/simulation-config/common-utils.h
     model/simulation-config/topology-builder.h
   LIBRARIES_TO_LINK ${libnetwork} ${libcore} ${libpoint-to-point}
   TEST_SOURCES test/sue-sim-module-test.cc
