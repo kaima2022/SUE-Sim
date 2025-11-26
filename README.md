@@ -42,15 +42,7 @@ SUE-Sim serves two primary objectives:
 
 - **SUE Framework Specification Optimization**: The platform enables researchers to optimize SUE framework specifications through advanceing algorithms and protocol validating. 
 
-**Current Version**: SUE-Sim v2.0 🎉
-
-### ✨ What's New in v2.0
-
-- **Module Decoupling**: Decoupled various modules for better maintainability and extensibility
-- **Enhanced Traffic Generation**: Added Trace-based and Configuration-based traffic generation methods
-- **Event-Driven Logging**: Transformed logging statistics from fixed-time intervals to event-driven triggers
-- **Code Optimization**: Optimized code logic for improved performance and readability
-- **Bug Fixes**: Resolved critical issues and improved overall stability 
+**Current Version**: SUE-Sim v2.0 
 
 ## System Architecture
 <p align="center">
