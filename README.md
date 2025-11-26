@@ -6,7 +6,7 @@
 
 </div>
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://opensource.org/licenses/GPL-2.0)
 [![ns--3-3.36/3.44](https://img.shields.io/badge/ns--3-3.44%2F3.36-green.svg)](https://www.nsnam.org/)
 [![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04+-lightgrey.svg)]()
 [![Language](https://img.shields.io/badge/Language-C%2B%2B-orange.svg)]()
