@@ -179,13 +179,7 @@ public:
   void SetLoggingEnabled(bool enabled);
 
   
-  /**
-   * \brief Get the total number of dropped packets.
-   *
-   * \return Total dropped packet count
-   */
-  uint32_t GetTotalPacketDropNum();
-
+  
   
   // Switch support methods
   /**
@@ -254,6 +248,13 @@ public:
    * \return Switch forwarding delay
    */
   Time GetSwitchForwardDelay() const;
+
+  /**
+   * \brief Get the data rate of this device
+   *
+   * \return Data rate
+   */
+  DataRate GetDataRate() const;
 
   
   
@@ -390,6 +391,8 @@ private:
 
   
   
+  public:
+
   /**
    * \brief Initialize CBFC credits
    */
@@ -399,8 +402,6 @@ private:
    * \brief Initialize LLR managers
    */
   void InitializeLlr();
-
-  public:
 
   /**
    * \brief Extract destination IP from a packet
@@ -436,13 +437,20 @@ private:
   void StartProcessing();
 
   /**
-   * \brief Complete processing of a packet item
+   * \brief processing of a packet item
    *
-   * \param item The packet item to complete processing
+   * \param item Packet item to process
    */
-  void CompleteProcessing(ProcessItem item);
+  void ProcessingReceivedPacket(ProcessItem item);
 
-  
+  /**
+   * \brief Enqueue a packet to the processing queue
+   *
+   * \param item Packet Info
+   */
+  void EnqueueToProcessingQueue(ProcessItem item);
+
+
   /**
    * \brief Get remote MAC address
    *
@@ -467,6 +475,7 @@ private:
   void FindDeviceAndSend (Ptr<Packet> packet, Mac48Address targetMac, uint16_t protocolNum);
 
   
+
   /**
    * \brief Get source MAC address from packet
    *
@@ -567,43 +576,42 @@ public:
   uint32_t m_initialCredits;        //!< Initial credit count
   uint8_t m_numVcs;                 //!< Number of virtual channels
   uint32_t m_creditBatchSize;       //!< Credit batch size
+  uint32_t m_switchCredits;  //!< Switch credits
   uint32_t m_vcQueueMaxBytes;       //!< VC queue maximum bytes
   uint32_t m_additionalHeaderSize;  //!< Additional header size for capacity reservation
+  uint32_t m_headerSize;            //!< Header size for dynamic credit calculation
+  uint32_t m_transactionSize;       //!< Transaction size for dynamic credit calculation
   bool m_enableLinkCBFC;            //!< CBFC enable flag
+
+  // Credit-to-byte mapping parameters
+  uint32_t m_bytesPerCredit;        //!< Bytes per credit
 
   // Processing queue
   std::queue<ProcessItem> m_processingQueue; //!< Processing queue
-  uint32_t m_currentProcessingQueueSize;     //!< Current processing queue size (packets)
+    uint32_t m_currentProcessingQueueSize;     //!< Current processing queue size (packets)
   uint32_t m_currentProcessingQueueBytes;    //!< Current processing queue size (bytes)
-  bool m_isProcessing;                       //!< Processing flag
   Time m_processingDelay;                    //!< Processing delay
   uint32_t m_processingQueueMaxBytes;        //!< Processing queue maximum bytes
+  bool m_needCredit;                          //!< Credit need flag
+  bool m_processingScheduled;                 //!< Processing schedule flag
 
-  // Statistics
-  std::map<uint8_t, uint64_t> m_vcBytesSent;      //!< VC bytes sent
-  std::map<uint8_t, uint64_t> m_vcBytesReceived;  //!< VC bytes received
-  Time m_lastStatTime;                             //!< Last statistics time
-  Time m_linkStatInterval;                         //!< Statistics interval
-  std::map<uint8_t, uint32_t> m_vcDropCounts;      //!< VC drop counts
-  std::map<uint8_t, uint32_t> m_vcDropCounts_SendQ; //!< VC send queue drop counts
-  uint32_t m_totalPacketDropNum;                   //!< Total packet drop count
-
+  
+  
   // Timing parameters
   Time m_creUpdateAddHeadDelay;  //!< Credit update header addition delay
   Time m_dataAddHeadDelay;       //!< Data packet header addition delay
   Time m_creditGenerateDelay;    //!< Credit generation delay
   Time m_switchForwardDelay;     //!< Switch forward delay
   Time m_vcSchedulingDelay;      //!< VC scheduling delay
-
+  Time m_processingQueueScheduleDelay; //!< Processing queue scheduling delay
+  
   // Event and logging
   EventId m_logStatisticsEvent;  //!< Statistics logging event
   EventId m_tryTransmitEvent;    //!< TryTransmit scheduling event
-  bool m_tryTransmitScheduled;   //!< Flag to track if TryTransmit is already scheduled
   bool m_loggingEnabled;         //!< Logging enabled flag
   DataRate m_processingRate;     //!< Processing rate
   std::string m_processingRateString; //!< Processing rate string for compatibility
-  std::string m_linkStatIntervalString; //!< Link statistic interval string for compatibility
-
+  
   // Switch functionality moved to SueSwitch module
   Ptr<SueSwitch> m_switch; //!< Switch module for Layer 2 forwarding
 

@@ -26,6 +26,7 @@
 #include "ns3/packet.h"
 #include "ns3/ptr.h"
 #include "ns3/object.h"
+#include "ns3/nstime.h"
 
 namespace ns3 {
 
@@ -93,6 +94,15 @@ public:
                                 uint8_t vcId);
 
   /**
+   * \brief Calculate adaptive forwarding delay based on packet size
+   *
+   * \param device Current net device
+   * \param packetSize Size of the packet in bytes
+   * \return Adaptive forwarding delay
+   */
+  Time CalculateAdaptiveForwardDelay (Ptr<PointToPointSueNetDevice> device, uint32_t packetSize);
+
+  /**
    * \brief Set LLR node manager for switch
    *
    * \param llrNodeManager Pointer to LLR node manager
@@ -128,6 +138,23 @@ public:
    */
   bool IsSwitchDevice (Mac48Address mac) const;
 
+  /**
+   * \brief Handle forwarding completion event
+   *
+   * \param originalDevice Original device that started forwarding
+   * \param targetDevice Target device to enqueue to
+   * \param packet Packet to forward
+   * \param ethHeader Ethernet header for credit return
+   * \param vcId Virtual channel ID
+   * \param sourceMac Source MAC for credit return
+   */
+  void ForwardingComplete (Ptr<PointToPointSueNetDevice> originalDevice,
+                           Ptr<PointToPointSueNetDevice> targetDevice,
+                           Ptr<Packet> packet,
+                           const EthernetHeader& ethHeader,
+                           uint8_t vcId,
+                           Mac48Address sourceMac);
+
 private:
   /**
    * \brief Copy constructor
@@ -153,6 +180,9 @@ private:
    * Maps destination MAC addresses to output port indices
    */
   std::map<Mac48Address, uint32_t> m_forwardingTable;
+
+  /// ---- Forwarding State Machine ----
+  bool m_forwardingBusy;                                     //!< Forwarding state machine busy flag
 
   /// ---- LLR managers ----
   Ptr<LlrNodeManager> m_llrNodeManager;         //!< LLR manager for end nodes

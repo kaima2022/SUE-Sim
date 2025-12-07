@@ -54,36 +54,36 @@ void PerformanceLogger::Initialize(const std::string& filename) {
     std::stringstream timestamp;
     timestamp << std::put_time(std::localtime(&in_time_t), "%Y%m%d_%H%M%S");
 
-    // Main performance data file - separate directory
-    std::string performanceLogDir = dataDir + "/performance_logs";
-    if (access(performanceLogDir.c_str(), F_OK) != 0) {
-        if (mkdir(performanceLogDir.c_str(), 0777) != 0) {
-            NS_FATAL_ERROR("Failed to create directory: " << performanceLogDir);
+    // Throughput data file - separate directory
+    std::string throughputLogDir = dataDir + "/throughput_logs";
+    if (access(throughputLogDir.c_str(), F_OK) != 0) {
+        if (mkdir(throughputLogDir.c_str(), 0777) != 0) {
+            NS_FATAL_ERROR("Failed to create directory: " << throughputLogDir);
         }
     }
-    m_filename = performanceLogDir + "/" + filename + "_" + timestamp.str() + ".csv";
+    m_filename = throughputLogDir + "/throughput_" + timestamp.str() + ".csv";
 
     m_file.open(m_filename, std::ios::out | std::ios::trunc);
     if (!m_file.is_open()) {
-        NS_FATAL_ERROR("Could not open performance log file: " << m_filename);
+        NS_FATAL_ERROR("Could not open throughput log file: " << m_filename);
     }
     // Write CSV header
     m_file << "Time,NodeId,DeviceId,VCId,Direction,DataSize\n";
 
     // Packing delay log file - separate directory
-    std::string waitTimeLogDir = dataDir + "/wait_time_logs";
+    std::string waitTimeLogDir = dataDir + "/pack_wait_time_logs";
     if (access(waitTimeLogDir.c_str(), F_OK) != 0) {
         if (mkdir(waitTimeLogDir.c_str(), 0777) != 0) {
             NS_FATAL_ERROR("Failed to create directory: " << waitTimeLogDir);
         }
     }
     std::ostringstream packDelayFilename;
-    packDelayFilename << waitTimeLogDir << "/wait_time_" << timestamp.str() << ".csv";
+    packDelayFilename << waitTimeLogDir << "/pack_wait_time_" << timestamp.str() << ".csv";
     m_packDelayLog.open(packDelayFilename.str(), std::ios::out | std::ios::trunc);
     if (!m_packDelayLog.is_open()) {
         NS_FATAL_ERROR("Could not open pack delay log file: " << packDelayFilename.str());
     }
-    m_packDelayLog << "XpuId,WaitTime(ns)" << std::endl; // CSV header
+    m_packDelayLog << "XpuId,SueId,DestXpuId,VcId,WaitTime(ns)" << std::endl; // CSV header
 
     // Packing quantity log file - separate directory
     std::string packNumLogDir = dataDir + "/pack_num_logs";
@@ -98,7 +98,7 @@ void PerformanceLogger::Initialize(const std::string& filename) {
     if (!m_packNumLog.is_open()) {
         NS_FATAL_ERROR("Could not open pack num log file: " << packNumFilename.str());
     }
-    m_packNumLog << "XpuId,PackNums" << std::endl; // CSV header
+    m_packNumLog << "XpuId,SueId,DestXpuId,VcId,PackNums" << std::endl; // CSV header
 
     // LoadBalancer log file - separate directory
     std::string loadBalanceLogDir = dataDir + "/load_balance_logs";
@@ -189,7 +189,7 @@ void PerformanceLogger::Initialize(const std::string& filename) {
     if (!m_xpuDelayLog.is_open()) {
         NS_FATAL_ERROR("Could not open XPU delay log file: " << xpuDelayFilename.str());
     }
-    m_xpuDelayLog << "TimeNs,XpuId,PortId,Delay(ns)" << std::endl;
+    m_xpuDelayLog << "TimeNs,NodeId,PortId,Delay(ns),Location" << std::endl;
 
     // SUE buffer queue monitoring log file - separate directory
     std::string sueBufferQueueLogDir = dataDir + "/sue_buffer_queue_logs";
@@ -235,6 +235,21 @@ void PerformanceLogger::Initialize(const std::string& filename) {
         NS_FATAL_ERROR("Could not open packet drop log file: " << dropFilename.str());
     }
     m_dropLog << "TimeNs,NodeId,DeviceId,VCId,DropReason,PacketSize,QueueSize" << std::endl;
+
+    // Create application layer transmission log directory
+    std::string appLayerTxLogDir = dataDir + "/app_layer_tx";
+    if (access(appLayerTxLogDir.c_str(), F_OK) != 0) {
+        if (mkdir(appLayerTxLogDir.c_str(), 0777) != 0) {
+            NS_FATAL_ERROR("Failed to create directory: " << appLayerTxLogDir);
+        }
+    }
+    std::stringstream appLayerTxFilename;
+    appLayerTxFilename << appLayerTxLogDir << "/app_layer_tx_" << timestamp.str() << ".csv";
+    m_appLayerTxLog.open(appLayerTxFilename.str(), std::ios::out | std::ios::trunc);
+    if (!m_appLayerTxLog.is_open()) {
+        NS_FATAL_ERROR("Could not open application layer transmission log file: " << appLayerTxFilename.str());
+    }
+    m_appLayerTxLog << "TimeNs,NodeId,VcId,PacketSize" << std::endl;
 
     // Optional: Output debug information to standard output
     // std::cout << "PerformanceLogger initialized with directories:" << std::endl;
@@ -283,26 +298,30 @@ void PerformanceLogger::LogAppStat(int64_t nanoTime, uint32_t xpuId, uint32_t de
     }
 }
 
-void PerformanceLogger::LogCreditStat(int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
+void PerformanceLogger::LogCreditStat(int64_t nanoTime, uint32_t NodeId, uint32_t devId, uint8_t vcId,
                                     const std::string& direction, uint32_t credits, const std::string& macAddress) {
     // Write independent link layer credit log file
     if (m_linkCreditLog.is_open()) {
-        m_linkCreditLog << nanoTime << "," << XpuId << "," << devId << ","
+        m_linkCreditLog << nanoTime << "," << NodeId << "," << devId << ","
                 << static_cast<int>(vcId) << "," << direction << "," << credits << "," << macAddress << "\n";
         m_linkCreditLog.flush(); // Ensure data is written to disk
     }
 }
 
-void PerformanceLogger::LogPackDelay(uint32_t xpuId, int64_t waitTimeNs) {
+void PerformanceLogger::LogPackDelay(uint32_t xpuId, uint32_t sueId, uint32_t destXpuId,
+                                     uint8_t vcId, int64_t waitTimeNs) {
     if (m_packDelayLog.is_open()) {
-        m_packDelayLog << xpuId << "," << waitTimeNs << std::endl;
+        m_packDelayLog << xpuId << "," << sueId << ","
+                      << destXpuId << "," << static_cast<int>(vcId) << "," << waitTimeNs << std::endl;
         m_packDelayLog.flush(); // Ensure data is written to disk
     }
 }
 
-void PerformanceLogger::LogPackNum(uint32_t xpuId, uint32_t packNums) {
+void PerformanceLogger::LogPackNum(uint32_t xpuId, uint32_t sueId, uint32_t destXpuId,
+                                  uint8_t vcId, uint32_t packNums) {
     if (m_packNumLog.is_open()) {
-        m_packNumLog << xpuId << "," << packNums << std::endl;
+        m_packNumLog << xpuId << "," << sueId << ","
+                    << destXpuId << "," << static_cast<int>(vcId) << "," << packNums << std::endl;
         m_packNumLog.flush(); // Ensure data is written to disk
     }
 }
@@ -365,8 +384,24 @@ void PerformanceLogger::LogProcessingQueueUsage(uint64_t timeNs, uint32_t nodeId
 void PerformanceLogger::LogXpuDelay(uint64_t timeNs, uint32_t xpuId, uint32_t portId, double delayNs) {
     if (m_xpuDelayLog.is_open()) {
         m_xpuDelayLog << timeNs << "," << xpuId << "," << portId << ","
-                      << std::fixed << std::setprecision(3) << delayNs << std::endl;
+                      << std::fixed << std::setprecision(3) << delayNs << "," << std::endl;
         m_xpuDelayLog.flush(); // Ensure data is written to disk
+    }
+}
+
+// XPU delay statistics method with location implementation
+void PerformanceLogger::LogXpuDelay(uint64_t timeNs, uint32_t xpuId, uint32_t portId, double delayNs, const std::string& location) {
+    if (m_xpuDelayLog.is_open()) {
+        m_xpuDelayLog << timeNs << "," << xpuId << "," << portId << ","
+                      << std::fixed << std::setprecision(3) << delayNs << "," << location << std::endl;
+        m_xpuDelayLog.flush(); // Ensure data is written to disk
+    }
+}
+
+void PerformanceLogger::LogAppLayerTx(uint64_t timeNs, uint32_t nodeId, uint8_t vcId, uint32_t packetSize) {
+    if (m_appLayerTxLog.is_open()) {
+        m_appLayerTxLog << timeNs << "," << nodeId << "," << static_cast<int>(vcId) << "," << packetSize << std::endl;
+        m_appLayerTxLog.flush(); // Ensure data is written to disk
     }
 }
 
@@ -406,6 +441,9 @@ PerformanceLogger::~PerformanceLogger() {
     }
     if (m_linkCreditLog.is_open()) {
         m_linkCreditLog.close();
+    }
+    if (m_appLayerTxLog.is_open()) {
+        m_appLayerTxLog.close();
     }
 }
 

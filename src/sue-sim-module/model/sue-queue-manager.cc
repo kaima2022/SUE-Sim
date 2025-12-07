@@ -324,4 +324,24 @@ SueQueueManager::GetVcQueue (uint8_t vcId) const
   return nullptr;
 }
 
+uint32_t
+SueQueueManager::GetFirstPacketSize (uint8_t vcId) const
+{
+  NS_LOG_FUNCTION (this << static_cast<uint32_t> (vcId));
+
+  auto it = m_vcQueues.find (vcId);
+  if (it == m_vcQueues.end () || !it->second || it->second->IsEmpty ())
+    {
+      return 0;
+    }
+
+  Ptr<const Packet> packet = it->second->Peek ();
+  if (packet)
+    {
+      return packet->GetSize ();
+    }
+
+  return 0;
+}
+
 } // namespace ns3

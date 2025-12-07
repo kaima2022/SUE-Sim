@@ -94,11 +94,12 @@ void SueServer::StopApplication(void) {
         Ptr<NetDevice> dev = node->GetDevice(i);
         Ptr<PointToPointSueNetDevice> p2pDev = DynamicCast<PointToPointSueNetDevice>(dev);
         // Check if cast is successful
-        if (p2pDev && p2pDev->GetIfIndex() == m_portId){
-            std::cout << Simulator::Now().GetSeconds() << "s XPU" << m_xpuId 
-            << "-Port" << m_portId << ": Dropped " << p2pDev->GetTotalPacketDropNum()
-            << " packets" << std::endl;
-        }
+        // Statistics now handled by time-driven logging in SueStatsUtils
+        // if (p2pDev && p2pDev->GetIfIndex() == m_portId){
+        //     std::cout << Simulator::Now().GetSeconds() << "s XPU" << m_xpuId
+        //     << "-Port" << m_portId << ": Dropped " << p2pDev->GetTotalPacketDropNum()
+        //     << " packets" << std::endl;
+        // }
     }
 }
 

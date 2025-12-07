@@ -64,17 +64,23 @@ SueSimulationConfig::SueSimulationConfig ()
     link.LinkDelay = "10ns";
 
     // Initialize queue configuration
-    queue.vcQueueMaxMB = 0.3;
+    queue.vcQueueMaxKB = 30.0;
     queue.vcQueueMaxBytes = 0; // Will be calculated
-    queue.processingQueueMaxMB = 0.3;
+    queue.processingQueueMaxKB = 30.0;
     queue.processingQueueMaxBytes = 0; // Will be calculated
-    queue.destQueueMaxMB = 0.03;
+    queue.destQueueMaxKB = 30.0;
     queue.destQueueMaxBytes = 0; // Will be calculated
 
     // Initialize CBFC configuration
     cbfc.EnableLinkCBFC = true;
     cbfc.LinkCredits = 85;
     cbfc.CreditBatchSize = 1;
+    cbfc.SwitchCredits = 85;
+    cbfc.HeaderSize = 52;
+    cbfc.BaseCredit = 1;
+
+    // Initialize credit-to-byte mapping parameters
+    cbfc.BytesPerCredit = 32;           // Bytes per credit
 
     // Initialize load balance configuration
     loadBalance.loadBalanceAlgorithm = 3;
@@ -88,8 +94,7 @@ SueSimulationConfig::SueSimulationConfig ()
     // Initialize trace configuration
     trace.statLoggingEnabled = true;
     trace.ClientStatInterval = "10us";
-    trace.LinkStatInterval = "10us";
-
+    
     // Initialize delay configuration
     delay.SchedulingInterval = "5ns";
     delay.PackingDelayPerPacket = "3ns";
@@ -104,7 +109,8 @@ SueSimulationConfig::SueSimulationConfig ()
     delay.CreUpdateAddHeadDelay = "3ns";
     delay.creditReturnProcessingDelay = "8ns";
     delay.batchCreditAggregationDelay = "5ns";
-    delay.switchForwardDelay = "130ns";
+    delay.switchForwardDelay = "50ns";
+    delay.processingQueueScheduleDelay = "5ns";
 
     //Initialize LLR configuration
     llr.m_llrEnabled = false;
@@ -158,19 +164,24 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("LinkDelay", "Link propagation delay", link.LinkDelay);
 
     // Queue buffer size configuration
-    cmd.AddValue("VcQueueMaxMB", "Maximum VC queue size in MB (default: 0.3MB)", queue.vcQueueMaxMB);
-    cmd.AddValue("ProcessingQueueMaxMB", "Maximum processing queue size in MB (default: 0.3MB)", queue.processingQueueMaxMB);
-    cmd.AddValue("DestQueueMaxMB", "Maximum destination queue size in MB (default: 0.03MB)", queue.destQueueMaxMB);
+    cmd.AddValue("VcQueueMaxKB", "Maximum VC queue size in KB (default: 30KB)", queue.vcQueueMaxKB);
+    cmd.AddValue("ProcessingQueueMaxKB", "Maximum processing queue size in KB (default: 30KB)", queue.processingQueueMaxKB);
+    cmd.AddValue("DestQueueMaxKB", "Maximum destination queue size in KB (default: 30KB)", queue.destQueueMaxKB);
 
     // CBFC flow control parameters
     cmd.AddValue("EnableLinkCBFC", "Enable Credit-Based Flow Control", cbfc.EnableLinkCBFC);
     cmd.AddValue("LinkCredits", "Initial credits at link layer", cbfc.LinkCredits);
     cmd.AddValue("CreditBatchSize", "Credit accumulation threshold", cbfc.CreditBatchSize);
+    cmd.AddValue("SwitchCredits", "Switch credits", cbfc.SwitchCredits);
+    cmd.AddValue("HeaderSize", "Header size (Ethernet + SUE headers)", cbfc.HeaderSize);
+    cmd.AddValue("BaseCredit", "Base credit value for minimum packet", cbfc.BaseCredit);
+
+    // Credit calculation parameters
+    cmd.AddValue("BytesPerCredit", "Bytes per credit (default: 256)", cbfc.BytesPerCredit);
 
     // Trace sampling parameters
     cmd.AddValue("StatLoggingEnabled", "Link Layer Stat Logging Enabled Switch", trace.statLoggingEnabled);
     cmd.AddValue("ClientStatInterval", "Client Statistic Interval", trace.ClientStatInterval);
-    cmd.AddValue("LinkStatInterval", "Link Statistic Interval", trace.LinkStatInterval);
 
     // Delay parameters - transmitter scheduling
     cmd.AddValue("SchedulingInterval", "Transmitter scheduler polling interval", delay.SchedulingInterval);
@@ -190,6 +201,9 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("creditReturnProcessingDelay", "Credit return processing delay", delay.creditReturnProcessingDelay);
     cmd.AddValue("batchCreditAggregationDelay", "Batch credit aggregation delay", delay.batchCreditAggregationDelay);
     cmd.AddValue("switchForwardDelay", "Switch internal forwarding delay", delay.switchForwardDelay);
+
+    // Processing queue delays
+    cmd.AddValue("processingQueueScheduleDelay", "Processing queue scheduling delay", delay.processingQueueScheduleDelay);
 
     // Capacity reservation parameters
     cmd.AddValue("AdditionalHeaderSize", "Additional header size for capacity reservation (default: 46 bytes)", delay.additionalHeaderSize);
@@ -220,10 +234,10 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
 void
 SueSimulationConfig::ValidateAndCalculate ()
 {
-    // Convert MB to bytes for queue configurations
-    queue.vcQueueMaxBytes = static_cast<uint32_t>(queue.vcQueueMaxMB * 1024 * 1024);
-    queue.processingQueueMaxBytes = static_cast<uint32_t>(queue.processingQueueMaxMB * 1024 * 1024);
-    queue.destQueueMaxBytes = static_cast<uint32_t>(queue.destQueueMaxMB * 1024 * 1024);
+    // Convert KB to bytes for queue configurations
+    queue.vcQueueMaxBytes = static_cast<uint32_t>(queue.vcQueueMaxKB * 1024);
+    queue.processingQueueMaxBytes = static_cast<uint32_t>(queue.processingQueueMaxKB * 1024);
+    queue.destQueueMaxBytes = static_cast<uint32_t>(queue.destQueueMaxKB * 1024);
 
     // Parameter validation
     if (network.portsPerSue != 1 && network.portsPerSue != 2 && network.portsPerSue != 4) {
@@ -246,14 +260,22 @@ SueSimulationConfig::PrintConfiguration () const
     // Display link layer configuration information
     std::cout << "Link Layer Configuration:" << std::endl;
     std::cout << "  Number of VCs: " << static_cast<int>(link.numVcs) << std::endl;
-    std::cout << "  VC Queue Max Size: " << queue.vcQueueMaxMB << " MB ("
+    std::cout << "  VC Queue Max Size: " << queue.vcQueueMaxKB << " KB ("
               << queue.vcQueueMaxBytes << " bytes)" << std::endl;
-    std::cout << "  Processing Queue Max Size: " << queue.processingQueueMaxMB << " MB ("
+    std::cout << "  Processing Queue Max Size: " << queue.processingQueueMaxKB << " KB ("
               << queue.processingQueueMaxBytes << " bytes)" << std::endl;
+    std::cout << "  Destination Queue Max Size: " << queue.destQueueMaxKB << " KB ("
+              << queue.destQueueMaxBytes << " bytes)" << std::endl;
     std::cout << "  Link Data Rate: " << link.LinkDataRate << std::endl;
     std::cout << "  Processing Rate: " << link.ProcessingRate << std::endl;
     std::cout << "  Link Delay: " << link.LinkDelay << std::endl;
     std::cout << "  Enable Link CBFC: " << (cbfc.EnableLinkCBFC ? "true" : "false") << std::endl;
+    std::cout << "  Link Credits: " << cbfc.LinkCredits << std::endl;
+    std::cout << "  Credit Batch Size: " << cbfc.CreditBatchSize << std::endl;
+    std::cout << "  Switch Credits: " << cbfc.SwitchCredits << std::endl;
+    std::cout << "  Header Size: " << cbfc.HeaderSize << " bytes" << std::endl;
+    std::cout << "  Base Credit: " << cbfc.BaseCredit << std::endl;
+    std::cout << "  Bytes Per Credit: " << cbfc.BytesPerCredit << " bytes" << std::endl;
     std::cout << std::endl;
 
     // Display Traffic Generation configuration information

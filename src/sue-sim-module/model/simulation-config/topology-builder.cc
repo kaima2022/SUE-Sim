@@ -23,6 +23,7 @@
 #include "ns3/sue-sim-module-module.h"
 #include "ns3/sue-client.h"
 #include "../sue-utils.h"
+#include "../point-to-point-sue-net-device.h"
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
@@ -103,17 +104,21 @@ TopologyBuilder::ConfigurePointToPointHelper (const SueSimulationConfig& config)
     m_p2p.SetDeviceAttribute("Mtu", UintegerValue(config.traffic.Mtu));
     m_p2p.SetDeviceAttribute("InitialCredits", UintegerValue(config.cbfc.LinkCredits));
     m_p2p.SetDeviceAttribute("CreditBatchSize", UintegerValue(config.cbfc.CreditBatchSize));
+    m_p2p.SetDeviceAttribute("SwitchCredits", UintegerValue(config.cbfc.SwitchCredits));
+    m_p2p.SetDeviceAttribute("HeaderSize", UintegerValue(config.cbfc.HeaderSize));
+    m_p2p.SetDeviceAttribute("TransactionSize", UintegerValue(config.traffic.transactionSize));
+    m_p2p.SetDeviceAttribute("BytesPerCredit", UintegerValue(config.cbfc.BytesPerCredit));
     m_p2p.SetDeviceAttribute("VcQueueMaxBytes", UintegerValue(config.queue.vcQueueMaxBytes));
     m_p2p.SetDeviceAttribute("ProcessingQueueMaxBytes", UintegerValue(config.queue.processingQueueMaxBytes));
     m_p2p.SetDeviceAttribute("ProcessingDelayPerPacket", StringValue(config.link.processingDelay));
     m_p2p.SetChannelAttribute("Delay", StringValue(config.link.LinkDelay));
     m_p2p.SetDeviceAttribute("EnableLinkCBFC", BooleanValue(config.cbfc.EnableLinkCBFC));
-    m_p2p.SetDeviceAttribute("LinkStatInterval", StringValue(config.trace.LinkStatInterval));
     m_p2p.SetDeviceAttribute("CreUpdateAddHeadDelay", StringValue(config.delay.CreUpdateAddHeadDelay));
     m_p2p.SetDeviceAttribute("DataAddHeadDelay", StringValue(config.delay.DataAddHeadDelay));
     m_p2p.SetDeviceAttribute("StatLoggingEnabled", BooleanValue(config.trace.statLoggingEnabled));
     m_p2p.SetDeviceAttribute("CreditGenerateDelay", StringValue(config.delay.creditGenerateDelay));
     m_p2p.SetDeviceAttribute("SwitchForwardDelay", StringValue(config.delay.switchForwardDelay));
+    m_p2p.SetDeviceAttribute("ProcessingQueueScheduleDelay", StringValue(config.delay.processingQueueScheduleDelay));
     m_p2p.SetDeviceAttribute("AdditionalHeaderSize", UintegerValue(config.delay.additionalHeaderSize));
 
     // Link layer delay parameter configuration - Activate queue scheduling and transmission only
@@ -219,15 +224,19 @@ TopologyBuilder::BuildForwardingTables (const SueSimulationConfig& config)
         for (uint32_t xpuIdx = 0; xpuIdx < nXpus; ++xpuIdx) {
             // Get XPU device
             Ptr<NetDevice> xpuDev = m_xpuDevices[xpuIdx][portIdx];
-            Mac48Address mac = Mac48Address::ConvertFrom(xpuDev->GetAddress());
-            m_xpuMacAddresses[xpuIdx][portIdx] = mac;
+            Ptr<PointToPointSueNetDevice> p2pDev = DynamicCast<PointToPointSueNetDevice>(xpuDev);
+            if(p2pDev){
+                p2pDev->InitializeCbfc();
+                Mac48Address mac = Mac48Address::ConvertFrom(p2pDev->GetAddress());
+                m_xpuMacAddresses[xpuIdx][portIdx] = mac;
 
-            // Print collected MAC addresses
-            std::ostringstream macStream;
-            macStream << mac;
-            std::string macStr = macStream.str();
-            std::replace(macStr.begin(), macStr.end(), '-', ':');
-            std::cout << "XPU" << xpuIdx << " Port" << portIdx << " MAC: " << macStr << std::endl;
+                // Print collected MAC addresses
+                std::ostringstream macStream;
+                macStream << mac;
+                std::string macStr = macStream.str();
+                std::replace(macStr.begin(), macStr.end(), '-', ':');
+                std::cout << "XPU" << xpuIdx << " Port" << portIdx << " MAC: " << macStr << std::endl;
+            }
         }
     }
 
@@ -292,6 +301,9 @@ TopologyBuilder::BuildForwardingTables (const SueSimulationConfig& config)
                 std::cout << "Switch" << switchIdx + 1 << " Dev" << devIdx + 1
                         << " set global forwarding table with "
                         << globalSwitchTables[switchIdx].size() << " entries" << std::endl;
+
+                // Initialize CBFC functionality
+                p2pDev->InitializeCbfc();
             }
         }
     }

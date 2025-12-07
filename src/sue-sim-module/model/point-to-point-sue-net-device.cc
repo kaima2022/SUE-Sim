@@ -118,17 +118,33 @@ namespace ns3 {
                                               UintegerValue(10), // Default value: 10 packets
                                               MakeUintegerAccessor(&PointToPointSueNetDevice::m_creditBatchSize),
                                               MakeUintegerChecker<uint32_t>(1, 1000))
+                                .AddAttribute("SwitchCredits",
+                                              "The credits for switch devices",
+                                              UintegerValue(85), // Default value: 85 credits
+                                              MakeUintegerAccessor(&PointToPointSueNetDevice::m_switchCredits),
+                                              MakeUintegerChecker<uint32_t>())
                                 .AddAttribute("AdditionalHeaderSize",
                                               "Additional header size for capacity reservation (default 46 bytes)",
                                               UintegerValue(46), // Default value: 46 bytes
                                               MakeUintegerAccessor(&PointToPointSueNetDevice::m_additionalHeaderSize),
                                               MakeUintegerChecker<uint32_t>())
-                                .AddAttribute("LinkStatInterval",
-                                              "Link Statistic Interval",
-                                              StringValue("10us"), // Default: 10 microseconds
-                                              MakeStringAccessor(&PointToPointSueNetDevice::m_linkStatIntervalString),
-                                              MakeStringChecker())
-                                .AddAttribute("CreUpdateAddHeadDelay",
+                                .AddAttribute("HeaderSize",
+                                              "Header size for dynamic credit calculation (Ethernet + SUE headers, default 52 bytes)",
+                                              UintegerValue(52), // Default value: 52 bytes
+                                              MakeUintegerAccessor(&PointToPointSueNetDevice::m_headerSize),
+                                              MakeUintegerChecker<uint32_t>())
+                                .AddAttribute("TransactionSize",
+                                              "Transaction size for dynamic credit calculation (default 256 bytes)",
+                                              UintegerValue(256), // Default value: 256 bytes
+                                              MakeUintegerAccessor(&PointToPointSueNetDevice::m_transactionSize),
+                                              MakeUintegerChecker<uint32_t>())
+                                // Credit-to-byte mapping attributes
+                                .AddAttribute("BytesPerCredit",
+                                              "Bytes per credit for linear mapping (default: 256 bytes/credit)",
+                                              UintegerValue(256), // Default value: 256 bytes per credit
+                                              MakeUintegerAccessor(&PointToPointSueNetDevice::m_bytesPerCredit),
+                                              MakeUintegerChecker<uint32_t>())
+                                                                .AddAttribute("CreUpdateAddHeadDelay",
                                               "Credit Update packet Add Head Delay",
                                               TimeValue(NanoSeconds(3)),
                                               MakeTimeAccessor(&PointToPointSueNetDevice::m_creUpdateAddHeadDelay),
@@ -162,6 +178,11 @@ namespace ns3 {
                                               "VC queue scheduling delay",
                                               TimeValue(NanoSeconds(8)),   // Modern NIC scheduling time is approximately 5-10ns
                                               MakeTimeAccessor(&PointToPointSueNetDevice::m_vcSchedulingDelay),
+                                              MakeTimeChecker())
+                                .AddAttribute("ProcessingQueueScheduleDelay",
+                                              "Processing queue scheduling delay",
+                                              TimeValue(NanoSeconds(5)),   // Default: 5 nanoseconds
+                                              MakeTimeAccessor(&PointToPointSueNetDevice::m_processingQueueScheduleDelay),
                                               MakeTimeChecker())
                                 //LLR
                                 .AddAttribute("EnableLLR",
@@ -301,16 +322,20 @@ namespace ns3 {
           m_initialCredits(0),
           m_numVcs(0),
           m_creditBatchSize(10),
+          m_switchCredits(85), // Default switch credits
           m_vcQueueMaxBytes(2 * 1024 * 1024), // Default VC queue max capacity 2MB (2*1024*1024 bytes)
           m_additionalHeaderSize(46), // Default 46 bytes
+          m_headerSize(52), // Default header size for dynamic credit calculation
+          m_transactionSize(256), // Default transaction size for dynamic credit calculation
           m_enableLinkCBFC(false),
+          // Initialize credit-to-byte mapping parameters
+          m_bytesPerCredit(256), // Default: 256 bytes per credit
           m_currentProcessingQueueSize(0),
           m_currentProcessingQueueBytes(0),
-          m_isProcessing(false),
           m_processingDelay(NanoSeconds(10)),
           m_processingQueueMaxBytes(2 * 1024 * 1024), // Default processing queue max capacity 2MB
-          m_linkStatInterval(MilliSeconds(10)),
-          m_totalPacketDropNum(0),
+          m_needCredit(false),                        // Default: no credit needed
+          m_processingScheduled(false),               // Default: processing not scheduled
           m_creUpdateAddHeadDelay(NanoSeconds(3)),
           m_dataAddHeadDelay(NanoSeconds(5)),
           m_creditGenerateDelay(NanoSeconds(10)),
@@ -319,7 +344,6 @@ namespace ns3 {
           m_loggingEnabled(true), // Enable logging by default
           m_processingRate(m_bps), // Default same as transmission rate
           m_processingRateString("200Gbps"), // Default processing rate string
-          m_linkStatIntervalString("10us"), // Default link stat interval string
           //LLR
           m_llrEnabled(false),
           m_llrWindowSize(10),
@@ -344,7 +368,6 @@ namespace ns3 {
 
         // Initialize TryTransmit event tracking
         m_tryTransmitEvent = EventId();
-        m_tryTransmitScheduled = false;
     }
 
     PointToPointSueNetDevice::~PointToPointSueNetDevice()
@@ -361,8 +384,7 @@ namespace ns3 {
 
         // Convert strings using SueStringUtils
         m_processingRate = SueStringUtils::ParseDataRateString(m_processingRateString);
-        m_linkStatInterval = SueStringUtils::ParseTimeIntervalString(m_linkStatIntervalString);
-
+        
         // Initialize CBFC with configuration, callbacks, and peer device credits
         m_cbfcManager->Initialize (
             m_numVcs, m_initialCredits, m_enableLinkCBFC,
@@ -376,8 +398,14 @@ namespace ns3 {
             SuePacketUtils::PROT_CBFC_UPDATE,                                      // Protocol number
             [this]() { return GetRemoteMac(); },           // GetRemoteMac callback
             [this]() { return IsSwitchDevice(m_address); },        // IsSwitchDevice callback
-            85                                              // Switch default credits
+            m_switchCredits                           // Switch credits
         );
+
+        // Enable dynamic credit consumption mode with device configuration
+        m_cbfcManager->SetDynamicCreditMode(true, 1, m_transactionSize, m_headerSize);
+
+        // Set credit calculation with bytes per credit mapping
+        m_cbfcManager->SetAdvancedCreditCalculation(m_bytesPerCredit);
 
         // Initialize queue manager directly with drop callback
         m_queueManager->Initialize(m_numVcs, m_vcQueueMaxBytes, m_additionalHeaderSize,
@@ -388,8 +416,6 @@ namespace ns3 {
             NS_LOG_INFO("Link: Initialized on Node " << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                                                      << " with " << (uint32_t)m_numVcs << " VCs and " << m_initialCredits << " initial credits.");
         }
-        // Start statistics after initialization completes
-        m_lastStatTime = Simulator::Now();
     }
 
     void
@@ -474,12 +500,7 @@ namespace ns3 {
         SueStatsUtils::ProcessPacketDropStats(droppedPacket, GetNode()->GetId(), GetIfIndex() - 1, "VCQueueFull");
     }
 
-    uint32_t
-    PointToPointSueNetDevice::GetTotalPacketDropNum()
-    {
-        return m_totalPacketDropNum;
-    }
-
+    
     void PointToPointSueNetDevice::SetLoggingEnabled(bool enabled)
     {
         NS_LOG_FUNCTION(this << enabled);
@@ -580,8 +601,9 @@ namespace ns3 {
         NS_LOG_LOGIC("Schedule TransmitCompleteEvent in " << txCompleteTime.As(Time::S));
         Simulator::Schedule(txCompleteTime, &PointToPointSueNetDevice::TransmitComplete, this);
 
+        // Schedule statistics logging for packet transmission
         Simulator::Schedule(txCompleteTime, [this, p]() {
-            SueStatsUtils::ProcessSentPacketStats(p, m_vcBytesSent, GetNode()->GetId(), GetIfIndex() - 1);
+            SueStatsUtils::ProcessSentPacketStats(p, GetNode()->GetId(), GetIfIndex() - 1);
         });
 
         // Switch egress port: credit return only after packet transmission
@@ -597,11 +619,11 @@ namespace ns3 {
             // to enable universal credit calculation based on SourceMac.
             Mac48Address targetMac = SuePacketUtils::ExtractSourceMac(p, true, GetLocalMac());
 
-            Simulator::Schedule(txCompleteTime, [this, targetMac, vcId]() {
+            Simulator::Schedule(txCompleteTime, [this, targetMac, vcId, p]() {
                 if (m_cbfcManager) {
                     EthernetHeader tempEthHeader;
-                    tempEthHeader.SetSource(targetMac);                   
-                    m_cbfcManager->HandleCreditReturn(tempEthHeader, vcId);
+                    tempEthHeader.SetSource(targetMac);
+                    m_cbfcManager->HandleCreditReturn(tempEthHeader, vcId, p->GetSize());
                     m_cbfcManager->CreditReturn(targetMac, vcId);
                 }
             });
@@ -616,16 +638,11 @@ namespace ns3 {
         return result;
     }
 
-    
-    
-  
     // Core function to check all queues and trigger transmission
     void
     PointToPointSueNetDevice::TryTransmit()
     {
-        // Reset the scheduled flag when actually executing
-        m_tryTransmitScheduled = false;
-
+        // Enhanced time-based transmission control
         if (m_txMachineState != READY)
         {
             return;
@@ -672,14 +689,52 @@ namespace ns3 {
             for (uint8_t i = 0; i < m_numVcs; ++i)
             {
                 uint8_t currentVC = (lastVC + i) % m_numVcs;
-                if (m_queueManager && !m_queueManager->IsVcQueueEmpty(currentVC) && m_cbfcManager->GetTxCredits(GetRemoteMac(), currentVC) > 0)
+                if (m_queueManager && !m_queueManager->IsVcQueueEmpty(currentVC))
                 {
+                    // Check CBFC only if enabled
                     if (m_enableLinkCBFC)
                     {
-                        m_cbfcManager->DecrementTxCredits(GetRemoteMac(), currentVC);
-                        SueStatsUtils::ProcessCreditChangeStats(GetRemoteMac(), currentVC, m_cbfcManager->GetTxCredits(GetRemoteMac(), currentVC), GetNode()->GetId(), GetIfIndex() - 1);
+                        // CBFC enabled: check dynamic credits before sending
+                        uint32_t packetSize = m_queueManager->GetFirstPacketSize(currentVC);
+                        if (packetSize > 0 && m_cbfcManager->HasEnoughCredits(GetRemoteMac(), currentVC, packetSize))
+                        {
+                            // Dequeue packet and consume credits based on packet size
+                            Ptr<Packet> packet = m_queueManager->DequeueFromVcQueue(currentVC);
+                            if (packet && m_cbfcManager->ConsumeDynamicCredits(GetRemoteMac(), currentVC, packet->GetSize()))
+                            {
+                                // Process VC queue delay statistics
+                                SueStatsUtils::ProcessVcQueueDelayStats(packet, GetNode()->GetId(), GetIfIndex() - 1);
+
+                                SueStatsUtils::ProcessCreditChangeStats(GetRemoteMac(), currentVC, m_cbfcManager->GetTxCredits(GetRemoteMac(), currentVC), GetNode()->GetId(), GetIfIndex() - 1);
+
+                                // Trigger VC queue statistics (event-driven after VC dequeue)
+                            SueStatsUtils::ProcessVCQueueStats(m_queueManager, m_cbfcManager,
+                                                             m_numVcs, m_vcQueueMaxBytes,
+                                                             GetNode()->GetId(), GetIfIndex() - 1);
+
+                            if (!IsSwitchDevice(m_address))
+                            {
+                                NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex() << "] sending packet for VC " << (uint32_t)currentVC
+                                                        << ". Credits left: " << m_cbfcManager->GetTxCredits(GetRemoteMac(), currentVC)
+                                                        << " (VC queue size now: " << m_queueManager->GetVcQueueSize(currentVC) << " packets)");
+                            }
+
+                            m_snifferTrace(packet);
+                            m_promiscSnifferTrace(packet);
+                            TransmitStart(packet);
+                            lastVC = (currentVC + 1) % m_numVcs; // Update last serviced VC
+                            return;
+                            }
+                        }
+                        // No credits available, continue to next VC
                     }
-                    Ptr<Packet> packet = m_queueManager->DequeueFromVcQueue(currentVC);
+                    else
+                    {
+                        // CBFC disabled: send packet directly
+                        Ptr<Packet> packet = m_queueManager->DequeueFromVcQueue(currentVC);
+
+                        // Process VC queue delay statistics
+                        SueStatsUtils::ProcessVcQueueDelayStats(packet, GetNode()->GetId(), GetIfIndex() - 1);
 
                         // Trigger VC queue statistics (event-driven after VC dequeue)
                         SueStatsUtils::ProcessVCQueueStats(m_queueManager, m_cbfcManager,
@@ -689,8 +744,7 @@ namespace ns3 {
                         if (!IsSwitchDevice(m_address))
                         {
                             NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex() << "] sending packet for VC " << (uint32_t)currentVC
-                                                    << ". Credits left: " << m_cbfcManager->GetTxCredits(GetRemoteMac(), currentVC)
-                                                    << " (VC queue size now: " << m_queueManager->GetVcQueueSize(currentVC) << " packets)");
+                                                    << " (CBFC disabled, VC queue size now: " << m_queueManager->GetVcQueueSize(currentVC) << " packets)");
                         }
 
                         m_snifferTrace(packet);
@@ -702,6 +756,7 @@ namespace ns3 {
                 }
             }
         }
+    }
 
     void
     PointToPointSueNetDevice::TransmitComplete(void)
@@ -722,25 +777,20 @@ namespace ns3 {
         m_phyTxEndTrace(m_currentPkt);
         m_currentPkt = nullptr;
 
-        // Add VC queue scheduling delay, then try to transmit next packet
-        if (m_vcSchedulingDelay > NanoSeconds(0))
-        {
-            NS_LOG_DEBUG("Scheduling VC transmission with " << m_vcSchedulingDelay.GetNanoSeconds() << "ns delay");
-            // Schedule TryTransmit event if not already scheduled
-            if (!m_tryTransmitScheduled)
-            {
-                m_tryTransmitEvent = Simulator::Schedule(m_vcSchedulingDelay, &PointToPointSueNetDevice::TryTransmit, this);
-                m_tryTransmitScheduled = true;
+        // Check if there are packets to process and schedule next iteration
+        bool hasPacketsToProcess = (!m_queue->IsEmpty());
+        if (!hasPacketsToProcess) {
+            // Check VC queues
+            for (uint8_t i = 0; i < m_numVcs; ++i) {
+                if (m_queueManager && !m_queueManager->IsVcQueueEmpty(i)) {
+                    hasPacketsToProcess = true;
+                    break;
+                }
             }
         }
-        else
-        {
-            // Schedule TryTransmit event if not already scheduled
-            if (!m_tryTransmitScheduled)
-            {
-                m_tryTransmitEvent = Simulator::ScheduleNow(&PointToPointSueNetDevice::TryTransmit, this);
-                m_tryTransmitScheduled = true;
-            }
+
+        if (hasPacketsToProcess) {
+            Simulator::Schedule(m_vcSchedulingDelay, &PointToPointSueNetDevice::TryTransmit, this);
         }
     }
 
@@ -795,10 +845,20 @@ namespace ns3 {
 
             if (mac == targetMac)
             {
-                // Send to target port
-                // Add PPP header
+                SueCbfcHeader creditHeader;
+                packet->PeekHeader(creditHeader);
+                uint8_t vcId = creditHeader.GetVcId();
+                uint32_t credits = creditHeader.GetCredits();
                 AddHeader(packet, SuePacketUtils::PROT_CBFC_UPDATE);
-                p2pDev->Receive(packet->Copy());
+
+                // Calculate processing time based on packet processing rate
+                Time processingTime = m_processingRate.CalculateBytesTxTime(packet->GetSize());
+                SueStatsUtils::ProcessCreditSendStats(targetMac, vcId, credits, GetNode()->GetId(), GetIfIndex() - 1);
+
+                // Schedule credit processing with delay
+                Simulator::Schedule(processingTime + m_switchForwardDelay, [this, targetMac, vcId, credits, p2pDev, packet]() {
+                    p2pDev->Receive(packet->Copy());
+                });
             }
         }
     }
@@ -870,7 +930,7 @@ namespace ns3 {
                 Time processingTime = m_processingRate.CalculateBytesTxTime(originalPacket->GetSize());
                 // Schedule processing completion event
                 Simulator::Schedule(processingTime, [this, originalPacket]() {
-                    SueStatsUtils::ProcessReceivedPacketStats(originalPacket, m_vcBytesReceived, GetNode()->GetId(), GetIfIndex() - 1);
+                    SueStatsUtils::ProcessReceivedPacketStats(originalPacket, GetNode()->GetId(), GetIfIndex() - 1);
                 });
             }
 
@@ -879,6 +939,8 @@ namespace ns3 {
                 if (m_cbfcManager)
                 {
                     m_cbfcManager->AddTxCredits(sourceMac, vcId, credits);
+                    // Log credit reception event
+                    SueStatsUtils::ProcessCreditReceptionStats(sourceMac, vcId, credits, GetNode()->GetId(), GetIfIndex() - 1);
                     SueStatsUtils::ProcessCreditChangeStats(sourceMac, vcId, m_cbfcManager->GetTxCredits(sourceMac, vcId), GetNode()->GetId(), GetIfIndex() - 1);
                     if (!IsSwitchDevice(m_address))
                     {
@@ -886,13 +948,11 @@ namespace ns3 {
                                                   << " credits for VC " << (uint32_t)vcId
                                                   << ". Total now: " << m_cbfcManager->GetTxCredits(sourceMac, vcId));
                     }
+                }
 
-                    // Check if TryTransmit is not already scheduled, then schedule it
-                    if (!m_tryTransmitScheduled)
-                    {
-                        m_tryTransmitEvent = Simulator::ScheduleNow(&PointToPointSueNetDevice::TryTransmit, this);
-                        m_tryTransmitScheduled = true;
-                    }
+                if (m_txMachineState == READY)
+                {
+                    m_tryTransmitEvent = Simulator::Schedule(m_vcSchedulingDelay, &PointToPointSueNetDevice::TryTransmit, this);
                 }
             }
             return;
@@ -937,58 +997,53 @@ namespace ns3 {
             // Check byte-level capacity limit
             if (m_currentProcessingQueueBytes + packetSize <= m_processingQueueMaxBytes)
             {
-                m_processingQueue.push(item);
-                m_currentProcessingQueueSize++;
-                m_currentProcessingQueueBytes += packetSize;
-
-                // Trigger processing queue statistics (event-driven)
-                SueStatsUtils::ProcessProcessingQueueStats(m_currentProcessingQueueBytes, m_processingQueueMaxBytes, GetNode()->GetId(), GetIfIndex() - 1);
+                EnqueueToProcessingQueue(item);
             }
             else
             {
                 // Queue is full, drop packet
-                // Log processing queue packet drop (event-driven)
                 SueStatsUtils::ProcessPacketDropStats(packet, GetNode()->GetId(), GetIfIndex() - 1, "ProcessingQueueFull");
-
-                if (!IsSwitchDevice(m_address))
-                {
-                    NS_LOG_INFO("Receive processing queue full! DROPPED packet on VC " << (uint32_t)vcId);
-                }
-                // TODO: Link-level retransmission
+                NS_LOG_INFO("Receive processing queue full! DROPPED packet on VC " << (uint32_t)vcId);
                 m_phyRxDropTrace(packet);
                 return;
             }
+        }
+    }
+    void PointToPointSueNetDevice::EnqueueToProcessingQueue(ProcessItem item)
+    {
+        SueTag::AddProcessingQueueDelayTag(item.packet);
 
-            if (!m_isProcessing)
-            {
-                m_isProcessing = true;
-                StartProcessing();
-            }
+        m_processingQueue.push(item);
+        m_currentProcessingQueueSize++;
+        m_currentProcessingQueueBytes += item.packet->GetSize();
+
+        SueStatsUtils::ProcessProcessingQueueStats(m_currentProcessingQueueBytes, m_processingQueueMaxBytes, GetNode()->GetId(), GetIfIndex() - 1);
+        SueStatsUtils::ProcessReceivedPacketStats(item.originalPacket, GetNode()->GetId(), GetIfIndex() - 1); 
+        
+        if (!m_processingScheduled){
+            Simulator::Schedule(m_processingQueueScheduleDelay, &PointToPointSueNetDevice::StartProcessing, this);
         }
     }
 
-    // Set complete forwarding table
-
     void PointToPointSueNetDevice::StartProcessing()
     {
-        if (m_processingQueue.empty())
-        {
-            m_isProcessing = false;
+        if(m_processingQueue.empty()){
             return;
         }
 
         ProcessItem item = m_processingQueue.front();
 
-        Time processingTime = m_processingRate.CalculateBytesTxTime(item.packet->GetSize());
+        if(!m_processingScheduled){
+            Time processingTime = m_processingRate.CalculateBytesTxTime(item.packet->GetSize());
+            Simulator::Schedule(processingTime, &PointToPointSueNetDevice::ProcessingReceivedPacket, this, item);
+            m_processingScheduled = true;           
+        }
+    }    
 
-        // Processing queue statistics will be triggered in CompleteProcessing
-
-        // Schedule processing completion event
-        Simulator::Schedule(processingTime, &PointToPointSueNetDevice::CompleteProcessing, this, item);
-    }
-
-    void PointToPointSueNetDevice::CompleteProcessing(ProcessItem item)
+    void PointToPointSueNetDevice::ProcessingReceivedPacket(ProcessItem item)
     {
+        m_processingScheduled = false;
+
         // Actually process packet
         if (!m_promiscCallback.IsNull())
         {
@@ -999,61 +1054,53 @@ namespace ns3 {
         // Switch forwarding logic - delegate to SueSwitch module
         EthernetHeader ethHeader;
         item.packet->PeekHeader(ethHeader);
-        bool forward = false;
 
         // Check if this device is a switch device and forward accordingly
         if (IsSwitchDevice(m_address))
         {
             bool forwarded = m_switch->ProcessSwitchForwarding(item.packet, ethHeader, this, item.protocol, item.vcId);
             if (forwarded)
-            {
-                forward = true;
+            { 
+                // Process processing queue delay statistics before dequeuing
+                SueStatsUtils::ProcessProcessingQueueDelayStats(item.packet, GetNode()->GetId(), GetIfIndex() - 1);
+
                 m_processingQueue.pop();
                 m_currentProcessingQueueSize--;
                 m_currentProcessingQueueBytes -= item.packet->GetSize();
+
+                SueStatsUtils::ProcessProcessingQueueStats(m_currentProcessingQueueBytes, m_processingQueueMaxBytes, GetNode()->GetId(), GetIfIndex() - 1);
             }
             else
             {
-                // do nothing
+                // TODO Head-of-line blocking
             }
         }
         else
         {
+            // Process processing queue delay statistics before dequeuing
+            SueStatsUtils::ProcessProcessingQueueDelayStats(item.packet, GetNode()->GetId(), GetIfIndex() - 1);
+
             m_processingQueue.pop();
             m_currentProcessingQueueSize--;
             m_currentProcessingQueueBytes -= item.packet->GetSize();
 
+            SueStatsUtils::ProcessProcessingQueueStats(m_currentProcessingQueueBytes, m_processingQueueMaxBytes, GetNode()->GetId(), GetIfIndex() - 1);
             // Non-switch device
-            // Queue operations have been completed in StartProcessing
             m_macRxTrace(item.originalPacket);
-
             // Remove Ethernet header for easier reception
             EthernetHeader removeEthHeader;
             item.packet->RemoveHeader(removeEthHeader);
 
             m_rxCallback(this, item.packet, item.protocol, GetRemote());
-            m_cbfcManager->HandleCreditReturn(ethHeader, item.vcId);
+            m_cbfcManager->HandleCreditReturn(ethHeader, item.vcId, item.packet->GetSize());
             // TODO delay to be set currently: receiver is XPU and directly returns credits upon reception
             if (m_cbfcManager) {
                 m_cbfcManager->CreditReturn(ethHeader.GetSource(), item.vcId);
             }
         }
 
-        if(forward){
-            // Trigger processing queue statistics (event-driven) - after processing completion
-            SueStatsUtils::ProcessProcessingQueueStats(m_currentProcessingQueueBytes, m_processingQueueMaxBytes, GetNode()->GetId(), GetIfIndex() - 1);
-            // Trigger receive packet statistics (event-driven) - after processing completion
-            SueStatsUtils::ProcessReceivedPacketStats(item.originalPacket, m_vcBytesReceived, GetNode()->GetId(), GetIfIndex() - 1);
-        }
-
-        // Immediately start processing next packet
-        if (!m_processingQueue.empty())
-        {
-            StartProcessing();
-        }
-        else
-        {
-            m_isProcessing = false;
+        if(!m_processingQueue.empty()){
+            Simulator::Schedule(m_processingQueueScheduleDelay, &PointToPointSueNetDevice::StartProcessing, this);
         }
     }
 
@@ -1175,12 +1222,9 @@ namespace ns3 {
             SueStatsUtils::ProcessVCQueueStats(m_queueManager, m_cbfcManager,
                                              m_numVcs, m_vcQueueMaxBytes,
                                              GetNode()->GetId(), GetIfIndex() - 1);
-
-            // Schedule TryTransmit event if not already scheduled
-            if (!m_tryTransmitScheduled)
+            if (m_txMachineState == READY)
             {
-                m_tryTransmitEvent = Simulator::Schedule(m_dataAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
-                m_tryTransmitScheduled = true;
+                m_tryTransmitEvent = Simulator::Schedule(m_vcSchedulingDelay, &PointToPointSueNetDevice::TryTransmit, this);
             }
             return true;
         }
@@ -1200,18 +1244,10 @@ namespace ns3 {
         } else if((!m_switch || !IsSwitchDevice(m_address)) && m_llrNodeManager){
             m_llrNodeManager->LlrSendPacket(packet, vcId);
         }
-        // Get source MAC to check if it's a forwarded packet
-        Mac48Address sourceMac = SuePacketUtils::ExtractSourceMac(packet, false, Mac48Address());
-        if (IsSwitchDevice(sourceMac) && m_cbfcManager)
-        {
-            // For switch devices, we need to handle credit returns differently
-            // This is handled by the HandleCreditReturn method when packets are received
-            EthernetHeader tempEthHeader;
-            tempEthHeader.SetSource(sourceMac);
-            // m_cbfcManager->HandleCreditReturn(tempEthHeader, vcId);
-        }
-
         m_macTxTrace(packet);
+
+        // Add VC queue delay tag before enqueueing
+        SueTag::AddVcQueueDelayTag(packet, GetNode()->GetId(), GetIfIndex() - 1, vcId);
 
         m_queueManager->EnqueueToVcQueue(packet, vcId);
 
@@ -1224,13 +1260,10 @@ namespace ns3 {
                                          m_numVcs, m_vcQueueMaxBytes,
                                          GetNode()->GetId(), GetIfIndex() - 1);
 
-        // Schedule TryTransmit event if not already scheduled
-        if (!m_tryTransmitScheduled)
+        if (m_txMachineState == READY)
         {
-            m_tryTransmitEvent = Simulator::Schedule(m_dataAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
-            m_tryTransmitScheduled = true;
+            m_tryTransmitEvent = Simulator::Schedule(m_vcSchedulingDelay, &PointToPointSueNetDevice::TryTransmit, this);
         }
-
         return true;
     }
 
@@ -1379,7 +1412,7 @@ namespace ns3 {
             InitializeLlr();
         }
 
-    // Credit update packets enter high-priority main queue
+        // Credit update packets enter high-priority main queue
         if (protocolNumber == SuePacketUtils::PROT_CBFC_UPDATE)
         {
             // Credit packet structure - only CBFC header, PPP header added below
@@ -1410,12 +1443,9 @@ namespace ns3 {
             // Trigger main queue statistics (event-driven after main queue enqueue)
             SueStatsUtils::ProcessMainQueueStats(m_queue, GetNode()->GetId(), GetIfIndex() - 1);
 
-            // Delay is between enqueue and transmission
-            // Schedule TryTransmit event if not already scheduled
-            if (!m_tryTransmitScheduled)
+            if (m_txMachineState == READY)
             {
-                m_tryTransmitEvent = Simulator::Schedule(m_creUpdateAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
-                m_tryTransmitScheduled = true;
+                m_tryTransmitEvent = Simulator::Schedule(m_vcSchedulingDelay, &PointToPointSueNetDevice::TryTransmit, this);
             }
         }
         else if(protocolNumber == SuePacketUtils::ACK_REV || protocolNumber == SuePacketUtils::NACK_REV){// ACK/NACK packets enter high-priority main queue
@@ -1424,11 +1454,9 @@ namespace ns3 {
             // Trigger main queue statistics (event-driven after main queue enqueue)
             SueStatsUtils::ProcessMainQueueStats(m_queue, GetNode()->GetId(), GetIfIndex() - 1);
 
-            // Schedule TryTransmit event if not already scheduled
-            if (!m_tryTransmitScheduled)
+            if (m_txMachineState == READY)
             {
-                m_tryTransmitEvent = Simulator::Schedule(m_dataAddHeadDelay, &PointToPointSueNetDevice::TryTransmit, this);
-                m_tryTransmitScheduled = true;
+                m_tryTransmitEvent = Simulator::Schedule(m_vcSchedulingDelay, &PointToPointSueNetDevice::TryTransmit, this);
             }
         }
         else
@@ -1440,17 +1468,13 @@ namespace ns3 {
 
                 // Extract destination IP from packet
                 Ipv4Address destIp = SuePacketUtils::ExtractDestIpFromPacket(packet);
-
                 // Query destination MAC address
                 Mac48Address destMac = SuePacketUtils::GetMacForIp(destIp);
-
                 // Add Ethernet header
                 SuePacketUtils::AddEthernetHeader(packet, destMac, GetLocalMac());
-
                 NS_LOG_INFO("Link: [Node" << GetNode()->GetId() + 1 << " Device " << GetIfIndex()
                                           << "] added EthernetHeader for IP " << destIp << " -> MAC " << destMac);
             }
-
             // Data packet enters corresponding VC queue
             EnqueueToVcQueue(packet);
         }
@@ -1604,5 +1628,11 @@ namespace ns3 {
     PointToPointSueNetDevice::GetSwitchForwardDelay() const
     {
         return m_switchForwardDelay;
+    }
+
+    DataRate
+    PointToPointSueNetDevice::GetDataRate() const
+    {
+        return m_bps;
     }
 } // namespace ns3

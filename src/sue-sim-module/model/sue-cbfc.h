@@ -191,6 +191,61 @@ public:
   bool DecrementTxCredits (Mac48Address mac, uint8_t vcId);
 
   /**
+   * \brief Decrement transmit credits by specified amount for a specific peer and VC
+   *
+   * \param mac MAC address of the peer device
+   * \param vcId Virtual channel ID
+   * \param credits Number of credits to decrement
+   * \return True if credits were successfully decremented, false if not enough credits available
+   */
+  bool DecrementTxCredits (Mac48Address mac, uint8_t vcId, uint32_t credits);
+
+  /**
+   * \brief Set dynamic credit consumption mode
+   *
+   * \param enable Enable dynamic credit consumption based on packet size
+   * \param baseCredit Base credit value for minimum packet
+   * \param transactionSize Transaction size per credit (bytes)
+   * \param headerSize Header size (Ethernet + SUE headers)
+   */
+  void SetDynamicCreditMode (bool enable, uint32_t baseCredit = 1, uint32_t transactionSize = 256, uint32_t headerSize = 52);
+
+  /**
+   * \brief Set credit calculation parameters
+   *
+   * \param bytesPerCredit Bytes per credit for linear mapping
+   */
+  void SetAdvancedCreditCalculation (uint32_t bytesPerCredit);
+
+  /**
+   * \brief Calculate credits required for a packet
+   *
+   * \param packetSize Total packet size in bytes
+   * \return Number of credits required
+   */
+  uint32_t CalculateCreditsForPacket (uint32_t packetSize) const;
+
+  /**
+   * \brief Check if enough credits are available for a packet
+   *
+   * \param mac MAC address of the peer device
+   * \param vcId Virtual channel ID
+   * \param packetSize Packet size in bytes
+   * \return True if enough credits are available
+   */
+  bool HasEnoughCredits (Mac48Address mac, uint8_t vcId, uint32_t packetSize) const;
+
+  /**
+   * \brief Consume credits for a packet (dynamic calculation)
+   *
+   * \param mac MAC address of the peer device
+   * \param vcId Virtual channel ID
+   * \param packetSize Packet size in bytes
+   * \return True if credits were successfully consumed
+   */
+  bool ConsumeDynamicCredits (Mac48Address mac, uint8_t vcId, uint32_t packetSize);
+
+  /**
    * \brief Add transmit credits for a specific peer and VC
    *
    * \param mac MAC address of the peer device
@@ -205,7 +260,7 @@ public:
    * \param ethHeader Ethernet header of the received packet
    * \param vcId Virtual channel ID
    */
-  void HandleCreditReturn (const EthernetHeader& ethHeader, uint8_t vcId);
+  void HandleCreditReturn (const EthernetHeader& ethHeader, uint8_t vcId, uint32_t packetSize = 0);
 
   /**
    * \brief Get the number of credits to return to a peer device
@@ -295,6 +350,15 @@ private:
   uint32_t m_initialCredits;          //!< Initial credit count
   uint8_t m_numVcs;                   //!< Number of virtual channels
   uint32_t m_creditBatchSize;         //!< Credit batch size
+
+  // Dynamic credit consumption parameters
+  bool m_enableDynamicCredits;        //!< Enable dynamic credit consumption based on packet size
+  uint32_t m_baseCredit;              //!< Base credit value for minimum packet
+  uint32_t m_transactionSize;         //!< Transaction size per credit (bytes)
+  uint32_t m_headerSize;              //!< Header size (Ethernet + SUE headers)
+
+  // Credit calculation parameters
+  uint32_t m_bytesPerCredit;          //!< Bytes per credit for linear mapping
 
   // Callbacks for NetDevice operations
   GetLocalMacCallback m_getLocalMac;  //!< Callback to get local MAC address

@@ -26,6 +26,7 @@
 #include "ns3/simulator.h"
 #include "ns3/node.h"
 #include "ns3/net-device.h"
+#include "ns3/data-rate.h"
 
 namespace ns3 {
 
@@ -44,7 +45,8 @@ SueSwitch::GetTypeId (void)
 }
 
 SueSwitch::SueSwitch ()
-  : m_llrNodeManager (nullptr),
+  : m_forwardingBusy (false),
+    m_llrNodeManager (nullptr),
     m_llrSwitchPortManager (nullptr)
 {
   NS_LOG_FUNCTION (this);
@@ -79,6 +81,13 @@ SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
 {
   NS_LOG_FUNCTION (this << packet << currentDevice << protocol << static_cast<uint32_t> (vcId));
 
+  // Apply state machine: check if switch is busy forwarding
+  if (m_forwardingBusy)
+  {
+    // Switch is busy, fail and let upper layer retry
+    NS_LOG_DEBUG ("Switch busy, forwarding failed - upper layer will retry");
+    return false;
+  }
   // Extract destination MAC address from packet
   Mac48Address destination = ethHeader.GetDestination ();
 
@@ -126,41 +135,74 @@ SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
                   NS_LOG_DEBUG ("LLR processing applied for switch internal forwarding");
                 }
 
-              // Check credits and forward if available
+              // Check CBFC and credits if enabled
               Ptr<CbfcManager> cbfcManager = currentDevice->GetCbfcManager ();
-              if (cbfcManager && cbfcManager->GetTxCredits (mac, vcId) > 0)
+              bool canForward = false;
+
+              if (cbfcManager)
                 {
-                  // If current port is ingress port, hand over to egress port's receive queue
-                  // When switch ingress port forwards, replace SourceDestination MAC with current device MAC
-                  // to enable universal credit calculation based on SourceMac.
+                  if (cbfcManager->IsLinkCbfcEnabled ())
+                    {
+                      // CBFC enabled: check dynamic credits before forwarding
+                      uint32_t packetSize = packet->GetSize ();
+                      if (cbfcManager->HasEnoughCredits (mac, vcId, packetSize))
+                        {
+                          canForward = true;
+                          if (cbfcManager->ConsumeDynamicCredits (mac, vcId, packetSize))
+                            {
+                              SueStatsUtils::ProcessCreditChangeStats(mac, vcId, cbfcManager->GetTxCredits(mac, vcId), currentDevice->GetNode()->GetId(), currentDevice->GetIfIndex() - 1);
+                              NS_LOG_INFO ("Switch forwarding: consumed credits for packet size " << packetSize << " bytes to " << mac << " VC " << static_cast<uint32_t> (vcId));
+                            }
+                          else
+                            {
+                              canForward = false;
+                              NS_LOG_INFO ("Switch forwarding: failed to consume credits for packet size " << packetSize << " bytes");
+                            }
+                        }
+                      else
+                        {
+                          NS_LOG_INFO ("No enough credits for forwarding packet size " << packetSize << " bytes to " << mac);
+                        }
+                    }
+                  else
+                    {
+                      // CBFC disabled: always allow forwarding
+                      canForward = true;
+                    }
+                }
+              else
+                {
+                  // No CBFC manager: always allow forwarding
+                  canForward = true;
+                }
+
+              if (canForward)
+                {
+                  // Modify packet: replace source MAC with current device MAC
                   EthernetHeader ethTemp;
                   packet->RemoveHeader (ethTemp);
                   Mac48Address currentMac = Mac48Address::ConvertFrom (currentDevice->GetAddress ());
                   ethTemp.SetSource (currentMac);
                   packet->AddHeader (ethTemp);
-                  
-                  if (cbfcManager->IsLinkCbfcEnabled ())
-                    {
-                      cbfcManager->DecrementTxCredits (mac, vcId);
-                      SueStatsUtils::ProcessCreditChangeStats(mac, vcId, cbfcManager->GetTxCredits(mac, vcId), currentDevice->GetNode()->GetId(), currentDevice->GetIfIndex() - 1);
-                    }
 
-                  // Switch forwarding delay - schedule the packet to be enqueued after delay
-                  Simulator::Schedule (currentDevice->GetSwitchForwardDelay (),
-                                     &PointToPointSueNetDevice::SpecDevEnqueueToVcQueue,
-                                     currentDevice, p2pDev, packet->Copy ());
+                  // Calculate forwarding delay
+                  Time forwardDelay = CalculateAdaptiveForwardDelay (currentDevice, packet->GetSize ());
 
-                  // Handle credit return - also delay by the same amount as forwarding
-                  Simulator::Schedule (currentDevice->GetSwitchForwardDelay (),
-                                     &CbfcManager::HandleCreditReturn,
-                                     cbfcManager, ethHeader, vcId);
-                  Simulator::Schedule (currentDevice->GetSwitchForwardDelay (),
-                                     &CbfcManager::CreditReturn,
-                                     cbfcManager, ethHeader.GetSource (), vcId);
+                  NS_LOG_DEBUG ("Switch idle, starting immediate forwarding with delay: "
+                                << forwardDelay.GetNanoSeconds () << "ns");
+
+                  // Schedule forwarding completion after the delay
+                  Simulator::Schedule (forwardDelay,
+                                       &SueSwitch::ForwardingComplete,
+                                       this,
+                                       currentDevice, p2pDev, packet,
+                                       ethHeader, vcId, ethHeader.GetSource ());
+
+                  // Switch is idle, start forwarding immediately
+                  m_forwardingBusy = true;
                 }
               else
                 {
-                  NS_LOG_INFO ("No credits available for forwarding to " << mac);
                   return false;
                 }
 
@@ -210,6 +252,65 @@ SueSwitch::IsSwitchDevice (Mac48Address mac) const
   uint8_t lastByte = buffer[5]; // Last byte of MAC address
   // TODO: Simplistic logic; needs modification for proper XPU/switch identification
   return (lastByte % 2 == 0); // Even numbers are switch devices
+}
+
+Time
+SueSwitch::CalculateAdaptiveForwardDelay (Ptr<PointToPointSueNetDevice> device, uint32_t packetSize)
+{
+  NS_LOG_FUNCTION (this << device << packetSize);
+
+  // Get base forwarding delay from device configuration
+  Time baseDelay = device->GetSwitchForwardDelay ();
+
+  // Get actual data rate from device instead of hardcoding
+  DataRate deviceRate = device->GetDataRate ();
+
+  // Calculate size-based additional delay using device's actual data rate
+  // This simulates the serialization delay in real switches
+  // Use a fraction of actual transmission time to represent internal processing overhead
+  Time sizeBasedDelay = deviceRate.CalculateBytesTxTime (packetSize * 1.0); // 10% of transmission time
+
+  // Total adaptive delay = base delay + size-based component
+  Time totalDelay = baseDelay + sizeBasedDelay;
+
+  NS_LOG_DEBUG ("Calculated adaptive forward delay: " << totalDelay.GetNanoSeconds ()
+                << "ns for packet size " << packetSize << " bytes (base: "
+                << baseDelay.GetNanoSeconds () << "ns, size-based: "
+                << sizeBasedDelay.GetNanoSeconds () << "ns) using device rate: "
+                << deviceRate.GetBitRate () << "bps");
+
+  return totalDelay;
+}
+
+void
+SueSwitch::ForwardingComplete (Ptr<PointToPointSueNetDevice> originalDevice,
+                               Ptr<PointToPointSueNetDevice> targetDevice,
+                               Ptr<Packet> packet,
+                               const EthernetHeader& ethHeader,
+                               uint8_t vcId,
+                               Mac48Address sourceMac)
+{
+  NS_LOG_FUNCTION (this);
+
+  // Perform actual forwarding: enqueue to target device's VC queue
+  originalDevice->SpecDevEnqueueToVcQueue (targetDevice, packet->Copy ());
+
+  // Handle credit return with the same delay (if CBFC enabled)
+  Ptr<CbfcManager> cbfcManager = originalDevice->GetCbfcManager ();
+  if (cbfcManager && cbfcManager->IsLinkCbfcEnabled ())
+    {
+      Simulator::Schedule (NanoSeconds (0),  // Already delayed by forwarding delay
+                         &CbfcManager::HandleCreditReturn,
+                         cbfcManager, ethHeader, vcId, packet->GetSize ());
+      Simulator::Schedule (NanoSeconds (0),
+                         &CbfcManager::CreditReturn,
+                         cbfcManager, sourceMac, vcId);
+    }
+
+  // Mark forwarding as complete
+  m_forwardingBusy = false;
+
+  NS_LOG_DEBUG ("Forwarding completed - switch is now idle");
 }
 
 } // namespace ns3

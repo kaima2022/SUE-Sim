@@ -143,10 +143,60 @@ public:
    */
   static void UpdateSequenceAndLinkTypeInPacket (Ptr<Packet> packet, uint32_t newSeq, uint8_t newLinkType);
 
+  // === VC Queue Delay Statistics ===
+
+  /**
+   * \brief Add VC queue delay tag to packet with current time
+   * \param packet the packet to tag
+   * \param nodeId the node ID
+   * \param deviceId the device ID
+   * \param vcId the VC queue ID
+   */
+  static void AddVcQueueDelayTag (Ptr<Packet> packet, uint32_t nodeId, uint32_t deviceId, uint8_t vcId);
+
+  /**
+   * \brief Extract and calculate VC queue delay from packet tag
+   * \param packet the packet containing the tag
+   * \param currentTime the current time
+   * \param outDelay output parameter for calculated delay
+   * \param outNodeId output parameter for node ID
+   * \param outDeviceId output parameter for device ID
+   * \param outVcId output parameter for VC ID
+   * \return true if tag was found and delay calculated, false otherwise
+   */
+  static bool ExtractVcQueueDelay (Ptr<Packet> packet, Time currentTime,
+                                   Time& outDelay, uint32_t& outNodeId, uint32_t& outDeviceId, uint8_t& outVcId);
+
+  // === Processing Queue Delay Statistics ===
+
+  /**
+   * \brief Add processing queue delay tag to packet with current time
+   * \param packet the packet to tag
+   */
+  static void AddProcessingQueueDelayTag (Ptr<Packet> packet);
+
+  /**
+   * \brief Extract and calculate processing queue delay from packet tag
+   * \param packet the packet containing the tag
+   * \param currentTime the current time
+   * \param outDelay output parameter for calculated delay
+   * \return true if tag was found and delay calculated, false otherwise
+   */
+  static bool ExtractProcessingQueueDelay (Ptr<Packet> packet, Time currentTime, Time& outDelay);
+
 private:
   Time m_timestamp; //!< SUE transmission timestamp
   uint32_t m_sequence; //!< LLR sequence number
   uint8_t m_linkType; //!< Link type: 0=NIC, 1=Switch Ingress, 2=Switch Egress
+
+  // VC Queue Delay Statistics fields
+  Time m_vcQueueEnqueueTime; //!< VC queue enqueue time for delay tracking
+  uint32_t m_nodeId;        //!< Node ID for VC queue delay tracking
+  uint32_t m_deviceId;      //!< Device ID for VC queue delay tracking
+  uint8_t m_vcId;           //!< VC queue ID for delay tracking
+
+  // Processing Queue Delay Statistics fields
+  Time m_processingQueueEnqueueTime; //!< Processing queue enqueue time for delay tracking
 };
 
 } // namespace ns3

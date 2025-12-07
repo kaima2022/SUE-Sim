@@ -22,6 +22,7 @@
 #include "sue-cbfc-header.h"
 #include "sue-header.h"
 #include "sue-ppp-header.h"
+#include "sue-tag.h"
 #include "ns3/ipv4-header.h"
 #include "ns3/udp-header.h"
 #include "ns3/ethernet-header.h"
@@ -501,7 +502,6 @@ SueConfigUtils::ReconfigureCbfcWithQueueSize(Ptr<CbfcManager> cbfcManager,
 
 void
 SueStatsUtils::ProcessSentPacketStats(Ptr<Packet> packet,
-                                     std::map<uint8_t, uint64_t>& vcBytesSentMap,
                                      uint32_t nodeId, uint32_t deviceId)
 {
     NS_LOG_FUNCTION(packet << nodeId << deviceId);
@@ -537,7 +537,6 @@ SueStatsUtils::ProcessSentPacketStats(Ptr<Packet> packet,
 
 void
 SueStatsUtils::ProcessReceivedPacketStats(Ptr<Packet> packet,
-                                        std::map<uint8_t, uint64_t>& vcBytesReceivedMap,
                                         uint32_t nodeId, uint32_t deviceId)
 {
     NS_LOG_FUNCTION(packet << nodeId << deviceId);
@@ -683,6 +682,144 @@ SueStatsUtils::ProcessCreditChangeStats(Mac48Address targetMac,
   PerformanceLogger::GetInstance().LogCreditStat(
     nanoseconds, nodeId, deviceId,
     vcId, "Credits", credits, macStr);
+}
+
+void
+SueStatsUtils::ProcessCreditReceptionStats(Mac48Address sourceMac,
+                                           uint8_t vcId,
+                                           uint32_t receivedCredits,
+                                           uint32_t nodeId,
+                                           uint32_t deviceId)
+{
+  NS_LOG_FUNCTION (sourceMac << static_cast<uint32_t> (vcId) << receivedCredits << nodeId << deviceId);
+
+  // Get current time
+  Time currentTime = Simulator::Now();
+  int64_t nanoseconds = currentTime.GetNanoSeconds();
+
+  // Convert Mac48Address to string format
+  std::ostringstream macStream;
+  macStream << sourceMac;
+  std::string macStr = macStream.str();
+
+  // Log credit reception event (event-driven)
+  PerformanceLogger::GetInstance().LogCreditStat(
+    nanoseconds, nodeId, deviceId,
+    vcId, "CreditReceived", receivedCredits, macStr);
+}
+
+void
+SueStatsUtils::ProcessCreditSendStats(Mac48Address targetMac,
+                                      uint8_t vcId,
+                                      uint32_t sentCredits,
+                                      uint32_t nodeId,
+                                      uint32_t deviceId)
+{
+  NS_LOG_FUNCTION(targetMac << static_cast<uint32_t>(vcId) << sentCredits << nodeId << deviceId);
+
+  // Get current time
+  Time currentTime = Simulator::Now();
+  int64_t nanoseconds = currentTime.GetNanoSeconds();
+
+  // Convert Mac48Address to string format
+  std::ostringstream macStream;
+  macStream << targetMac;
+  std::string macStr = macStream.str();
+
+  // Log credit send event (event-driven)
+  PerformanceLogger::GetInstance().LogCreditStat(
+    nanoseconds, nodeId, deviceId,
+    vcId, "CreditSent", sentCredits, macStr);
+}
+
+void
+SueStatsUtils::ProcessDestinationQueueStats(uint32_t xpuId,
+                                           uint32_t sueId,
+                                           uint32_t destXpuId,
+                                           uint8_t vcId,
+                                           uint32_t currentBytes,
+                                           uint32_t maxBytes)
+{
+    NS_LOG_FUNCTION(xpuId << sueId << destXpuId << static_cast<uint32_t>(vcId)
+                      << currentBytes << maxBytes);
+
+    // Get current time
+    Time currentTime = Simulator::Now();
+    uint64_t timeNs = currentTime.GetNanoSeconds();
+
+    // Log destination queue usage (event-driven)
+    PerformanceLogger::GetInstance().LogDestinationQueueUsage(
+        timeNs, xpuId, sueId, destXpuId, vcId, currentBytes, maxBytes);
+}
+
+void
+SueStatsUtils::ProcessPackDelayStats(uint32_t xpuId, uint32_t sueId,
+                                     uint32_t destXpuId, uint8_t vcId, int64_t waitTimeNs)
+{
+    NS_LOG_FUNCTION(xpuId << sueId << destXpuId << static_cast<uint32_t>(vcId) << waitTimeNs);
+
+    // Log packing delay (event-driven)
+    PerformanceLogger::GetInstance().LogPackDelay(xpuId, sueId, destXpuId, vcId, waitTimeNs);
+}
+
+void
+SueStatsUtils::ProcessPackNumStats(uint32_t xpuId, uint32_t sueId,
+                                   uint32_t destXpuId, uint8_t vcId, uint32_t packNum)
+{
+    NS_LOG_FUNCTION(xpuId << sueId << destXpuId << static_cast<uint32_t>(vcId) << packNum);
+
+    // Log packing number (event-driven)
+    PerformanceLogger::GetInstance().LogPackNum(xpuId, sueId, destXpuId, vcId, packNum);
+}
+
+void
+SueStatsUtils::ProcessAppLayerTxStats(uint32_t nodeId, uint8_t vcId, uint32_t packetSize)
+{
+    NS_LOG_FUNCTION(nodeId << static_cast<uint32_t>(vcId) << packetSize);
+
+    // Get current time in nanoseconds
+    uint64_t timeNs = Simulator::Now().GetNanoSeconds();
+
+    // Log application layer transmission (event-driven)
+    PerformanceLogger::GetInstance().LogAppLayerTx(timeNs, nodeId, vcId, packetSize);
+}
+
+void
+SueStatsUtils::ProcessVcQueueDelayStats(Ptr<Packet> packet, uint32_t nodeId, uint32_t deviceId)
+{
+    NS_LOG_FUNCTION(packet << nodeId << deviceId);
+
+    // Calculate and log VC queue delay
+    Time delay;
+    uint32_t tagNodeId, tagDeviceId;
+    uint8_t tagVcId;
+    if (SueTag::ExtractVcQueueDelay(packet, Simulator::Now(), delay, tagNodeId, tagDeviceId, tagVcId))
+    {
+        PerformanceLogger::GetInstance().LogXpuDelay(
+            Simulator::Now().GetNanoSeconds(),
+            nodeId,
+            deviceId,
+            delay.GetNanoSeconds(),
+            "VC_Queue");
+    }
+}
+
+void
+SueStatsUtils::ProcessProcessingQueueDelayStats(Ptr<Packet> packet, uint32_t nodeId, uint32_t deviceId)
+{
+    NS_LOG_FUNCTION(packet << nodeId << deviceId);
+
+    // Calculate and log processing queue delay
+    Time delay;
+    if (SueTag::ExtractProcessingQueueDelay(packet, Simulator::Now(), delay))
+    {
+        PerformanceLogger::GetInstance().LogXpuDelay(
+            Simulator::Now().GetNanoSeconds(),
+            nodeId,
+            deviceId,
+            delay.GetNanoSeconds(),
+            "Processing_Queue");
+    }
 }
 
 } // namespace ns3

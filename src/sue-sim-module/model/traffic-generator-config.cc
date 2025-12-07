@@ -20,6 +20,7 @@
 #include "traffic-generator-config.h"
 #include "ns3/log.h"
 #include "ns3/simulator.h"
+#include "ns3/parameter-config.h"
 #include "ns3/sue-utils.h"
 #include "ns3/packet.h"
 #include <algorithm>
@@ -106,6 +107,13 @@ ConfigurableTrafficGenerator::SetFineGrainedFlows (const std::vector<FineGrained
 {
   NS_LOG_FUNCTION (this << flows.size ());
   m_fineGrainedFlows = flows;
+}
+
+void
+ConfigurableTrafficGenerator::SetClientStartTime (double clientStart)
+{
+  NS_LOG_FUNCTION (this << clientStart);
+  m_clientStart = clientStart;
 }
 
 bool
@@ -219,14 +227,18 @@ ConfigurableTrafficGenerator::InitializeActiveFlows ()
       FlowState state;
 
       state.bytesSent = 0;
-      state.lastGenerationTime = 0;
+      // Calculate absolute start time: clientStart + flow.startTime
+      double absoluteStartTime = m_clientStart + flow.startTime;
+      // Convert to nanoseconds for internal time representation
+      state.lastGenerationTime = static_cast<uint64_t>(absoluteStartTime * 1e9);
       state.isActive = (flow.sourceXpuId == m_localXpuId);
       state.dataRate = DataRate (flow.dataRate);
 
       // Calculate packet interval based on data rate
       if (flow.dataRate > 0.0)
         {
-          double bitsPerPacket = m_transactionSize * 8.0;
+          // SUE-Header also needs to generate.
+          double bitsPerPacket = (m_transactionSize+8) * 8.0;
           double secondsPerPacket = bitsPerPacket / (flow.dataRate * 1e6);
           state.packetInterval = Seconds (secondsPerPacket);
         }
@@ -244,7 +256,8 @@ ConfigurableTrafficGenerator::InitializeActiveFlows ()
                       << " -> XPU" << flow.destXpuId
                       << " via SUE" << flow.sueId
                       << " at " << flow.dataRate << " Mbps"
-                      << " on VC" << (uint32_t)flow.vcId);
+                      << " on VC" << (uint32_t)flow.vcId
+                      << " (start: " << flow.startTime << "s)");
         }
     }
 
@@ -349,6 +362,9 @@ ConfigurableTrafficGenerator::GenerateTransactionForFlow (uint32_t flowIndex)
       // Create a custom transaction that specifies the SUE ID
       // This requires extending the LoadBalancer interface to support SUE ID specification
       m_loadBalancer->DistributeTransaction (packet, flow.destXpuId, flow.vcId);
+      
+      // Log application layer packet transmission statistics
+      SueStatsUtils::ProcessAppLayerTxStats(flow.sourceXpuId, flow.vcId, packet->GetSize());
     }
 
   // Update flow state

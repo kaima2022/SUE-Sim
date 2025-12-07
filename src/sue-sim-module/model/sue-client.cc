@@ -72,7 +72,12 @@ TypeId SueClient::GetTypeId(void) {
                       "Client Statistic Interval",
                       StringValue("10us"), // Default: 10 microseconds
                       MakeStringAccessor(&SueClient::m_clientStatIntervalString),
-                      MakeStringChecker());
+                      MakeStringChecker())
+        .AddAttribute("AdditionalHeaderSize",
+                      "Additional header size for capacity reservation in bytes",
+                      UintegerValue(44),
+                      MakeUintegerAccessor(&SueClient::m_additionalHeaderSize),
+                      MakeUintegerChecker<uint32_t>());
     return tid;
 }
 
@@ -88,17 +93,15 @@ SueClient::SueClient()
       m_waitingStartTime(Time(0)),
       m_vcNum(4),
       m_destQueueMaxBytes(30 * 1024), // Default 30KB
-      m_totalBytesSent(0),
-      m_lastStatTime(Seconds(0)),
       m_clientStatInterval(MicroSeconds(10)),
-          m_clientStatIntervalString("10us"),
+      m_clientStatIntervalString("10us"),
       m_packingDelayPerPacket("3ns"),
-      m_XpuDropCounts(0),
       m_loggingEnabled(true),
       m_deviceId(0),
       m_sueId(0),
       m_portsPerSue(1),
-      m_lastUsedDeviceIndex(0)
+      m_lastUsedDeviceIndex(0),
+      m_additionalHeaderSize(44)  // Default: 44 bytes
 {
     m_rand = CreateObject<UniformRandomVariable>();
 }
@@ -244,16 +247,8 @@ void SueClient::StartApplication(void) {
             }
         }
     }
-    // Initialize statistics variables
-    m_totalBytesSent = 0;
-    m_lastStatTime = Simulator::Now();
     
-    // Start periodic statistics - DISABLED by default for fine-grained mode
-    // Uncomment to enable client-level statistics
-    // if (m_loggingEnabled) {
-    //     m_logClientStatisticsEvent = Simulator::Schedule(m_clientStatInterval, &SueClient::LogClientStatistics, this);
-    // }
-    
+        
     ScheduleNextSend();
 
   
@@ -294,73 +289,6 @@ void SueClient::SetGlobalIpMacMap(const std::map<Ipv4Address, Mac48Address>& map
     s_ipToMacMap = map;
 }
 
-void SueClient::LogClientStatistics() {
-    // Check if logging is enabled
-    if (!m_loggingEnabled) {
-        NS_LOG_INFO("Logging disabled for XPU" << m_xpuId << " SUE" << m_sueId);
-        return;
-    }
-
-    Time now = Simulator::Now();
-    int64_t nanoseconds = now.GetNanoSeconds();
-
-    // Calculate transmission rate within current statistics period (Mbps)
-    double rate = (m_totalBytesSent * 8) / m_clientStatInterval.GetSeconds() / 1e6;
-
-    // Only record device information managed by current SUEClient
-    // Calculate relative device index within current SUE-managed device range
-    uint32_t sueDeviceIndex = m_deviceId - (m_sueId * m_portsPerSue);
-    uint32_t deviceIndex = m_sueId * m_portsPerSue + sueDeviceIndex;
-
-    // Use PerformanceLogger to record application layer statistics - only record devices within management range
-    PerformanceLogger::GetInstance().LogAppStat(nanoseconds, m_xpuId, deviceIndex, 0, rate);
-
-    NS_LOG_INFO("Time " << now << "s XPU" << m_xpuId << " SUE" << m_sueId
-                   << " AppTxRate: " << rate << " Mbps (Device " << deviceIndex << ")");
-
-    // Packet loss statistics - only record devices within management range
-    if(m_XpuDropCounts>0){
-        PerformanceLogger::GetInstance().LogDropStat(nanoseconds, m_xpuId, deviceIndex, 0, "AppXpuSendDrop", m_XpuDropCounts);
-    }
-
-    // Packing statistics - uniformly write packing delay and quantity data
-    // Only record packing information of devices managed by current SUEClient
-    if (!m_packDelays.empty() || !m_packNumbers.empty()) {
-        NS_LOG_INFO("Writing pack statistics for XPU" << m_xpuId << " SUE" << m_sueId
-                    << " - " << m_packDelays.size() << " delay entries, "
-                    << m_packNumbers.size() << " number entries (Managed devices: "
-                    << m_portsPerSue << ")");
-
-        // Write all packing delay data (already stored in nanoseconds)
-        for (int64_t delayNs : m_packDelays) {
-            PerformanceLogger::GetInstance().LogPackDelay(m_xpuId, delayNs);
-        }
-
-        // Write all packing quantity data
-        for (uint32_t packNum : m_packNumbers) {
-            PerformanceLogger::GetInstance().LogPackNum(m_xpuId, packNum);
-        }
-    }
-
-    // Record destination queue utilization
-    LogDestinationQueueUsage();
-
-    // Reset counters and schedule next statistics
-    m_totalBytesSent = 0;
-    m_XpuDropCounts = 0;
-    m_lastStatTime = Simulator::Now();
-
-    // Reset packing data storage
-    m_packDelays.clear();
-    m_packNumbers.clear();
-
-    // Force flush log files to ensure data is written to disk
-    // PerformanceLogger will automatically manage file flushing
-
-    if (m_loggingEnabled) {
-        m_logClientStatisticsEvent = Simulator::Schedule(m_clientStatInterval, &SueClient::LogClientStatistics, this);
-    }
-}
 
     // Cancel all log events
 void SueClient::CancelAllLogEvents() {
@@ -454,6 +382,10 @@ void SueClient::AddTransaction(Ptr<Packet> transaction, uint32_t destXpuId) {
     queueInfo.queue.push(std::make_pair(enqueueTime, transaction));
     queueInfo.currentBurstSize += packetSize;
 
+    // Trigger destination queue statistics (event-driven) - after enqueue
+    SueStatsUtils::ProcessDestinationQueueStats(m_xpuId, m_sueId, destXpuId, vcId,
+                                               queueInfo.currentBurstSize, m_destQueueMaxBytes);
+
     // If current iterator is not set and queue is not empty, set iterator
     if (m_currentQueueIt == m_destQueues.end() && !m_destQueues.empty()) {
         m_currentQueueIt = m_destQueues.begin();
@@ -503,50 +435,114 @@ void SueClient::ScheduleNextSend() {
 
     if (!queueInfo.queue.empty()) {
 
-        Ptr<PointToPointSueNetDevice> selectedDevice = nullptr;
+        // New logic: 1. First query device capacities, then pack accordingly
+        std::vector<DeviceCapacityInfo> deviceCapacities = GetDeviceCapacities();
 
-        // 1. First perform packing, then select device based on packing result
-        std::vector<Ptr<Packet>> packedPackets = Packing(dest);
-        
-        if (packedPackets.empty()) {
-            // No packed packets available to send, continue waiting
+        if (deviceCapacities.empty()) {
+            // No managed devices available, continue waiting
+            NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId
+                        << "] No managed devices available, continue waiting...");
             return;
         }
-        
-        // Note: Device selection will be done separately for each packet in the send loop
+
+        // Find device with maximum available capacity for target VC
+        Ptr<PointToPointSueNetDevice> maxCapacityDevice = nullptr;
+        uint32_t maxDeviceCapacity = 0;
+        uint8_t maxCapacityDeviceIndex = 0;
+
+        for (const auto& capacityInfo : deviceCapacities) {
+            if (dest.vcId < capacityInfo.vcCapacities.size()) {
+                uint32_t deviceVcCapacity = capacityInfo.vcCapacities[dest.vcId];
+                if (deviceVcCapacity > maxDeviceCapacity) {
+                    maxDeviceCapacity = deviceVcCapacity;
+                    maxCapacityDevice = capacityInfo.device;
+                    maxCapacityDeviceIndex = capacityInfo.deviceIndex;
+                }
+            }
+        }
+
         // If waiting before, calculate and print waiting time
         if (!m_waitingStartTime.IsZero()) {
             Time waitingDuration = Simulator::Now() - m_waitingStartTime;
-            NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << "] Resumed sending after waiting for " 
+            NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << "] Resumed sending after waiting for "
                         << waitingDuration.GetMicroSeconds() << " us.");
             m_waitingStartTime = Time(0); // Reset wait timer
         }
 
-        // Select device and send for each packed packet individually
+        // Check if any device has capacity
+        if (maxDeviceCapacity == 0 || !maxCapacityDevice) {
+            // No device has sufficient capacity, continue waiting
+            NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId
+                        << "] No device has available VC" << (uint32_t)dest.vcId << " capacity, continue waiting...");
+            return;
+        }
+
+        // Get SueHeader size for calculation
+        SueHeader sueHeader;
+        uint32_t sueHeaderSize = sueHeader.GetSerializedSize();
+
+        // Calculate how many transactions we can pack: transactionSize * n + sueHeader <= available bytes
+        uint32_t maxPacketsToPack = 0;
+        while (maxDeviceCapacity > m_transactionSize + sueHeaderSize + m_additionalHeaderSize) {
+            uint32_t availableForTransactions = maxDeviceCapacity - sueHeaderSize - m_additionalHeaderSize;
+            if(availableForTransactions > m_maxBurstSize){
+                maxPacketsToPack += m_maxBurstSize / m_transactionSize;
+                maxDeviceCapacity = maxDeviceCapacity - (m_maxBurstSize + sueHeaderSize + m_additionalHeaderSize);
+            }
+            else{
+                uint8_t numTemp = availableForTransactions / m_transactionSize;
+                maxPacketsToPack += numTemp;
+                maxDeviceCapacity = maxDeviceCapacity - (numTemp * m_transactionSize + sueHeaderSize + m_additionalHeaderSize);
+            }
+        }
+
+        if(maxDeviceCapacity == 0) return;
+
+        // Limit by queue size
+        maxPacketsToPack = std::min(maxPacketsToPack, static_cast<uint32_t>(queueInfo.queue.size()));
+
+        NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId
+                    << "] Selected device " << (uint32_t)maxCapacityDeviceIndex
+                    << " with VC" << (uint32_t)dest.vcId << " capacity: " << maxDeviceCapacity
+                    << " bytes (header: " << sueHeaderSize << "), can pack up to " << maxPacketsToPack << " packets");
+
+        // 3. Smart packing based on calculated capacity
+        std::vector<Ptr<Packet>> packedPackets = SmartPacking(dest, maxPacketsToPack);
+
+        if (packedPackets.empty()) {
+            // No packed packets available to send, continue waiting
+            return;
+        }
+
+        // 4. Send packed packets with device selection
         Time processingDelay = m_packingDelayPerPacket;
         uint32_t targetXpu = dest.destXpuId;
 
         for (size_t i = 0; i < packedPackets.size(); ++i) {
             Ptr<Packet> packedPacket = packedPackets[i];
             uint32_t packetSize = packedPacket->GetSize();
-            
+
             // Extract VC ID from packed packet
             SueHeader sueHeader;
             packedPacket->PeekHeader(sueHeader);
             uint8_t vcId = sueHeader.GetVc();
-            
-            // Select device for current packet
-            Ptr<PointToPointSueNetDevice> currentDevice = nullptr;
-            if (!m_managedDevices.empty()) {
-                currentDevice = SelectDeviceByVcCapacity(packetSize, vcId);
-                if (!currentDevice) {
-                    // Current packet has no device with sufficient capacity, skip this packet
-                    NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId 
-                                << "] No device has sufficient VC capacity for packet " << (i+1) 
-                                << ", skipping...");
-                    continue;
-                }
-            }
+
+            // Use the pre-selected device with maximum capacity
+            Ptr<PointToPointSueNetDevice> currentDevice = maxCapacityDevice;
+
+            // Final validation: ensure the selected device still has capacity
+            NS_ASSERT_MSG(currentDevice, "Pre-selected device is null! This should not happen in normal operation.");
+
+            // Reserve VC capacity for this packet
+            auto queueManager = currentDevice->GetQueueManager();
+            NS_ASSERT_MSG(queueManager, "Queue manager is null for pre-selected device! This should not happen in normal operation.");
+            NS_ASSERT_MSG(queueManager->ReserveVcCapacity(vcId, packetSize),
+                         "Failed to reserve VC capacity on pre-selected device! "
+                         "This indicates a serious logic error in capacity calculation or concurrent access issue.");
+
+            NS_LOG_DEBUG(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << " SUE" << m_sueId
+                         << "] Reserved capacity for packet " << (i+1)
+                         << " on pre-selected device " << currentDevice->GetIfIndex());
 
             // Generate remote address based on selected device and target XPU
             uint32_t selectedPort = currentDevice->GetIfIndex();
@@ -569,7 +565,6 @@ void SueClient::ScheduleNextSend() {
             Ptr<Socket> sendingSocket = socketIt->second;
 
             uint32_t packSizeTemp = packedPacket->GetSize() - 8; // SUE 8 Bytes
-            m_totalBytesSent += packSizeTemp;
 
             // Send log
             NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId
@@ -835,9 +830,13 @@ void SueClient::PopTransactionsFromQueue(const Destination& dest, uint32_t count
         // Reduce current burst size
         queueInfo.currentBurstSize -= transaction->GetSize();
         NS_ASSERT(queueInfo.currentBurstSize >= 0 && "currentBurstSize should not be negative");
-        
+
         queueInfo.queue.pop(); // Remove from queue
         removedCount++;
+
+        // Trigger destination queue statistics (event-driven) - after dequeue
+        SueStatsUtils::ProcessDestinationQueueStats(m_xpuId, m_sueId, dest.destXpuId, dest.vcId,
+                                                   queueInfo.currentBurstSize, m_destQueueMaxBytes);
 
         // Notify LoadBalancer that destination queue space is available
         if (m_destQueueSpaceCallback)
@@ -1018,15 +1017,15 @@ SueClient::Packing(const Destination& dest) {
         Time firstEnqueueTime = transactionsToProcess[0].first;
         int64_t waitTimeNs = (now - firstEnqueueTime).GetNanoSeconds();
 
-        // Store packing delay data (nanoseconds)
-        m_packDelays.push_back(waitTimeNs);
+        // Trigger packing delay statistics (event-driven)
+        SueStatsUtils::ProcessPackDelayStats(m_xpuId, m_sueId, dest.destXpuId, dest.vcId, waitTimeNs);
 
-        // Store packing count data
-        m_packNumbers.push_back(packedPackets.size());
+        // Trigger packing number statistics (event-driven)
+        SueStatsUtils::ProcessPackNumStats(m_xpuId, m_sueId, dest.destXpuId, dest.vcId, packedPackets.size());
 
-        NS_LOG_DEBUG("Pack statistics stored for XPU" << m_xpuId
+        NS_LOG_DEBUG("Pack statistics triggered for XPU" << m_xpuId
                     << " - Delay: " << waitTimeNs << "ns, Packets: " << packedPackets.size()
-                    << " (waiting for LogClientStatistics to write)");
+                    << " (event-driven logging)");
     }
 
     return packedPackets;
@@ -1059,6 +1058,134 @@ SueClient::CreateCombinedPacket(const std::vector<Ptr<Packet>>& payloads,
     combinedPacket->AddHeader(newHeader);
 
     return combinedPacket;
+}
+
+// Device capacity query function
+std::vector<DeviceCapacityInfo>
+SueClient::GetDeviceCapacities() {
+    std::vector<DeviceCapacityInfo> deviceCapacities;
+
+    for (uint32_t i = 0; i < m_managedDevices.size(); ++i) {
+        DeviceCapacityInfo capacityInfo;
+        capacityInfo.device = m_managedDevices[i];
+        capacityInfo.deviceIndex = i;
+        capacityInfo.totalCapacity = 0;
+        capacityInfo.usedCapacity = 0;
+
+        // Initialize VC capacities vector
+        capacityInfo.vcCapacities.resize(m_vcNum, 0);
+
+        if (capacityInfo.device) {
+            auto queueManager = capacityInfo.device->GetQueueManager();
+            if (queueManager) {
+                for (uint8_t vcId = 0; vcId < m_vcNum; ++vcId) {
+                    // Get available capacity for each VC
+                    uint32_t availableCapacity = queueManager->GetVcAvailableCapacity(vcId);
+                    capacityInfo.vcCapacities[vcId] = availableCapacity;
+                    capacityInfo.totalCapacity += availableCapacity;
+
+                    // Calculate used capacity as total - available for this device
+                    // Note: This is a simplified calculation, actual implementation may vary
+                    uint32_t maxVcCapacity = queueManager->GetVcQueueMaxBytes();
+                    uint32_t usedVcCapacity = (availableCapacity < maxVcCapacity) ? (maxVcCapacity - availableCapacity) : 0;
+                    capacityInfo.usedCapacity += usedVcCapacity;
+                }
+            }
+        }
+
+        deviceCapacities.push_back(capacityInfo);
+    }
+
+    return deviceCapacities;
+}
+
+// Smart packing function based on available device capacity
+std::vector<Ptr<Packet>>
+SueClient::SmartPacking(const Destination& dest, uint32_t maxPackets) {
+    std::vector<Ptr<Packet>> packedPackets;
+
+    // Get destination queue
+    auto it = m_destQueues.find(dest);
+    if (it == m_destQueues.end() || it->second.queue.empty()) {
+        return packedPackets;
+    }
+
+    auto& queueInfo = it->second;
+
+    // Use temporary queue to iterate without modifying original queue
+    std::queue<std::pair<Time, Ptr<Packet>>> tempQueue = queueInfo.queue;
+
+    std::vector<Ptr<Packet>> currentBatch;
+    uint32_t currentBatchSize = 0;
+    uint32_t transactionsProcessed = 0;
+
+    while (!tempQueue.empty() && transactionsProcessed < maxPackets) {
+        Time enqueueTime = tempQueue.front().first;
+        Ptr<Packet> transaction = tempQueue.front().second;
+
+        // Extract transaction information
+        SueHeader sueHeader;
+        transaction->PeekHeader(sueHeader);
+
+        // Check if need to start new batch (exceeds max burst size or batch is not empty)
+        if (currentBatchSize + m_transactionSize > m_maxBurstSize && !currentBatch.empty()) {
+            // Create packed packet
+            Ptr<Packet> packedPacket = CreateCombinedPacket(currentBatch, dest.vcId, dest.destXpuId);
+            if (packedPacket) {
+                packedPackets.push_back(packedPacket);
+            }
+
+            // Reset batch
+            currentBatch.clear();
+            currentBatchSize = 0;
+        }
+
+        // Remove SUE header and add payload to current batch
+        Ptr<Packet> payloadPacket = transaction->Copy();
+        payloadPacket->RemoveHeader(sueHeader);
+        currentBatch.push_back(payloadPacket);
+        currentBatchSize += payloadPacket->GetSize();
+        transactionsProcessed++;
+
+        tempQueue.pop();
+    }
+
+    // Process the last batch
+    if (!currentBatch.empty()) {
+        Ptr<Packet> packedPacket = CreateCombinedPacket(currentBatch, dest.vcId, dest.destXpuId);
+        if (packedPacket) {
+            packedPackets.push_back(packedPacket);
+        }
+    }
+
+    NS_LOG_INFO("SmartPacking: destination XPU" << dest.destXpuId << "-VC" << (uint32_t)dest.vcId
+               << " processed up to " << maxPackets
+               << " packets into " << packedPackets.size() << " packed packets");
+
+    // Trigger packing statistics if packets were processed
+    if (!packedPackets.empty()) {
+        // Get the destination queue to calculate wait time
+        auto it = m_destQueues.find(dest);
+        if (it != m_destQueues.end() && !it->second.queue.empty()) {
+            Time now = Simulator::Now();
+            Time firstEnqueueTime = it->second.queue.front().first;
+            int64_t waitTimeNs = (now - firstEnqueueTime).GetNanoSeconds();
+
+            // Trigger packing delay statistics (event-driven)
+            SueStatsUtils::ProcessPackDelayStats(m_xpuId, m_sueId, dest.destXpuId, dest.vcId, waitTimeNs);
+
+            for(uint8_t i = 0; i < packedPackets.size(); i++){
+                // Trigger packing number statistics (event-driven)
+                SueStatsUtils::ProcessPackNumStats(m_xpuId, m_sueId, dest.destXpuId, dest.vcId, packedPackets[i]->GetSize()/m_transactionSize);
+            }
+
+            NS_LOG_DEBUG("Pack statistics triggered for XPU" << m_xpuId
+                        << " - Delay: " << waitTimeNs << "ns, Packets: " << packedPackets.size()
+                        << " (event-driven logging in SmartPacking)");
+        }
+    }
+
+    return packedPackets;
 }
 
 // Credit Management Implementation with HPC Delay and Batch Processing

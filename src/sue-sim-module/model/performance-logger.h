@@ -140,24 +140,32 @@ public:
    * \param credits Number of credits
    * \param macAddress MAC address
    */
-  void LogCreditStat (int64_t nanoTime, uint32_t XpuId, uint32_t devId, uint8_t vcId,
+  void LogCreditStat (int64_t nanoTime, uint32_t NodeId, uint32_t devId, uint8_t vcId,
                       const std::string& direction, uint32_t credits, const std::string& macAddress);
 
   /**
    * \brief Log packing delay statistics
    *
    * \param xpuId XPU identifier
+   * \param sueId SUE identifier
+   * \param destXpuId Destination XPU identifier
+   * \param vcId Virtual channel identifier
    * \param waitTimeNs Waiting time in nanoseconds
    */
-  void LogPackDelay (uint32_t xpuId, int64_t waitTimeNs);
+  void LogPackDelay (uint32_t xpuId, uint32_t sueId, uint32_t destXpuId,
+                     uint8_t vcId, int64_t waitTimeNs);
 
   /**
    * \brief Log packing number statistics
    *
    * \param xpuId XPU identifier
+   * \param sueId SUE identifier
+   * \param destXpuId Destination XPU identifier
+   * \param vcId Virtual channel identifier
    * \param packNums Number of packed packets
    */
-  void LogPackNum (uint32_t xpuId, uint32_t packNums);
+  void LogPackNum (uint32_t xpuId, uint32_t sueId, uint32_t destXpuId,
+                   uint8_t vcId, uint32_t packNums);
 
   /**
    * \brief Log load balancing statistics
@@ -231,6 +239,27 @@ public:
    */
   void LogXpuDelay (uint64_t timeNs, uint32_t xpuId, uint32_t portId, double delayNs);
 
+  /**
+   * \brief Log XPU end-to-end delay statistics with location
+   *
+   * \param timeNs Time in nanoseconds
+   * \param xpuId XPU identifier
+   * \param portId Port identifier
+   * \param delayNs Delay in nanoseconds
+   * \param location Location identifier (e.g., "VC_Queue")
+   */
+  void LogXpuDelay (uint64_t timeNs, uint32_t xpuId, uint32_t portId, double delayNs, const std::string& location);
+
+  /**
+   * \brief Log application layer packet transmission statistics
+   *
+   * \param timeNs Time in nanoseconds
+   * \param nodeId Node identifier
+   * \param vcId Virtual channel identifier
+   * \param packetSize Packet size in bytes
+   */
+  void LogAppLayerTx (uint64_t timeNs, uint32_t nodeId, uint8_t vcId, uint32_t packetSize);
+
   
   /**
    * \brief Buffer queue change trace callback
@@ -295,6 +324,9 @@ private:
 
   // Link layer credit monitoring log file
   std::ofstream m_linkCreditLog;           //!< Link layer credit statistics log file stream
+
+  // Application layer transmission monitoring log file
+  std::ofstream m_appLayerTxLog;           //!< Application layer transmission statistics log file stream
 };
 
 } // namespace ns3

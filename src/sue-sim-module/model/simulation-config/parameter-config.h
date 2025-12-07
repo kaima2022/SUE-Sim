@@ -61,20 +61,21 @@ struct FineGrainedTrafficFlow
     double dataRate;              //!< Data rate for this flow (Mbps)
     uint32_t totalBytes;          //!< Total bytes to send for this flow
     uint8_t vcId;                 //!< Virtual channel ID (0-3, optional)
+    double startTime;             //!< Start time relative to clientStart (seconds, parsed from ns in CSV)
 
     /**
      * \brief Constructor
      */
     FineGrainedTrafficFlow () : sourceXpuId(0), destXpuId(0), sueId(0), suePort(0),
-                               dataRate(0.0), totalBytes(0), vcId(0) {}
+                               dataRate(0.0), totalBytes(0), vcId(0), startTime(0.0) {}
 
     /**
      * \brief Constructor with parameters
      */
     FineGrainedTrafficFlow (uint32_t src, uint32_t dst, uint32_t sue, uint32_t port,
-                           double rate, uint32_t bytes, uint8_t vc = 0)
+                           double rate, uint32_t bytes, uint8_t vc = 0, double start = 0.0)
         : sourceXpuId(src), destXpuId(dst), sueId(sue), suePort(port),
-          dataRate(rate), totalBytes(bytes), vcId(vc) {}
+          dataRate(rate), totalBytes(bytes), vcId(vc), startTime(start) {}
 };
 
 /**
@@ -115,11 +116,11 @@ struct LinkConfig
  */
 struct QueueConfig
 {
-    double vcQueueMaxMB;              //!< VC queue maximum size (MB)
+    double vcQueueMaxKB;              //!< VC queue maximum size (KB)
     uint32_t vcQueueMaxBytes;         //!< VC queue max bytes (calculated)
-    double processingQueueMaxMB;      //!< Processing queue maximum size (MB)
+    double processingQueueMaxKB;      //!< Processing queue maximum size (KB)
     uint32_t processingQueueMaxBytes; //!< Processing queue max bytes (calculated)
-    double destQueueMaxMB;           //!< Destination queue maximum size (MB)
+    double destQueueMaxKB;           //!< Destination queue maximum size (KB)
     uint32_t destQueueMaxBytes;      //!< Destination queue max bytes (calculated)
 };
 
@@ -131,6 +132,12 @@ struct CbfcConfig
     bool EnableLinkCBFC;      //!< Link CBFC enable
     uint32_t LinkCredits;     //!< Link layer initial CBFC credits
     uint32_t CreditBatchSize; //!< Credit accumulation threshold
+    uint32_t SwitchCredits;   //!< Switch credits
+    uint32_t HeaderSize;      //!< Header size (Ethernet + SUE headers)
+    uint32_t BaseCredit;      //!< Base credit value for minimum packet
+
+    // Credit-to-byte mapping parameters
+    uint32_t BytesPerCredit;  //!< Bytes per credit (default: 256 bytes/credit)
 };
 
 /**
@@ -154,7 +161,6 @@ struct TraceConfig
 {
     bool statLoggingEnabled;         //!< Link layer statistics collection enable
     std::string ClientStatInterval; //!< Client statistics interval
-    std::string LinkStatInterval;   //!< Link statistics interval
 };
 
 /**
@@ -180,6 +186,9 @@ struct DelayConfig
     std::string creditReturnProcessingDelay;     //!< Credit return processing delay
     std::string batchCreditAggregationDelay;     //!< Batch credit aggregation delay
     std::string switchForwardDelay;            //!< Switch internal forwarding delay
+
+    // Processing queue delays
+    std::string processingQueueScheduleDelay;   //!< Processing queue scheduling delay
 
     // Capacity reservation parameters
     uint32_t additionalHeaderSize;              //!< Additional header size for capacity reservation

@@ -187,6 +187,7 @@ ApplicationDeployer::CreateSueClient (uint32_t xpuIdx, uint32_t sueIdx,
     sueClient->SetAttribute("MaxBurstSize", UintegerValue(maxBurstSize));
     sueClient->SetAttribute("DestQueueMaxBytes", UintegerValue(destQueueMaxBytes));
     sueClient->SetAttribute("vcNum", UintegerValue(vcNum));
+    sueClient->SetAttribute("AdditionalHeaderSize", UintegerValue(config.delay.additionalHeaderSize));
     sueClient->SetAttribute("SchedulingInterval", StringValue(SchedulingInterval));
     sueClient->SetAttribute("PackingDelayPerPacket", StringValue(PackingDelayPerPacket));
     sueClient->SetAttribute("ClientStatInterval", StringValue(ClientStatInterval));
@@ -344,6 +345,7 @@ ApplicationDeployer::CreateConfigurableTrafficGenerator (uint32_t xpuIdx, Ptr<Lo
     // Configure configurable traffic generator
     configTrafficGen->SetLoadBalancer(loadBalancer);
     configTrafficGen->SetLocalXpuId(xpuIdx);  // 0-based
+    configTrafficGen->SetClientStartTime(config.timing.clientStart);  // Set client start time for accurate flow timing
     configTrafficGen->SetFineGrainedFlows(fineGrainedFlows);
 
     // Set TrafficGenerator to LoadBalancer (for traffic control)
@@ -386,14 +388,17 @@ ApplicationDeployer::ParseFineGrainedTrafficConfig (const SueSimulationConfig& c
             continue;
         }
 
-        // Skip CSV header line
-        if (line.find("sourceXpuId") != std::string::npos &&
-            line.find("destXpuId") != std::string::npos)
+        // Skip CSV header line (support both old 7-column and new 8-column formats)
+        if ((line.find("sourceXpuId") != std::string::npos &&
+            line.find("destXpuId") != std::string::npos) ||
+            (line.find("timestamp") != std::string::npos))
         {
             continue;
         }
 
-        // Parse line: sourceXpuId,destXpuId,sueId,suePort,vcId,dataRate,totalBytes
+        // Parse line:
+        // New format: timestamp(ns),sourceXpuId,destXpuId,sueId,suePort,vcId,dataRate,totalBytes (8 columns)
+        // Legacy format: sourceXpuId,destXpuId,sueId,suePort,vcId,dataRate,totalBytes (7 columns)
         std::istringstream iss(line);
         std::string token;
         std::vector<std::string> tokens;
@@ -416,13 +421,34 @@ ApplicationDeployer::ParseFineGrainedTrafficConfig (const SueSimulationConfig& c
         try
         {
             FineGrainedTrafficFlow flow;
-            flow.sourceXpuId = static_cast<uint32_t>(std::stoul(tokens[0])); // 0-based
-            flow.destXpuId = static_cast<uint32_t>(std::stoul(tokens[1]));   // 0-based
-            flow.sueId = static_cast<uint32_t>(std::stoul(tokens[2]));      // 0-based
-            flow.suePort = static_cast<uint32_t>(std::stoul(tokens[3]));         // 0-based port
-            flow.vcId = static_cast<uint8_t>(std::stoul(tokens[4]));            // VC ID (0-3)
-            flow.dataRate = std::stod(tokens[5]);                                // Mbps
-            flow.totalBytes = static_cast<uint32_t>(std::stoul(tokens[6]));     // Bytes
+
+            // Check if this is the new 8-column format with timestamp
+            if (tokens.size() >= 8)
+            {
+                // New format: timestamp(ns),sourceXpuId,destXpuId,sueId,suePort,vcId,dataRate,totalBytes
+                // Parse timestamp as nanoseconds and convert to seconds for internal use
+                double timestampNs = std::stod(tokens[0]);
+                flow.startTime = timestampNs / 1e9;                           // Convert ns to seconds
+                flow.sourceXpuId = static_cast<uint32_t>(std::stoul(tokens[1])); // 0-based
+                flow.destXpuId = static_cast<uint32_t>(std::stoul(tokens[2]));   // 0-based
+                flow.sueId = static_cast<uint32_t>(std::stoul(tokens[3]));      // 0-based
+                flow.suePort = static_cast<uint32_t>(std::stoul(tokens[4]));         // 0-based port
+                flow.vcId = static_cast<uint8_t>(std::stoul(tokens[5]));            // VC ID (0-3)
+                flow.dataRate = std::stod(tokens[6]);                                // Mbps
+                flow.totalBytes = static_cast<uint32_t>(std::stoul(tokens[7]));     // Bytes
+            }
+            else
+            {
+                // Legacy 7-column format: sourceXpuId,destXpuId,sueId,suePort,vcId,dataRate,totalBytes
+                flow.startTime = 0.0;  // Default start time for legacy format
+                flow.sourceXpuId = static_cast<uint32_t>(std::stoul(tokens[0])); // 0-based
+                flow.destXpuId = static_cast<uint32_t>(std::stoul(tokens[1]));   // 0-based
+                flow.sueId = static_cast<uint32_t>(std::stoul(tokens[2]));      // 0-based
+                flow.suePort = static_cast<uint32_t>(std::stoul(tokens[3]));         // 0-based port
+                flow.vcId = static_cast<uint8_t>(std::stoul(tokens[4]));            // VC ID (0-3)
+                flow.dataRate = std::stod(tokens[5]);                                // Mbps
+                flow.totalBytes = static_cast<uint32_t>(std::stoul(tokens[6]));     // Bytes
+            }
 
             // Validate VC ID range
             if (flow.vcId > 3)
@@ -432,11 +458,20 @@ ApplicationDeployer::ParseFineGrainedTrafficConfig (const SueSimulationConfig& c
                 flow.vcId = 0;
             }
 
+            // Validate start time
+            if (flow.startTime < 0.0)
+            {
+                NS_LOG_WARN("Start time " << flow.startTime << " is negative on line " << lineNumber
+                          << ", using 0.0");
+                flow.startTime = 0.0;
+            }
+
             flows.push_back(flow);
 
             NS_LOG_INFO("Parsed flow: XPU" << flow.sourceXpuId + 1 << " -> XPU" << flow.destXpuId + 1
                       << " via SUE" << flow.sueId + 1 << ":Port" << flow.suePort << " at " << flow.dataRate << " Mbps"
-                      << " on VC" << (uint32_t)flow.vcId << " for " << flow.totalBytes << " bytes");
+                      << " on VC" << (uint32_t)flow.vcId << " for " << flow.totalBytes << " bytes"
+                      << " (start: " << flow.startTime << "s after client start)");
         }
         catch (const std::exception& e)
         {

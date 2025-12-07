@@ -58,14 +58,18 @@ SUE-Sim supports rich configuration parameters, covering network topology, traff
 | `--EnableLinkCBFC` | true | Enable link layer CBFC flow control |
 | `--LinkCredits` | 85 | Initial CBFC credits for link layer |
 | `--CreditBatchSize` | 1 | Credit accumulation threshold |
+| `--SwitchCredits` | 85 | Switch credits |
+| `--HeaderSize` | 52 | Header size 
+| `--BaseCredit` | 1 | Base credit value for minimum packet |
+| `--BytesPerCredit` | 32 | Bytes per credit for linear mapping (bytes) |
 
 ### Queue Buffer Parameters
 
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
-| `--vcQueueMaxMB` | 0.3 | VC queue maximum capacity (MB) |
-| `--processingQueueMaxMB` | 0.3 | Processing queue maximum capacity (MB) |
-| `--destQueueMaxMB` | 0.03 | Destination queue maximum capacity (MB) |
+| `--vcQueueMaxKB` | 30.0 | VC queue maximum capacity (KB) |
+| `--processingQueueMaxKB` | 30.0 | Processing queue maximum capacity (KB) |
+| `--destQueueMaxKB` | 30.0 | Destination queue maximum capacity (KB) |
 
 ### Load Balancing Parameters
 
@@ -102,6 +106,7 @@ SUE-Sim supports rich configuration parameters, covering network topology, traff
 | `--creditReturnProcessingDelay` | "8ns" | Credit return processing delay |
 | `--batchCreditAggregationDelay` | "5ns" | Batch credit aggregation delay |
 | `--switchForwardDelay` | "130ns" | Switch internal forwarding delay |
+| `--processingQueueScheduleDelay` | "5ns" | Processing queue scheduling delay |
 
 ### Logging Configuration Parameters
 
@@ -125,7 +130,6 @@ SUE-Sim supports rich configuration parameters, covering network topology, traff
 |-----------|---------------|-------------|
 | `--StatLoggingEnabled` | true | Enable link layer statistics collection |
 | `--ClientStatInterval` | "10us" | Client statistics interval |
-| `--LinkStatInterval` | "10us" | Link statistics interval |
 
 ### LLR (Link-Level Retransmission) Parameters
 

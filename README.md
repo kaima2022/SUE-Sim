@@ -2,15 +2,15 @@
 
 ## **SUE-Sim: End-to-End Scale-Up Ethernet Simulation Platform**
 
----
+**Institute of Information Engineering, Chinese Academy of Sciences.** **State Key Laboratory of Information Security.**
 
+---
 </div>
 
 [![License](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://opensource.org/licenses/GPL-2.0)
 [![ns--3-3.36/3.44](https://img.shields.io/badge/ns--3-3.44%2F3.36-green.svg)](https://www.nsnam.org/)
 [![Platform](https://img.shields.io/badge/Platform-Ubuntu%2020.04+-lightgrey.svg)]()
 [![Language](https://img.shields.io/badge/Language-C%2B%2B-orange.svg)]()
-[![Python](https://img.shields.io/badge/Python-3.6%2B-blue.svg)](https://www.python.org/)
 
 
 </div>
@@ -26,8 +26,38 @@
   - [Installation](#installation)
   - [Usage](#usage)
 - [Configuration Parameters](#configuration-parameters)
+- [Changelog](#changelog)
 ---
+## Changelog
 
+### v2.1 (2025-12-07)
+- **Major Changes**:
+  - **State Machine Logic**: Fixed state machine logic for improved system reliability
+  - **Queue Scheduling**: Optimized queue scheduling algorithms
+  - **Credit-Based Flow Control**: Fixed credit-based flow control mechanism implementation
+  - **Transaction Packing**: Implemented capacity-aware transaction packing mechanism
+- **Stability**:
+  - Fixed multiple bugs and optimized many implementation details
+
+
+
+### v2.0 (2025-11-09)
+- **Major Changes**:
+  - **Module Decoupling**: Decoupled various modules for better maintainability and extensibility
+  - **Architectural Redesign**: Rebuilt core framework with modular architecture
+- **New Features**:
+  - **Enhanced Traffic Generation**: Added Trace-based and Configuration-based traffic generation methods
+  - **Advanced Logging**: Implemented comprehensive event-driven logging system
+- **Performance**:
+  - **Event-Driven Logging**: Transformed logging statistics from fixed-time intervals to event-driven triggers
+  - **Code Optimization**: Optimized code logic for improved performance and readability
+- **Stability**:
+  - **Bug Fixes**: Resolved critical issues and improved overall stability
+
+### v1.0 (2025-10-28)
+- **Initial Release**:
+  - Implemented basic SUE simulation framework
+---
 
 
 ## SUE-Sim Overview
@@ -42,7 +72,7 @@ SUE-Sim serves two primary objectives:
 
 - **SUE Framework Specification Optimization**: The platform enables researchers to optimize SUE framework specifications through advanceing algorithms and protocol validating. 
 
-**Current Version**: SUE-Sim v2.0 
+**Current Version**: SUE-Sim v2.1 
 
 ## System Architecture
 <p align="center">

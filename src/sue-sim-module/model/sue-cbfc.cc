@@ -64,6 +64,14 @@ CbfcManager::CbfcManager ()
     m_initialCredits (20),
     m_numVcs (4),
     m_creditBatchSize (1),
+    m_enableDynamicCredits (true),
+    m_baseCredit (1),
+    m_transactionSize (256),
+    m_headerSize (52),
+    m_bytesPerCredit (256),
+    m_getLocalMac (),
+    m_getNode (),
+    m_sendPacket (),
     m_creditGenerateDelay (Seconds (0.0)),
     m_protocolNum (0),
     m_callbacksSet (false)
@@ -257,6 +265,24 @@ CbfcManager::DecrementTxCredits (Mac48Address mac, uint8_t vcId)
   return false;
 }
 
+bool
+CbfcManager::DecrementTxCredits (Mac48Address mac, uint8_t vcId, uint32_t credits)
+{
+  NS_LOG_FUNCTION (this << mac << static_cast<uint32_t> (vcId) << credits);
+
+  auto it = m_txCreditsMap.find (mac);
+  if (it != m_txCreditsMap.end ())
+    {
+      auto vcIt = it->second.find (vcId);
+      if (vcIt != it->second.end () && vcIt->second >= credits)
+        {
+          vcIt->second -= credits;
+          return true;
+        }
+    }
+  return false;
+}
+
 void
 CbfcManager::AddTxCredits (Mac48Address mac, uint8_t vcId, uint32_t credits)
 {
@@ -272,16 +298,23 @@ CbfcManager::AddTxCredits (Mac48Address mac, uint8_t vcId, uint32_t credits)
 }
 
 void
-CbfcManager::HandleCreditReturn (const EthernetHeader& ethHeader, uint8_t vcId)
+CbfcManager::HandleCreditReturn (const EthernetHeader& ethHeader, uint8_t vcId, uint32_t packetSize)
 {
-  NS_LOG_FUNCTION (this << ethHeader.GetSource () << static_cast<uint32_t> (vcId));
+  NS_LOG_FUNCTION (this << ethHeader.GetSource () << static_cast<uint32_t> (vcId) << packetSize);
 
   if (m_enableLinkCBFC)
     {
+      // Calculate credits to return based on packet size (same as consumption logic)
+      uint32_t creditsToReturn = CalculateCreditsForPacket (packetSize);
+
       // Increase credit count for corresponding source address and VC
       Mac48Address source = ethHeader.GetSource ();
 
-      m_rxCreditsToReturnMap[source][vcId]++;
+      m_rxCreditsToReturnMap[source][vcId] += creditsToReturn;
+
+      NS_LOG_DEBUG ("Added " << creditsToReturn << " credits to return for " << source
+                   << " VC " << static_cast<uint32_t> (vcId)
+                   << " (packet size: " << packetSize << " bytes)");
     }
 }
 
@@ -440,6 +473,99 @@ CbfcManager::SendCreditPacket (Ptr<Packet> packet, Mac48Address targetMac, uint1
   {
     NS_LOG_WARN ("Send packet callback not set, credit packet dropped");
   }
+}
+
+// Dynamic credit consumption methods
+
+void
+CbfcManager::SetDynamicCreditMode (bool enable, uint32_t baseCredit, uint32_t transactionSize, uint32_t headerSize)
+{
+  NS_LOG_FUNCTION (this << enable << baseCredit << transactionSize << headerSize);
+
+  m_enableDynamicCredits = enable;
+  m_baseCredit = baseCredit;
+  m_transactionSize = transactionSize;
+  m_headerSize = headerSize;
+
+  NS_LOG_INFO ("Dynamic credit mode " << (enable ? "enabled" : "disabled")
+               << ", base credit: " << baseCredit
+               << ", transaction size: " << transactionSize
+               << " bytes, header size: " << headerSize << " bytes");
+}
+
+void
+CbfcManager::SetAdvancedCreditCalculation (uint32_t bytesPerCredit)
+{
+  NS_LOG_FUNCTION (this << bytesPerCredit);
+
+  m_bytesPerCredit = bytesPerCredit;
+
+  NS_LOG_INFO ("Credit calculation enabled"
+               << ", bytes per credit: " << bytesPerCredit << " bytes");
+}
+
+uint32_t
+CbfcManager::CalculateCreditsForPacket (uint32_t packetSize) const
+{
+  NS_LOG_FUNCTION (this << packetSize);
+
+  if (!m_enableDynamicCredits)
+    {
+      return m_baseCredit;
+    }
+
+  // Simple linear mapping: packet bytes / bytes per credit, round up
+  uint32_t credits = (packetSize + m_bytesPerCredit - 1) / m_bytesPerCredit;
+
+  // Ensure at least minimum credits
+  uint32_t totalCredits = std::max (credits, m_baseCredit);
+
+  NS_LOG_DEBUG ("Packet size " << packetSize << " bytes, bytes per credit: " << m_bytesPerCredit
+                << ", requires " << totalCredits << " credits");
+
+  return totalCredits;
+}
+
+bool
+CbfcManager::HasEnoughCredits (Mac48Address mac, uint8_t vcId, uint32_t packetSize) const
+{
+  NS_LOG_FUNCTION (this << mac << static_cast<uint32_t> (vcId) << packetSize);
+
+  uint32_t creditsNeeded = CalculateCreditsForPacket (packetSize);
+
+  auto it = m_txCreditsMap.find (mac);
+  if (it != m_txCreditsMap.end ())
+    {
+      auto vcIt = it->second.find (vcId);
+      if (vcIt != it->second.end ())
+        {
+          return vcIt->second >= creditsNeeded;
+        }
+    }
+
+  return false;
+}
+
+bool
+CbfcManager::ConsumeDynamicCredits (Mac48Address mac, uint8_t vcId, uint32_t packetSize)
+{
+  NS_LOG_FUNCTION (this << mac << static_cast<uint32_t> (vcId) << packetSize);
+
+  uint32_t creditsNeeded = CalculateCreditsForPacket (packetSize);
+
+  if (DecrementTxCredits (mac, vcId, creditsNeeded))
+    {
+      NS_LOG_INFO ("Consumed " << creditsNeeded << " credits for packet size "
+                   << packetSize << " bytes to " << mac << " VC " << static_cast<uint32_t> (vcId));
+      return true;
+    }
+  else
+    {
+      NS_LOG_INFO ("Failed to consume " << creditsNeeded << " credits for packet size "
+                   << packetSize << " bytes to " << mac << " VC " << static_cast<uint32_t> (vcId)
+                   << " - insufficient credits");
+      return false;
+    }
 }
 
 } // namespace ns3

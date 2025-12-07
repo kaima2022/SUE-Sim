@@ -93,6 +93,13 @@ public:
   void SetFineGrainedFlows (const std::vector<FineGrainedTrafficFlow>& flows);
 
   /**
+   * \brief Set client start time for accurate flow timing calculations
+   *
+   * \param clientStart Client start time in seconds
+   */
+  void SetClientStartTime (double clientStart);
+
+  /**
    * \brief Check if transmission is complete
    *
    * \return true if transmission is complete
@@ -187,6 +194,7 @@ private:
   Ptr<LoadBalancer> m_loadBalancer;     //!< Load balancer for traffic distribution
   uint32_t m_transactionSize;           //!< Transaction size in bytes
   uint32_t m_localXpuId;                //!< Local XPU identifier
+  double m_clientStart;                 //!< Client start time in seconds
   std::vector<FineGrainedTrafficFlow> m_fineGrainedFlows; //!< Fine-grained traffic flows configuration
 
   // Flow state tracking

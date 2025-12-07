@@ -172,6 +172,14 @@ public:
    */
   Ptr<Queue<Packet>> GetVcQueue (uint8_t vcId) const;
 
+  /**
+   * \brief Get the size of the first packet in a virtual channel queue without dequeueing
+   *
+   * \param vcId Virtual channel ID
+   * \return Size of the first packet in bytes, 0 if queue is empty
+   */
+  uint32_t GetFirstPacketSize (uint8_t vcId) const;
+
 private:
   bool m_initialized;                    //!< Queue manager initialization flag
   uint8_t m_numVcs;                      //!< Number of virtual channels

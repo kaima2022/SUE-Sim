@@ -106,6 +106,23 @@ struct QueueState
   uint32_t currentBurstSize = 0;                  //!< Current burst size in bytes
 };
 
+/**
+ * \brief Device capacity information for intelligent packing
+ */
+struct DeviceCapacityInfo
+{
+  Ptr<PointToPointSueNetDevice> device;                    //!< Network device pointer
+  std::vector<uint32_t> vcCapacities;                      //!< Available capacity per VC
+  uint32_t totalCapacity;                                  //!< Total available capacity
+  uint32_t usedCapacity;                                   //!< Currently used capacity
+  uint8_t deviceIndex;                                     //!< Device index for round-robin
+
+  /**
+   * \brief Default constructor
+   */
+  DeviceCapacityInfo () : device(nullptr), totalCapacity(0), usedCapacity(0), deviceIndex(0) {}
+};
+
 class SueClient : public Application
 {
 public:
@@ -158,11 +175,7 @@ public:
    */
   void SetSueId (uint32_t sueId);
 
-  /**
-   * \brief Log client statistics
-   */
-  void LogClientStatistics ();
-
+  
   /**
    * \brief Enable or disable logging
    *
@@ -232,6 +245,22 @@ public:
    * \return Current usage in bytes
    */
   uint32_t GetDestQueueCurrentUsage (uint32_t destXpuId, uint8_t vcId) const;
+
+  /**
+   * \brief Get device capacity information for intelligent packing
+   *
+   * \return Vector of device capacity information
+   */
+  std::vector<DeviceCapacityInfo> GetDeviceCapacities ();
+
+  /**
+   * \brief Smart packing based on available device capacity
+   *
+   * \param dest Destination information
+   * \param maxPackets Maximum number of packets to pack
+   * \return Vector of packed packets
+   */
+  std::vector<Ptr<Packet>> SmartPacking (const Destination& dest, uint32_t maxPackets);
 
   /**
    * \brief Cancel all logging events
@@ -406,12 +435,9 @@ private:
   Time m_waitingStartTime;                                                //!< Waiting start time
   uint32_t m_vcNum;                                                       //!< Number of virtual channels
   uint32_t m_destQueueMaxBytes;                                           //!< Destination queue maximum capacity
-  uint64_t m_totalBytesSent;                                              //!< Total bytes sent
-  Time m_lastStatTime;                                                    //!< Last statistics time
-  Time m_clientStatInterval;                                              //!< Client statistics interval
+    Time m_clientStatInterval;                                              //!< Client statistics interval
   std::string m_clientStatIntervalString;                               //!< Client statistics interval string for compatibility
   Time m_packingDelayPerPacket;                                           //!< Packing delay per packet
-  uint32_t m_XpuDropCounts;                                               //!< XPU drop counter
   bool m_loggingEnabled;                                                  //!< Logging enabled flag
   uint32_t m_deviceId;                                                    //!< Device identifier (base-1)
   uint32_t m_sueId;                                                       //!< SUE identifier
@@ -424,8 +450,6 @@ private:
   std::vector<Ptr<PointToPointSueNetDevice>> m_p2pDevices;               //!< P2P devices list
 
   // Statistics and monitoring
-  std::vector<int64_t> m_packDelays;                                      //!< Packing delays (nanoseconds)
-  std::vector<uint32_t> m_packNumbers;                                    //!< Packing numbers
 
   // Event management
   EventId m_schedulerEvent;                                               //!< Scheduler event ID
@@ -434,6 +458,7 @@ private:
   // Configuration parameters
   Time m_schedulingInterval;                                              //!< Scheduling interval
   uint32_t m_transactionSize;                                             //!< Transaction size in bytes
+  uint32_t m_additionalHeaderSize;                                        //!< Additional header size for capacity reservation
 
   // Randomness and timing
   Ptr<UniformRandomVariable> m_rand;                                      //!< Random variable generator

@@ -101,23 +101,19 @@ public:
     /**
      * \brief Process sent packet statistics
      * \param packet Packet to process
-     * \param vcBytesSentMap Reference to VC bytes sent map to update
      * \param nodeId Node identifier (base-0)
      * \param deviceId Device identifier (base-0)
      */
     static void ProcessSentPacketStats(Ptr<Packet> packet,
-                                      std::map<uint8_t, uint64_t>& vcBytesSentMap,
                                       uint32_t nodeId, uint32_t deviceId);
 
     /**
      * \brief Process received packet statistics
      * \param packet Packet to process
-     * \param vcBytesReceivedMap Reference to VC bytes received map to update
      * \param nodeId Node identifier (base-0)
      * \param deviceId Device identifier (base-0)
      */
     static void ProcessReceivedPacketStats(Ptr<Packet> packet,
-                                         std::map<uint8_t, uint64_t>& vcBytesReceivedMap,
                                          uint32_t nodeId, uint32_t deviceId);
 
     // === EVENT-DRIVEN STATISTICS FUNCTIONS ===
@@ -221,6 +217,98 @@ public:
                                        uint32_t credits,
                                        uint32_t nodeId,
                                        uint32_t deviceId);
+
+    /**
+     * \brief Process credit reception statistics (event-driven)
+     * \param sourceMac Source MAC address that sent the credits
+     * \param vcId Virtual channel ID
+     * \param receivedCredits Number of credits received
+     * \param nodeId Node ID for logging
+     * \param deviceId Device ID for logging
+     */
+    static void ProcessCreditReceptionStats(Mac48Address sourceMac,
+                                           uint8_t vcId,
+                                           uint32_t receivedCredits,
+                                           uint32_t nodeId,
+                                           uint32_t deviceId);
+
+    /**
+     * \brief Process credit send statistics (event-driven)
+     * \param targetMac Target MAC address that will receive the credits
+     * \param vcId Virtual channel ID
+     * \param sentCredits Number of credits sent
+     * \param nodeId Node ID for logging
+     * \param deviceId Device ID for logging
+     */
+    static void ProcessCreditSendStats(Mac48Address targetMac,
+                                      uint8_t vcId,
+                                      uint32_t sentCredits,
+                                      uint32_t nodeId,
+                                      uint32_t deviceId);
+
+    /**
+     * \brief Process destination queue statistics (event-driven)
+     * \param xpuId XPU ID
+     * \param sueId SUE ID
+     * \param destXpuId Destination XPU ID
+     * \param vcId Virtual channel ID
+     * \param currentBytes Current queue size in bytes
+     * \param maxBytes Maximum queue size in bytes
+     */
+    static void ProcessDestinationQueueStats(uint32_t xpuId,
+                                           uint32_t sueId,
+                                           uint32_t destXpuId,
+                                           uint8_t vcId,
+                                           uint32_t currentBytes,
+                                           uint32_t maxBytes);
+
+    /**
+     * \brief Process packing delay statistics (event-driven)
+     * \param xpuId XPU ID
+     * \param sueId SUE ID
+     * \param destXpuId Destination XPU ID
+     * \param vcId Virtual channel ID
+     * \param waitTimeNs Waiting time in nanoseconds
+     */
+    static void ProcessPackDelayStats(uint32_t xpuId, uint32_t sueId,
+                                     uint32_t destXpuId, uint8_t vcId, int64_t waitTimeNs);
+
+    /**
+     * \brief Process packing number statistics (event-driven)
+     * \param xpuId XPU ID
+     * \param sueId SUE ID
+     * \param destXpuId Destination XPU ID
+     * \param vcId Virtual channel ID
+     * \param packNum Number of packets in this packing operation
+     */
+    static void ProcessPackNumStats(uint32_t xpuId, uint32_t sueId,
+                                   uint32_t destXpuId, uint8_t vcId, uint32_t packNum);
+
+    /**
+     * \brief Process application layer packet transmission statistics (event-driven)
+     * \param nodeId Node identifier
+     * \param vcId Virtual channel identifier
+     * \param packetSize Packet size in bytes
+     */
+    static void ProcessAppLayerTxStats(uint32_t nodeId, uint8_t vcId, uint32_t packetSize);
+
+    /**
+     * \brief Process VC queue delay statistics (event-driven)
+     * Calculate and log VC queue delay from packet tag
+     * \param packet The dequeued packet
+     * \param nodeId Current node ID for logging
+     * \param deviceId Current device ID for logging
+     */
+    static void ProcessVcQueueDelayStats(Ptr<Packet> packet, uint32_t nodeId, uint32_t deviceId);
+
+    /**
+     * \brief Process processing queue delay statistics (event-driven)
+     * Calculate and log processing queue delay from packet tag
+     * \param packet The dequeued packet
+     * \param nodeId Current node ID for logging
+     * \param deviceId Current device ID for logging
+     */
+    static void ProcessProcessingQueueDelayStats(Ptr<Packet> packet, uint32_t nodeId, uint32_t deviceId);
 };
 
 /**
