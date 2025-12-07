@@ -2,7 +2,9 @@
 
 ## **SUE-Sim: End-to-End Scale-Up Ethernet Simulation Platform**
 
-**Institute of Information Engineering, Chinese Academy of Sciences.** **State Key Laboratory of Information Security.**
+**Institute of Information Engineering, Chinese Academy of Sciences** 
+
+**State Key Laboratory of Information Security**
 
 ---
 </div>
@@ -235,7 +237,7 @@ The following command demonstrates a 4-node XPU test scenario:
 #### 1. Uniform Traffic Mode
 Generates uniform traffic patterns across all nodes:
 ```bash
-./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=16 --portsPerSue=4 --threadRate=3500000 --totalBytesToSend=5" > log/sue-sim.log 2>&1
+./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=16 --portsPerSue=4 --threadRate=3000000 --totalBytesToSend=5" > log/sue-sim.log 2>&1
 ```
 
 #### 2. Trace-based Traffic Mode
@@ -247,7 +249,7 @@ Uses real traffic traces for realistic simulation:
 #### 3. Configuration-based Traffic Mode
 Uses detailed configuration files for custom traffic patterns:
 ```bash
-./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=4 --portsPerSue=1 --enableFineGrainedMode=true --fineGrainedConfigFile=scratch/SUE-Sim/config/test-fine-grained-config.csv" > log/sue-sim.log 2>&1
+./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=4 --portsPerSue=1 --enableFineGrainedMode=true --fineGrainedConfigFile=scratch/SUE-Sim/config/test-fine-grained-config.csv --LinkCredits=900 --SwitchCredits=300" > log/sue-sim.log 2>&1
 ```
 
 **Note**: NS3 logging is disabled by default. Performance data is automatically saved to `performance-data/data`. 

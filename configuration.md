@@ -89,7 +89,7 @@ SUE-Sim supports rich configuration parameters, covering network topology, traff
 **Application Layer Delay Parameters**
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
-| `--SchedulingInterval` | "5ns" | Transmitter scheduling polling interval |
+| `--SchedulingInterval` | "100ns" | Transmitter scheduling polling interval |
 | `--PackingDelayPerPacket` | "3ns" | Packet packing processing time |
 | `--destQueueSchedulingDelay` | "5ns" | Destination queue scheduling delay |
 | `--transactionClassificationDelay` | "0ns" | Transaction classification delay |

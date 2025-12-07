@@ -96,7 +96,7 @@ SueSimulationConfig::SueSimulationConfig ()
     trace.ClientStatInterval = "10us";
     
     // Initialize delay configuration
-    delay.SchedulingInterval = "5ns";
+    delay.SchedulingInterval = "100ns";
     delay.PackingDelayPerPacket = "3ns";
     delay.destQueueSchedulingDelay = "5ns";
     delay.transactionClassificationDelay = "0ns";
