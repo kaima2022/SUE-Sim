@@ -12,6 +12,7 @@
 [![Language](https://img.shields.io/badge/Language-C%2B%2B-orange.svg)]()
 [![Python](https://img.shields.io/badge/Python-3.6%2B-blue.svg)](https://www.python.org/)
 
+**Note**: The ns-3 v3.36 branch (`ns3-36`) is temporarily unmaintained.
 
 </div>
 
