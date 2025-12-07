@@ -246,7 +246,7 @@ Uses real traffic traces for realistic simulation:
 ./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=4 --portsPerSue=1 --enableTraceMode=true --traceFilePath=scratch/SUE-Sim/trace/all_trace_entries.csv" > log/sue-sim.log 2>&1
 ```
 
-#### 3. Configuration-based Traffic Mode
+#### 3. Configuration-based Traffic Mode (Recommended)
 Uses detailed configuration files for custom traffic patterns:
 ```bash
 ./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=4 --portsPerSue=1 --enableFineGrainedMode=true --fineGrainedConfigFile=scratch/SUE-Sim/config/test-fine-grained-config.csv --LinkCredits=900 --SwitchCredits=300" > log/sue-sim.log 2>&1
