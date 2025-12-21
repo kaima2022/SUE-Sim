@@ -30,37 +30,6 @@
 - [Configuration Parameters](#configuration-parameters)
 - [Changelog](#changelog)
 ---
-## Changelog
-
-### v2.1 (2025-12-07)
-- **Major Changes**:
-  - **State Machine Logic**: Fixed state machine logic for improved system reliability
-  - **Queue Scheduling**: Optimized queue scheduling algorithms
-  - **Credit-Based Flow Control**: Fixed credit-based flow control mechanism implementation
-  - **Transaction Packing**: Implemented capacity-aware transaction packing mechanism
-- **Stability**:
-  - Fixed multiple bugs and optimized many implementation details
-
-
-
-### v2.0 (2025-11-09)
-- **Major Changes**:
-  - **Module Decoupling**: Decoupled various modules for better maintainability and extensibility
-  - **Architectural Redesign**: Rebuilt core framework with modular architecture
-- **New Features**:
-  - **Enhanced Traffic Generation**: Added Trace-based and Configuration-based traffic generation methods
-  - **Advanced Logging**: Implemented comprehensive event-driven logging system
-- **Performance**:
-  - **Event-Driven Logging**: Transformed logging statistics from fixed-time intervals to event-driven triggers
-  - **Code Optimization**: Optimized code logic for improved performance and readability
-- **Stability**:
-  - **Bug Fixes**: Resolved critical issues and improved overall stability
-
-### v1.0 (2025-10-28)
-- **Initial Release**:
-  - Implemented basic SUE simulation framework
----
-
 
 ## SUE-Sim Overview
 
@@ -260,6 +229,38 @@ Uses detailed configuration files for custom traffic patterns:
 SUE-Sim supports configuration parameters, covering network topology, traffic generation, link layer, CBFC flow control, and other aspects. For complete parameter descriptions, please refer to:
 
 📋 **[Detailed Configuration Parameters Documentation](configuration.md)**
+
+---
+## Changelog
+
+### v2.1 (2025-12-07)
+- **Major Changes**:
+  - **State Machine Logic**: Fixed state machine logic for improved system reliability
+  - **Queue Scheduling**: Optimized queue scheduling algorithms
+  - **Credit-Based Flow Control**: Fixed credit-based flow control mechanism implementation
+  - **Transaction Packing**: Implemented capacity-aware transaction packing mechanism
+- **Stability**:
+  - Fixed multiple bugs and optimized many implementation details
+
+
+
+### v2.0 (2025-11-09)
+- **Major Changes**:
+  - **Module Decoupling**: Decoupled various modules for better maintainability and extensibility
+  - **Architectural Redesign**: Rebuilt core framework with modular architecture
+- **New Features**:
+  - **Enhanced Traffic Generation**: Added Trace-based and Configuration-based traffic generation methods
+  - **Advanced Logging**: Implemented comprehensive event-driven logging system
+- **Performance**:
+  - **Event-Driven Logging**: Transformed logging statistics from fixed-time intervals to event-driven triggers
+  - **Code Optimization**: Optimized code logic for improved performance and readability
+- **Stability**:
+  - **Bug Fixes**: Resolved critical issues and improved overall stability
+
+### v1.0 (2025-10-28)
+- **Initial Release**:
+  - Implemented basic SUE simulation framework
+---
 
 ## Contributing
 
