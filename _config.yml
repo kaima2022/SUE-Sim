@@ -1,0 +1,17 @@
+title: "SUE-Sim"
+description: "SUE-Sim is an end-to-end Scale-Up Ethernet network simulation platform for AI and HPC workloads."
+url: "https://kaima2022.github.io"
+baseurl: "/SUE-Sim"
+repository: "kaima2022/SUE-Sim"
+lang: "en-US"
+timezone: "Asia/Shanghai"
+
+theme: jekyll-theme-primer
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+markdown: kramdown
+kramdown:
+  input: GFM
