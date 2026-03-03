@@ -1,5 +1,5 @@
 title: "SUE-Sim"
-description: "SUE-Sim is an end-to-end Scale-Up Ethernet network simulation platform for AI and HPC workloads."
+description: "SUE-Sim is an end-to-end, high-precision network simulation platform for the Scale-Up Ethernet framework(SUE)."
 url: "https://kaima2022.github.io"
 baseurl: "/SUE-Sim"
 repository: "kaima2022/SUE-Sim"

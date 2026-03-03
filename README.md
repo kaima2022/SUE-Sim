@@ -31,7 +31,7 @@
 
 [Project Website](https://kaima2022.github.io/SUE-Sim/) | [GitHub Repository](https://github.com/kaima2022/SUE-Sim)
 
-SUE-Sim is a Scale-Up Ethernet network simulator based on ns-3 for AI and HPC data center network research, protocol validation, and performance benchmarking.
+SUE-Sim is an end-to-end, high-precision network simulation platform for the Scale-Up Ethernet framework(SUE).
 
 
 </div>
@@ -52,7 +52,7 @@ SUE-Sim is a Scale-Up Ethernet network simulator based on ns-3 for AI and HPC da
 
 ## SUE-Sim Overview
 
-SUE-Sim is an end-to-end, high-precision network simulation platform for the [Scale-Up Ethernet framework(SUE)](https://docs.broadcom.com/docs/scale-up-ethernet-framework).
+SUE-Sim is an end-to-end, high-precision network simulation platform for the Scale-Up Ethernet framework(SUE).
 
 Broadcom's SUE provides a low-latency, high-bandwidth interconnect framework for Ethernet-based XPU scale-up networks, supporting efficient interconnection of large-scale XPU clusters at rack-level and even multi-rack-level. It aims to address the increasingly prominent network bottleneck issues caused by the growing complexity of AI and machine learning workloads.
 

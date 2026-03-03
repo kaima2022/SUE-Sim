@@ -1,7 +1,7 @@
 ---
 layout: default
 title: SUE-Sim
-description: SUE-Sim is an end-to-end Scale-Up Ethernet network simulation platform for AI and HPC workloads.
+description: SUE-Sim is an end-to-end, high-precision network simulation platform for the Scale-Up Ethernet framework(SUE).
 ---
 
 # SUE-Sim
@@ -15,7 +15,7 @@ End-to-End Scale-Up Ethernet Simulation Platform based on ns-3.
 
 [GitHub Repository](https://github.com/kaima2022/SUE-Sim) | [README](README.md)
 
-SUE-Sim is a Scale-Up Ethernet simulator for AI/HPC data center network research, protocol validation, and performance benchmarking.
+SUE-Sim is an end-to-end, high-precision network simulation platform for the Scale-Up Ethernet framework(SUE).
 
 ## Highlights
 
