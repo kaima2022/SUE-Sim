@@ -2,25 +2,24 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "sue-switch.h"
 #include "point-to-point-sue-net-device.h"
 #include "sue-cbfc.h"
 #include "sue-llr.h"
+#include "sue-ppp-header.h"
 #include "sue-utils.h"
 #include "ns3/log.h"
 #include "ns3/simulator.h"
@@ -45,7 +44,7 @@ SueSwitch::GetTypeId (void)
 }
 
 SueSwitch::SueSwitch ()
-  : m_forwardingBusy (false),
+  : m_egressOverflowPolicy (EgressOverflowPolicy::RETRY),
     m_llrNodeManager (nullptr),
     m_llrSwitchPortManager (nullptr)
 {
@@ -71,23 +70,152 @@ SueSwitch::ClearForwardingTable (void)
   m_forwardingTable.clear ();
 }
 
+void
+SueSwitch::SetEgressOverflowPolicy (EgressOverflowPolicy policy)
+{
+  NS_LOG_FUNCTION (this << static_cast<uint32_t> (policy));
+  m_egressOverflowPolicy = policy;
+}
+
+SueSwitch::EgressOverflowPolicy
+SueSwitch::GetEgressOverflowPolicy (void) const
+{
+  return m_egressOverflowPolicy;
+}
+
+bool
+SueSwitch::LookupOutPortIndex (const Mac48Address &destination, uint32_t *outPortIndex) const
+{
+  NS_LOG_FUNCTION (this << destination);
+  if (!outPortIndex)
+    {
+      return false;
+    }
+  auto it = m_forwardingTable.find (destination);
+  if (it == m_forwardingTable.end ())
+    {
+      return false;
+    }
+  *outPortIndex = it->second;
+  return true;
+}
+
+Ptr<PointToPointSueNetDevice>
+SueSwitch::FindPortDevice (Ptr<Node> node, uint32_t outPortIndex) const
+{
+  NS_LOG_FUNCTION (this << node << outPortIndex);
+  if (!node)
+    {
+      return nullptr;
+    }
+  for (uint32_t i = 0; i < node->GetNDevices (); i++)
+    {
+      Ptr<NetDevice> dev = node->GetDevice (i);
+      Ptr<PointToPointSueNetDevice> p2pDev = DynamicCast<PointToPointSueNetDevice> (dev);
+      if (p2pDev && p2pDev->GetIfIndex () == outPortIndex)
+        {
+          return p2pDev;
+        }
+    }
+  return nullptr;
+}
+
+bool
+SueSwitch::TryReserveEgressVcQueueBytes (uint32_t outPortIndex,
+                                        uint8_t vcId,
+                                        uint32_t bytes,
+                                        Ptr<PointToPointSueNetDevice> targetDevice)
+{
+  NS_LOG_FUNCTION (this << outPortIndex << static_cast<uint32_t> (vcId) << bytes << targetDevice);
+
+  if (m_egressOverflowPolicy != EgressOverflowPolicy::DROP)
+    {
+      return true;
+    }
+  if (!targetDevice)
+    {
+      return false;
+    }
+
+  // Target device's VC queue parameters are initialized as part of CBFC init.
+  // In certain traffic patterns (e.g., incast), an egress port may be used for
+  // forwarding before it has received any packets itself. Ensure the egress
+  // port's queue manager has been initialized before admission checks.
+  targetDevice->InitializeCbfc ();
+
+  Ptr<SueQueueManager> qm = targetDevice->GetQueueManager ();
+  if (!qm)
+    {
+      return false;
+    }
+
+  const uint32_t usedBytes = qm->GetVcQueueBytes (vcId);
+  const uint32_t maxBytes = qm->GetVcQueueMaxBytes ();
+  const uint64_t reserved = m_egressReservedBytes[outPortIndex][vcId];
+  const uint64_t projected = static_cast<uint64_t> (usedBytes) + reserved + bytes;
+
+  if (projected > maxBytes)
+    {
+      return false;
+    }
+
+  m_egressReservedBytes[outPortIndex][vcId] = reserved + bytes;
+  return true;
+}
+
+void
+SueSwitch::ReleaseEgressVcQueueBytes (uint32_t outPortIndex, uint8_t vcId, uint32_t bytes)
+{
+  NS_LOG_FUNCTION (this << outPortIndex << static_cast<uint32_t> (vcId) << bytes);
+
+  auto portIt = m_egressReservedBytes.find (outPortIndex);
+  if (portIt == m_egressReservedBytes.end ())
+    {
+      return;
+    }
+  auto &vcMap = portIt->second;
+  auto vcIt = vcMap.find (vcId);
+  if (vcIt == vcMap.end ())
+    {
+      return;
+    }
+  if (vcIt->second <= bytes)
+    {
+      vcIt->second = 0;
+    }
+  else
+    {
+      vcIt->second -= bytes;
+    }
+}
+
+uint64_t
+SueSwitch::GetReservedEgressVcQueueBytes (uint32_t outPortIndex, uint8_t vcId) const
+{
+  auto portIt = m_egressReservedBytes.find (outPortIndex);
+  if (portIt == m_egressReservedBytes.end ())
+    {
+      return 0;
+    }
+  auto vcIt = portIt->second.find (vcId);
+  if (vcIt == portIt->second.end ())
+    {
+      return 0;
+    }
+  return vcIt->second;
+}
+
 
 bool
 SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
                                     const EthernetHeader& ethHeader,
                                     Ptr<PointToPointSueNetDevice> currentDevice,
                                     uint16_t protocol,
-                                    uint8_t vcId)
+                                    uint8_t vcId,
+                                    bool skipSwitchInternalCbfcCredits)
 {
   NS_LOG_FUNCTION (this << packet << currentDevice << protocol << static_cast<uint32_t> (vcId));
 
-  // Apply state machine: check if switch is busy forwarding
-  if (m_forwardingBusy)
-  {
-    // Switch is busy, fail and let upper layer retry
-    NS_LOG_DEBUG ("Switch busy, forwarding failed - upper layer will retry");
-    return false;
-  }
   // Extract destination MAC address from packet
   Mac48Address destination = ethHeader.GetDestination ();
 
@@ -124,49 +252,55 @@ SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
             {
               Mac48Address mac = Mac48Address::ConvertFrom (p2pDev->GetAddress ());
 
-              // Switch internal LLR processing
-              Ptr<Packet> packetCopy = packet->Copy ();
+		              // Check switch-internal CBFC credits (ingress -> egress) if enabled.
+		              // NOTE: In switch DROP overflow policy, we may pre-consume these credits
+		              // during egress admission to avoid reserving egress bytes for packets that
+		              // are later blocked by internal CBFC.
+		              Ptr<CbfcManager> cbfcManager = currentDevice->GetCbfcManager ();
+		              bool canForward = false;
 
-              // Apply LLR processing if enabled
-              if (currentDevice->GetLlrEnabled () && m_llrSwitchPortManager)
-                {
-                  // LLR send processing for switch internal forwarding
-                  m_llrSwitchPortManager->LlrSendPacket (packetCopy, vcId, mac);
-                  NS_LOG_DEBUG ("LLR processing applied for switch internal forwarding");
-                }
-
-              // Check CBFC and credits if enabled
-              Ptr<CbfcManager> cbfcManager = currentDevice->GetCbfcManager ();
-              bool canForward = false;
-
-              if (cbfcManager)
-                {
-                  if (cbfcManager->IsLinkCbfcEnabled ())
-                    {
-                      // CBFC enabled: check dynamic credits before forwarding
-                      uint32_t packetSize = packet->GetSize ();
-                      if (cbfcManager->HasEnoughCredits (mac, vcId, packetSize))
-                        {
-                          canForward = true;
-                          if (cbfcManager->ConsumeDynamicCredits (mac, vcId, packetSize))
-                            {
-                              SueStatsUtils::ProcessCreditChangeStats(mac, vcId, cbfcManager->GetTxCredits(mac, vcId), currentDevice->GetNode()->GetId(), currentDevice->GetIfIndex() - 1);
-                              NS_LOG_INFO ("Switch forwarding: consumed credits for packet size " << packetSize << " bytes to " << mac << " VC " << static_cast<uint32_t> (vcId));
-                            }
-                          else
-                            {
-                              canForward = false;
-                              NS_LOG_INFO ("Switch forwarding: failed to consume credits for packet size " << packetSize << " bytes");
-                            }
-                        }
-                      else
-                        {
-                          NS_LOG_INFO ("No enough credits for forwarding packet size " << packetSize << " bytes to " << mac);
-                        }
-                    }
-                  else
-                    {
-                      // CBFC disabled: always allow forwarding
+		              if (cbfcManager)
+		                {
+		                  if (cbfcManager->IsLinkCbfcEnabled ())
+		                    {
+		                      if (skipSwitchInternalCbfcCredits)
+		                        {
+		                          canForward = true;
+		                        }
+		                      else
+		                        {
+		                          // CBFC enabled: check dynamic credits before forwarding.
+		                          // Use on-wire size (include PPP header) to match credit return.
+		                          SuePppHeader ppp;
+		                          const uint32_t onWireSize = packet->GetSize () + ppp.GetSerializedSize ();
+		                          if (cbfcManager->HasEnoughCredits (mac, vcId, onWireSize))
+		                            {
+		                              canForward = true;
+		                              if (cbfcManager->ConsumeDynamicCredits (mac, vcId, onWireSize))
+		                                {
+		                                  SueStatsUtils::ProcessCreditChangeStats (mac, vcId, cbfcManager->GetTxCredits (mac, vcId),
+		                                                                          currentDevice->GetNode ()->GetId (),
+		                                                                          currentDevice->GetIfIndex () - 1);
+		                                  NS_LOG_INFO ("Switch forwarding: consumed credits for packet size " << onWireSize
+		                                                                                                     << " bytes to " << mac
+		                                                                                                     << " VC " << static_cast<uint32_t> (vcId));
+		                                }
+		                              else
+		                                {
+		                                  canForward = false;
+		                                  NS_LOG_INFO ("Switch forwarding: failed to consume credits for packet size " << onWireSize << " bytes");
+		                                }
+		                            }
+		                          else
+		                            {
+		                              canForward = false;
+		                              NS_LOG_INFO ("No enough credits for forwarding packet size " << onWireSize << " bytes to " << mac);
+		                            }
+		                        }
+		                    }
+		                  else
+		                    {
+		                      // CBFC disabled: always allow forwarding
                       canForward = true;
                     }
                 }
@@ -185,21 +319,24 @@ SueSwitch::ProcessSwitchForwarding (Ptr<Packet> packet,
                   ethTemp.SetSource (currentMac);
                   packet->AddHeader (ethTemp);
 
-                  // Calculate forwarding delay
-                  Time forwardDelay = CalculateAdaptiveForwardDelay (currentDevice, packet->GetSize ());
+                  ForwardingRequest req;
+                  req.originalDevice = currentDevice;
+                  req.targetDevice = p2pDev;
+                  req.packet = packet;
+                  req.ethHeader = ethHeader;
+                  req.vcId = vcId;
+                  req.sourceMac = ethHeader.GetSource ();
 
-                  NS_LOG_DEBUG ("Switch idle, starting immediate forwarding with delay: "
-                                << forwardDelay.GetNanoSeconds () << "ns");
+                  // One pipeline per egress port: if busy, enqueue; otherwise start now.
+                  if (m_egressBusy[outPortIndex])
+                    {
+                      m_egressQueues[outPortIndex].push_back (req);
+                      return true;
+                    }
 
-                  // Schedule forwarding completion after the delay
-                  Simulator::Schedule (forwardDelay,
-                                       &SueSwitch::ForwardingComplete,
-                                       this,
-                                       currentDevice, p2pDev, packet,
-                                       ethHeader, vcId, ethHeader.GetSource ());
-
-                  // Switch is idle, start forwarding immediately
-                  m_forwardingBusy = true;
+                  m_egressBusy[outPortIndex] = true;
+                  m_egressQueues[outPortIndex].push_back (req);
+                  StartNextOnEgressPort (outPortIndex);
                 }
               else
                 {
@@ -247,10 +384,16 @@ SueSwitch::IsSwitchDevice (Mac48Address mac) const
 {
   NS_LOG_FUNCTION (this << mac);
 
+  bool isSwitch = false;
+  if (PointToPointSueNetDevice::LookupRegisteredDeviceRole (mac, &isSwitch))
+    {
+      return isSwitch;
+    }
+
   uint8_t buffer[6];
   mac.CopyTo (buffer);
   uint8_t lastByte = buffer[5]; // Last byte of MAC address
-  // TODO: Simplistic logic; needs modification for proper XPU/switch identification
+  // Fallback heuristic for legacy setups: switch devices get even MAC addresses.
   return (lastByte % 2 == 0); // Even numbers are switch devices
 }
 
@@ -268,10 +411,11 @@ SueSwitch::CalculateAdaptiveForwardDelay (Ptr<PointToPointSueNetDevice> device, 
   // Calculate size-based additional delay using device's actual data rate
   // This simulates the serialization delay in real switches
   // Use a fraction of actual transmission time to represent internal processing overhead
-  Time sizeBasedDelay = deviceRate.CalculateBytesTxTime (packetSize * 1.0); // 10% of transmission time
+  const Time txTime = deviceRate.CalculateBytesTxTime (packetSize);
+  const Time sizeBasedDelay = NanoSeconds (txTime.GetNanoSeconds () / 10); // 10% of serialization time
 
-  // Total adaptive delay = base delay + size-based component
-  Time totalDelay = baseDelay + sizeBasedDelay;
+  // Total adaptive delay = base delay
+  Time totalDelay = baseDelay;
 
   NS_LOG_DEBUG ("Calculated adaptive forward delay: " << totalDelay.GetNanoSeconds ()
                 << "ns for packet size " << packetSize << " bytes (base: "
@@ -283,34 +427,109 @@ SueSwitch::CalculateAdaptiveForwardDelay (Ptr<PointToPointSueNetDevice> device, 
 }
 
 void
+SueSwitch::StartNextOnEgressPort (uint32_t outPortIndex)
+{
+  auto& q = m_egressQueues[outPortIndex];
+  if (q.empty ())
+    {
+      m_egressBusy[outPortIndex] = false;
+      return;
+    }
+
+  ForwardingRequest req = q.front ();
+  q.pop_front ();
+
+  // Calculate forwarding delay
+  Time forwardDelay = CalculateAdaptiveForwardDelay (req.originalDevice, req.packet->GetSize ());
+
+  NS_LOG_DEBUG ("Switch egress " << outPortIndex << " forwarding with delay: "
+                << forwardDelay.GetNanoSeconds () << "ns (pending=" << q.size () << ")");
+
+  Simulator::Schedule (forwardDelay,
+                       &SueSwitch::ForwardingComplete,
+                       this,
+                       req.originalDevice, req.targetDevice, req.packet,
+                       req.ethHeader, req.vcId, req.sourceMac, outPortIndex);
+}
+
+void
 SueSwitch::ForwardingComplete (Ptr<PointToPointSueNetDevice> originalDevice,
                                Ptr<PointToPointSueNetDevice> targetDevice,
                                Ptr<Packet> packet,
                                const EthernetHeader& ethHeader,
                                uint8_t vcId,
-                               Mac48Address sourceMac)
+                               Mac48Address sourceMac,
+                               uint32_t outPortIndex)
 {
   NS_LOG_FUNCTION (this);
 
   // Perform actual forwarding: enqueue to target device's VC queue
-  originalDevice->SpecDevEnqueueToVcQueue (targetDevice, packet->Copy ());
-
-  // Handle credit return with the same delay (if CBFC enabled)
-  Ptr<CbfcManager> cbfcManager = originalDevice->GetCbfcManager ();
-  if (cbfcManager && cbfcManager->IsLinkCbfcEnabled ())
+  const bool enqueued =
+      originalDevice->SpecDevEnqueueToVcQueue (targetDevice, packet->Copy ());
+  if (!enqueued)
     {
-      Simulator::Schedule (NanoSeconds (0),  // Already delayed by forwarding delay
-                         &CbfcManager::HandleCreditReturn,
-                         cbfcManager, ethHeader, vcId, packet->GetSize ());
-      Simulator::Schedule (NanoSeconds (0),
-                         &CbfcManager::CreditReturn,
-                         cbfcManager, sourceMac, vcId);
+      if (m_egressOverflowPolicy == EgressOverflowPolicy::RETRY)
+        {
+          // Egress VC queue is full. Do not drop: keep the request on this egress
+          // pipeline and retry later. Also do not return credits yet so that
+          // upstream backpressure is preserved under CBFC.
+          //
+          // NOTE: Avoid extremely tight busy-retry loops (1ns) which can explode
+          // the event count under heavy contention (e.g., large packed bursts).
+          // Use a conservative retry delay tied to the link serialization time
+          // of the packet on the egress device.
+          Time retryDelay = NanoSeconds (1);
+          if (targetDevice)
+            {
+              retryDelay = targetDevice->GetDataRate ().CalculateBytesTxTime (packet->GetSize ());
+              if (retryDelay.IsZero ())
+                {
+                  retryDelay = NanoSeconds (1);
+                }
+            }
+          Simulator::Schedule (retryDelay,
+                               &SueSwitch::ForwardingComplete,
+                               this,
+                               originalDevice,
+                               targetDevice,
+                               packet,
+                               ethHeader,
+                               vcId,
+                               sourceMac,
+                               outPortIndex);
+          return;
+        }
+
+      // DROP mode: model lossy egress. Do not return credits (credit leak is
+      // intentional; periodic credit sync + LLR should recover).
+      SuePppHeader ppp;
+      const uint32_t projectedBytes = packet->GetSize () + ppp.GetSerializedSize ();
+      ReleaseEgressVcQueueBytes (outPortIndex, vcId, projectedBytes);
+
+      NS_LOG_INFO ("Switch egress drop: outPortIndex=" << outPortIndex
+                                                      << " vc=" << static_cast<uint32_t> (vcId)
+                                                      << " bytes=" << projectedBytes);
+
+      // Advance egress pipeline even on drop.
+      StartNextOnEgressPort (outPortIndex);
+      return;
     }
 
-  // Mark forwarding as complete
-  m_forwardingBusy = false;
+  if (m_egressOverflowPolicy == EgressOverflowPolicy::DROP)
+    {
+      SuePppHeader ppp;
+      const uint32_t projectedBytes = packet->GetSize () + ppp.GetSerializedSize ();
+      ReleaseEgressVcQueueBytes (outPortIndex, vcId, projectedBytes);
+    }
 
-  NS_LOG_DEBUG ("Forwarding completed - switch is now idle");
+  // Switch-internal CBFC credit return is handled by the switch egress port when the
+  // packet is actually transmitted on the outgoing link (PointToPointSueNetDevice::TransmitStart()).
+  //
+  // Returning credits here (at enqueue-time) would artificially inflate the internal
+  // window and can re-introduce egress over-admission under contention.
+
+  // Advance egress pipeline.
+  StartNextOnEgressPort (outPortIndex);
 }
 
 } // namespace ns3

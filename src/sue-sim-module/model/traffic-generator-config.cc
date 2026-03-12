@@ -2,19 +2,17 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "traffic-generator-config.h"
@@ -43,6 +41,11 @@ ConfigurableTrafficGenerator::GetTypeId (void)
                    UintegerValue (256),
                    MakeUintegerAccessor (&ConfigurableTrafficGenerator::m_transactionSize),
                    MakeUintegerChecker<uint32_t> ())
+    .AddAttribute ("MaxVcId",
+                   "Maximum VC ID for auto selection",
+                   UintegerValue (3),
+                   MakeUintegerAccessor (&ConfigurableTrafficGenerator::m_maxVcId),
+                   MakeUintegerChecker<uint8_t> ())
     .AddAttribute ("MaxBurstSize",
                    "Maximum burst size in bytes",
                    UintegerValue (2048),
@@ -63,6 +66,7 @@ ConfigurableTrafficGenerator::GetTypeId (void)
 
 ConfigurableTrafficGenerator::ConfigurableTrafficGenerator ()
   : m_transactionSize (256),
+    m_maxVcId (3),
     m_localXpuId (0),
     m_maxBurstSize (2048),
     m_enableClientCBFC (true),
@@ -251,12 +255,16 @@ ConfigurableTrafficGenerator::InitializeActiveFlows ()
 
       if (state.isActive)
         {
+          std::string sueLabel = (flow.sueId == kAutoSueId) ? "auto" : std::to_string(flow.sueId);
+          std::string vcLabel = (flow.vcId == kAutoVcId)
+                                  ? "auto"
+                                  : std::to_string(static_cast<uint32_t>(flow.vcId));
           m_activeFlowIndices.push_back (i);
           NS_LOG_INFO ("Active flow " << i << ": XPU" << flow.sourceXpuId
                       << " -> XPU" << flow.destXpuId
-                      << " via SUE" << flow.sueId
+                      << " via SUE" << sueLabel
                       << " at " << flow.dataRate << " Mbps"
-                      << " on VC" << (uint32_t)flow.vcId
+                      << " on VC" << vcLabel
                       << " (start: " << flow.startTime << "s)");
         }
     }
@@ -354,25 +362,36 @@ ConfigurableTrafficGenerator::GenerateTransactionForFlow (uint32_t flowIndex)
   Ptr<Packet> packet = Create<Packet> (m_transactionSize);
 
   // Add SUE header
-  AddSueHeader (packet, flow.destXpuId, flow.vcId);
+  bool useAutoSelection = (flow.sueId == kAutoSueId &&
+                           flow.suePort == kAutoSuePort &&
+                           flow.vcId == kAutoVcId);
+  uint8_t vcId = flow.vcId;
+  if (useAutoSelection)
+    {
+      vcId = static_cast<uint8_t> (m_rand->GetInteger (0, m_maxVcId));
+    }
+  AddSueHeader (packet, flow.destXpuId, vcId);
 
-  // Distribute through load balancer with specific SUE ID
+  // Distribute through load balancer (auto selection uses configured algorithm).
   if (m_loadBalancer)
     {
-      // Create a custom transaction that specifies the SUE ID
-      // This requires extending the LoadBalancer interface to support SUE ID specification
-      m_loadBalancer->DistributeTransaction (packet, flow.destXpuId, flow.vcId);
+      m_loadBalancer->DistributeTransaction (packet, flow.destXpuId, vcId);
       
       // Log application layer packet transmission statistics
-      SueStatsUtils::ProcessAppLayerTxStats(flow.sourceXpuId, flow.vcId, packet->GetSize());
+      SueStatsUtils::ProcessAppLayerTxStats (flow.sourceXpuId, vcId, packet->GetSize ());
     }
 
   // Update flow state
   state.bytesSent += m_transactionSize;
 
+  std::string sueLabel = useAutoSelection ? "auto" : std::to_string (flow.sueId);
+  std::string vcLabel = useAutoSelection
+                          ? std::to_string (static_cast<uint32_t> (vcId))
+                          : std::to_string (static_cast<uint32_t> (flow.vcId));
   NS_LOG_DEBUG ("Generated transaction for flow " << flowIndex
                << ": XPU" << flow.sourceXpuId << " -> XPU" << flow.destXpuId
-               << " via SUE" << flow.sueId << " (bytes sent: " << state.bytesSent << "/" << flow.totalBytes << ")");
+               << " via SUE" << sueLabel << " on VC" << vcLabel
+               << " (bytes sent: " << state.bytesSent << "/" << flow.totalBytes << ")");
 }
 
 void

@@ -2,19 +2,17 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "sue-llr.h"
@@ -26,6 +24,7 @@
 #include "ns3/mac48-address.h"
 #include "ns3/uinteger.h"
 #include "ns3/boolean.h"
+#include <algorithm>
 #include <sstream>
 
 namespace ns3 {
@@ -64,8 +63,7 @@ LlrNodeManager::LlrNodeManager ()
     m_AckAddHeaderDelay (Seconds (0.0)),
     m_AckProcessDelay (Seconds (0.0)),
     m_numVcs (4),
-    m_protocolNum (0),
-    m_llrResendseq (0)
+    m_protocolNum (0)
 {
   NS_LOG_FUNCTION (this);
 }
@@ -113,16 +111,22 @@ LlrNodeManager::Initialize (bool llrEnabled,
       NS_LOG_DEBUG ("Remote MAC address: " << m_switchMac);
     }
 
-  // Initialize LLR structures
-  m_sendList.resize (m_numVcs);
-  m_waitSeq.resize (m_numVcs, 0);
-  m_sendSeq.resize (m_numVcs, 0);
-  m_unack.resize (m_numVcs, 0);
-  m_llrWait.resize (m_numVcs, false);
-  m_llrResending.resize (m_numVcs, false);
-  m_lastAckedTime.resize (m_numVcs);
-  m_lastAcksend.resize (m_numVcs);
-  m_resendPkt.resize (m_numVcs);
+	  // Initialize LLR structures
+	  m_sendList.resize (m_numVcs);
+	  m_waitSeq.resize (m_numVcs, 0);
+	  m_sendSeq.resize (m_numVcs, 0);
+		  m_sendBaseSeq.resize (m_numVcs, 0);
+		  m_unack.resize (m_numVcs, 0);
+		  m_llrResendseq.resize (m_numVcs, 0);
+		  m_llrResendEndSeq.resize (m_numVcs, 0);
+		  m_lastSentSeq.resize (m_numVcs, 0);
+		  m_hasSent.resize (m_numVcs, false);
+		  m_llrWait.resize (m_numVcs, false);
+		  m_llrResending.resize (m_numVcs, false);
+	  m_lastAckedTime.resize (m_numVcs);
+	  m_lastAcksend.resize (m_numVcs);
+	  m_resendPkt.resize (m_numVcs);
+	  m_lastNackSeq.resize (m_numVcs, std::numeric_limits<uint32_t>::max ());
 
   // Clear all send lists
   for (uint8_t i = 0; i < m_numVcs; i++)
@@ -141,24 +145,58 @@ LlrNodeManager::LlrSendPacket (Ptr<Packet> packet, uint8_t vcId)
 {
   NS_LOG_FUNCTION (this << packet << static_cast<uint32_t> (vcId));
 
-  if (!m_llrEnabled)
-    {
-      // Non-LLR mode: add PPP header and tag for delay measurement
-      SuePppHeader ppp;
-      ppp.SetProtocol (SuePacketUtils::EtherToPpp (0x0800));
-      packet->AddHeader (ppp);
-
-      // For NIC (first hop), add tag with seq=0 for delay measurement
-      SueTag tag (Simulator::Now (), 0); // Default sequence for non-LLR
-      tag.SetLinkType (0); // 0 = NIC (first hop)
-      packet->AddPacketTag (tag);
-      NS_LOG_DEBUG ("Non-LLR mode: added PPP header and tag with seq=0 for delay measurement");
-      return 0;
-    }
-
   if (vcId >= m_numVcs)
     {
       NS_LOG_WARN ("Invalid VC ID: " << static_cast<uint32_t> (vcId));
+      return 0;
+    }
+
+  // Detect whether a valid PPP header is already present (e.g., CBFC update packets)
+  auto hasValidPppHeader = [] (Ptr<Packet> p, SuePppHeader& out) -> bool {
+    if (!p || p->GetSize () < out.GetSerializedSize ())
+      {
+        return false;
+      }
+
+    Ptr<Packet> copy = p->Copy ();
+    SuePppHeader tmp;
+    if (!copy->RemoveHeader (tmp))
+      {
+        return false;
+      }
+
+	    const uint16_t proto = tmp.GetProtocol ();
+	    if (proto == SuePacketUtils::EtherToPpp (0x0800) ||
+	        proto == SuePacketUtils::EtherToPpp (0x86DD) ||
+	        proto == SuePacketUtils::EtherToPpp (SuePacketUtils::PROT_CBFC_UPDATE) ||
+	        proto == SuePacketUtils::EtherToPpp (SuePacketUtils::PROT_CBFC_SYNC) ||
+	        proto == SuePacketUtils::EtherToPpp (SuePacketUtils::ACK_REV) ||
+	        proto == SuePacketUtils::EtherToPpp (SuePacketUtils::NACK_REV))
+	      {
+	        out = tmp;
+	        return true;
+      }
+    return false;
+  };
+
+  SuePppHeader existingPpp;
+  const bool hasPpp = hasValidPppHeader (packet, existingPpp);
+
+  // Ensure PPP header exists for on-wire packets
+  if (!hasPpp)
+    {
+      SuePppHeader ppp;
+      ppp.SetProtocol (SuePacketUtils::EtherToPpp (0x0800));
+      packet->AddHeader (ppp);
+    }
+
+  if (!m_llrEnabled)
+    {
+      // Non-LLR mode: keep headers intact and attach a default tag for delay measurement
+      SueTag tag (Simulator::Now (), 0);
+      tag.SetLinkType (0); // 0 = NIC (first hop)
+      packet->AddPacketTag (tag);
+      NS_LOG_DEBUG ("Non-LLR mode: ensured PPP header and added tag with seq=0 for delay measurement");
       return 0;
     }
 
@@ -166,19 +204,26 @@ LlrNodeManager::LlrSendPacket (Ptr<Packet> packet, uint8_t vcId)
   uint32_t sequenceNumber = m_sendSeq[vcId];
   m_sendSeq[vcId]++;
 
-  // Store packet for potential retransmission
+  // Tag sequence/link type for NIC (first hop: NIC -> Switch)
+  SueTag tag;
+  if (packet->PeekPacketTag (tag))
+    {
+      SueTag::UpdateSequenceAndLinkTypeInPacket (packet, sequenceNumber, 0);
+    }
+  else
+    {
+      SueTag newTag (Simulator::Now (), sequenceNumber);
+      newTag.SetLinkType (0);
+      packet->AddPacketTag (newTag);
+    }
+
+  // Store fully-framed packet for potential retransmission
   m_sendList[vcId][sequenceNumber] = packet->Copy ();
   m_unack[vcId]++;
-
-  // Add PPP Header (protocol number 0x0800 for IP)
-  SuePppHeader ppp;
-  ppp.SetProtocol (SuePacketUtils::EtherToPpp (0x0800));
-  packet->AddHeader (ppp);
-
-  // For NIC (first hop: NIC -> Switch), add tag with sequence number and link type
-  SueTag tag (Simulator::Now (), sequenceNumber);
-  tag.SetLinkType (0); // 0 = NIC (first hop)
-  packet->AddPacketTag (tag);
+  if (m_sendList[vcId].size () == 1)
+    {
+      m_sendBaseSeq[vcId] = sequenceNumber;
+    }
 
   NS_LOG_DEBUG ("NIC sending data packet with seq " << sequenceNumber
                << " on VC " << static_cast<uint32_t> (vcId)
@@ -195,20 +240,20 @@ LlrNodeManager::LlrSendPacket (Ptr<Packet> packet, uint8_t vcId)
   return sequenceNumber;
 }
 
-void
+bool
 LlrNodeManager::LlrReceivePacket (Ptr<Packet> packet, uint8_t vcId, Mac48Address source, uint32_t seq_rev)
 {
   NS_LOG_FUNCTION (this << packet << static_cast<uint32_t> (vcId) << source << seq_rev);
 
   if (!m_llrEnabled)
     {
-      return; // If LLR is disabled, don't process
+      return true; // If LLR is disabled, allow processing
     }
 
   if (vcId >= m_numVcs)
     {
       NS_LOG_WARN ("Invalid VC ID: " << static_cast<uint32_t> (vcId));
-      return;
+      return false;
     }
 
   uint32_t expectedSeq = m_waitSeq[vcId];
@@ -222,17 +267,23 @@ LlrNodeManager::LlrReceivePacket (Ptr<Packet> packet, uint8_t vcId, Mac48Address
       NS_LOG_DEBUG ("Received in-order packet seq " << seq_rev
                    << " on VC " << static_cast<uint32_t> (vcId)
                    << ", next expected: " << m_waitSeq[vcId]);
+      return true;
     }
-  else if (seq_rev > expectedSeq)
-    {
-      // Out-of-order packet, missing packets detected
-      NS_LOG_INFO ("Received out-of-order packet seq " << seq_rev
-                  << " on VC " << static_cast<uint32_t> (vcId)
-                  << ", expected " << expectedSeq);
+	  else if (seq_rev > expectedSeq)
+	    {
+	      // Out-of-order packet, missing packets detected
+	      NS_LOG_DEBUG ("Received out-of-order packet seq " << seq_rev
+	                   << " on VC " << static_cast<uint32_t> (vcId)
+	                   << ", expected " << expectedSeq);
 
-      // Send NACK for the missing sequence
-      SendLlrNack (vcId, expectedSeq);
-    }
+	      // Send NACK for the missing sequence (suppress duplicates for the same expectedSeq)
+	      if (m_lastNackSeq[vcId] != expectedSeq)
+	        {
+	          m_lastNackSeq[vcId] = expectedSeq;
+	          SendLlrNack (vcId, expectedSeq);
+	        }
+	      return false;
+	    }
   else
     {
       // Duplicate packet, just send ACK and discard
@@ -240,6 +291,46 @@ LlrNodeManager::LlrReceivePacket (Ptr<Packet> packet, uint8_t vcId, Mac48Address
                    << " on VC " << static_cast<uint32_t> (vcId));
 
       SendLlrAck (vcId, seq_rev);
+      return false;
+    }
+}
+
+void
+LlrNodeManager::LlrNotifyDropBeforeReceive (uint8_t vcId, uint32_t seq_rev, Mac48Address source)
+{
+  NS_LOG_FUNCTION (this << static_cast<uint32_t> (vcId) << seq_rev << source);
+
+  if (!m_llrEnabled)
+    {
+      return;
+    }
+
+  if (vcId >= m_numVcs)
+    {
+      NS_LOG_WARN ("LlrNotifyDropBeforeReceive: invalid VC ID " << static_cast<uint32_t> (vcId));
+      return;
+    }
+
+  const uint32_t expectedSeq = m_waitSeq[vcId];
+  if (seq_rev < expectedSeq)
+    {
+      // Duplicate packet: re-ACK so sender can advance if needed.
+      SendLlrAck (vcId, seq_rev);
+      return;
+    }
+
+  // In-order or out-of-order: NACK the expected sequence (do not advance receiver state).
+  // For admission-control drops, allow periodic re-NACK to avoid relying solely on timeout
+  // when the sender's previous fast-retransmit attempt also gets dropped.
+  const Time now = Simulator::Now ();
+  const Time minInterval = std::min (m_llrTimeout, MicroSeconds (1));
+  if (m_lastNackSeq[vcId] != expectedSeq ||
+      m_lastAcksend[vcId].IsZero () ||
+      now - m_lastAcksend[vcId] >= minInterval)
+    {
+      m_lastNackSeq[vcId] = expectedSeq;
+      m_lastAcksend[vcId] = now;
+      SendLlrNack (vcId, expectedSeq);
     }
 }
 
@@ -375,32 +466,46 @@ LlrNodeManager::ProcessLlrAck (Ptr<Packet> p)
   NS_LOG_DEBUG ("ProcessLlrAck: read seq " << seq << " for VC " << static_cast<uint32_t> (vcId));
 
   // Start processing ACK sequence number (exactly like NetDevice)
-  auto it1 = m_sendList[vcId].begin ();
-  auto it2 = m_sendList[vcId].find (seq);
-  if (seq < m_waitSeq[vcId])
-    { // Received duplicate or old ACK
-      NS_LOG_INFO ("Duplicate or old ACK received for VC " << static_cast<uint32_t> (vcId) << " seq " << seq << ", expected " << m_waitSeq[vcId]);
-      return;
-    }
-  else if (it2 == m_sendList[vcId].end ())
-    { // Cannot find corresponding seq
-      NS_LOG_INFO ("ACK received for VC " << static_cast<uint32_t> (vcId) << " seq " << seq << " which is not in send list, possible duplicate ACK or out-of-order ACK.");
-      return;
-    }
-  else
+  const uint32_t sendBase = m_sendBaseSeq[vcId];
+  if (seq < sendBase)
     {
-      // Found corresponding seq, delete this and previous packets
-      m_sendList[vcId].erase (it1, it2);
-      m_sendList[vcId].erase (it2);
-      m_waitSeq[vcId] = seq + 1;
-      NS_LOG_INFO ("Updated waitSeq for VC " << static_cast<uint32_t> (vcId) << " to " << m_waitSeq[vcId]);
-      m_llrResending[vcId] = false; // Stop retransmission
-      m_lastAckedTime[vcId] = Simulator::Now ();
-      // Set retransmission timer
-      if (m_resendPkt[vcId].IsPending ())
-        {
-          m_resendPkt[vcId].Cancel ();
-        }
+      NS_LOG_INFO ("Duplicate/old ACK received for VC " << static_cast<uint32_t> (vcId)
+                   << " seq " << seq << ", sendBase " << sendBase);
+      return;
+    }
+
+  auto it2 = m_sendList[vcId].find (seq);
+  if (it2 == m_sendList[vcId].end ())
+    {
+      NS_LOG_INFO ("ACK received for VC " << static_cast<uint32_t> (vcId) << " seq " << seq
+                   << " which is not in send list (possibly duplicate/out-of-order ACK).");
+      return;
+    }
+
+  // Found corresponding seq, delete this and all previous packets (cumulative ACK)
+  auto itEraseEnd = it2;
+  ++itEraseEnd;
+  m_sendList[vcId].erase (m_sendList[vcId].begin (), itEraseEnd);
+  m_sendBaseSeq[vcId] = seq + 1;
+  NS_LOG_DEBUG ("Updated sendBaseSeq for VC " << static_cast<uint32_t> (vcId) << " to " << m_sendBaseSeq[vcId]);
+  // Keep resending active until the current resend range completes. Otherwise, after a NACK-triggered
+  // Go-Back-N recovery we may stop after ACKing just the first missing packet, leaving subsequent
+  // in-flight packets unrecovered and causing persistent NACK storms / throughput collapse.
+  if (m_llrResending[vcId] && m_llrResendseq[vcId] < m_sendBaseSeq[vcId])
+    {
+      m_llrResendseq[vcId] = m_sendBaseSeq[vcId];
+    }
+  m_lastAckedTime[vcId] = Simulator::Now ();
+
+  if (m_resendPkt[vcId].IsPending ())
+    {
+      m_resendPkt[vcId].Cancel ();
+    }
+  if (!m_sendList[vcId].empty ())
+    {
+      m_resendPkt[vcId] = Simulator::Schedule (m_llrTimeout,
+                                               &LlrNodeManager::Resend,
+                                               this, vcId);
     }
 }
 
@@ -437,14 +542,23 @@ LlrNodeManager::ProcessLlrNack (Ptr<Packet> p)
       return;
     }
 
-  NS_LOG_DEBUG ("ProcessLlrNack: read seq " << seq << " for VC " << static_cast<uint32_t> (vcId));
+	  NS_LOG_DEBUG ("ProcessLlrNack: read seq " << seq << " for VC " << static_cast<uint32_t> (vcId));
 
-  // Start processing NACK sequence number (exactly like NetDevice)
-  auto it1 = m_sendList[vcId].begin ();
-  auto it2 = m_sendList[vcId].find (seq);
-  if (seq < m_waitSeq[vcId])
+	  // Avoid repeatedly restarting the same retransmission due to duplicate NACKs
+	  if (m_llrResending[vcId] && seq == m_sendBaseSeq[vcId])
+	    {
+	      NS_LOG_DEBUG ("Duplicate NACK for VC " << static_cast<uint32_t> (vcId) << " seq " << seq
+	                    << " while already resending from sendBase " << m_sendBaseSeq[vcId]);
+	      return;
+	    }
+
+	  // Start processing NACK sequence number (exactly like NetDevice)
+	  auto it1 = m_sendList[vcId].begin ();
+	  auto it2 = m_sendList[vcId].find (seq);
+	  if (seq < m_sendBaseSeq[vcId])
     {
-      NS_LOG_INFO ("Duplicate or old NACK received for VC " << static_cast<uint32_t> (vcId) << " seq " << seq << ", expected " << m_waitSeq[vcId]);
+      NS_LOG_INFO ("Duplicate/old NACK received for VC " << static_cast<uint32_t> (vcId)
+                   << " seq " << seq << ", sendBase " << m_sendBaseSeq[vcId]);
       return;
     }
   else if (it2 == m_sendList[vcId].end ())
@@ -454,21 +568,33 @@ LlrNodeManager::ProcessLlrNack (Ptr<Packet> p)
     }
   else
     {
-      // Received NACK for seq, which means all packets before seq have been received, but seq packet is lost, retransmit seq and subsequent packets
-      m_sendList[vcId].erase (it1, it2);
-      m_waitSeq[vcId] = seq;
-      m_llrResendseq = seq;
-      m_llrResending[vcId] = true;
-      NS_LOG_INFO ("NACK received, will resend from seq " << seq << " for VC " << static_cast<uint32_t> (vcId));
+	      // Received NACK for seq, which means all packets before seq have been received, but seq packet is lost, retransmit seq and subsequent packets
+		      m_sendList[vcId].erase (it1, it2);
+		      m_sendBaseSeq[vcId] = seq;
+		      m_llrResendseq[vcId] = seq;
+		      if (m_hasSent[vcId] && m_lastSentSeq[vcId] >= seq)
+		        {
+		          m_llrResendEndSeq[vcId] = m_lastSentSeq[vcId];
+		        }
+		      else
+		        {
+		          m_llrResendEndSeq[vcId] = seq;
+		        }
+		      m_llrResending[vcId] = true;
+		      NS_LOG_INFO ("NACK received, will resend from seq " << seq << " for VC " << static_cast<uint32_t> (vcId));
       // Set retransmission timer
       if (m_resendPkt[vcId].IsPending ())
         {
           m_resendPkt[vcId].Cancel ();
         }
-      // Schedule retransmission
+      // Trigger retransmission immediately and restart timeout
+      if (m_tryTransmit)
+        {
+          m_tryTransmit ();
+        }
       m_resendPkt[vcId] = Simulator::Schedule (m_llrTimeout,
-                                                &LlrNodeManager::Resend,
-                                                this, vcId);
+                                               &LlrNodeManager::Resend,
+                                               this, vcId);
     }
 }
 
@@ -490,65 +616,108 @@ LlrNodeManager::Resend (uint8_t vcId)
       return;
     }
 
-  m_llrResending[vcId] = true;
-  m_llrResendseq = m_sendList[vcId].begin ()->first;
+		  m_llrResending[vcId] = true;
+		  m_llrResendseq[vcId] = m_sendList[vcId].begin ()->first;
+		  if (m_hasSent[vcId] && m_lastSentSeq[vcId] >= m_llrResendseq[vcId])
+		    {
+		      m_llrResendEndSeq[vcId] = m_lastSentSeq[vcId];
+		    }
+		  else
+		    {
+		      m_llrResendEndSeq[vcId] = m_llrResendseq[vcId];
+		    }
 
-  NS_LOG_DEBUG ("Starting retransmission for VC " << static_cast<uint32_t> (vcId)
-               << " from seq " << m_llrResendseq);
+	  NS_LOG_DEBUG ("Starting retransmission for VC " << static_cast<uint32_t> (vcId)
+	               << " from seq " << m_llrResendseq[vcId]);
 
   // Trigger transmission attempt
   if (m_tryTransmit)
     {
       m_tryTransmit ();
     }
+
+  // Restart retransmission timer so loss can be recovered repeatedly
+  if (m_resendPkt[vcId].IsPending ())
+    {
+      m_resendPkt[vcId].Cancel ();
+    }
+  m_resendPkt[vcId] = Simulator::Schedule (m_llrTimeout,
+                                           &LlrNodeManager::Resend,
+                                           this, vcId);
 }
 
-void
+Ptr<Packet>
 LlrNodeManager::LlrResendPacket (uint8_t vcId)
 {
   NS_LOG_FUNCTION (this << static_cast<uint32_t> (vcId));
 
   if (!m_llrEnabled || vcId >= m_numVcs)
     {
-      return;
+      return nullptr;
     }
 
   if (!m_llrResending[vcId] || m_sendList[vcId].empty ())
     {
-      return;
+      return nullptr;
     }
 
-  auto it = m_sendList[vcId].find (m_llrResendseq);
+	  const uint32_t resendSeq = m_llrResendseq[vcId];
+	  if (resendSeq > m_llrResendEndSeq[vcId])
+	    {
+	      m_llrResending[vcId] = false;
+	      return nullptr;
+	    }
+	  auto it = m_sendList[vcId].find (resendSeq);
   if (it == m_sendList[vcId].end ())
     {
-      NS_LOG_WARN ("Resend sequence not found in send list");
+      NS_LOG_DEBUG ("Resend sequence not found in send list (VC " << static_cast<uint32_t> (vcId)
+                    << ", seq " << resendSeq << ")");
       m_llrResending[vcId] = false;
-      return;
+      return nullptr;
     }
 
   Ptr<Packet> packet = it->second->Copy ();
 
-  // Add sequence tag
-  SueTag tag (Simulator::Now (), m_llrResendseq);
-  packet->AddPacketTag (tag);
-
-  NS_LOG_DEBUG ("Resending packet seq " << m_llrResendseq
-               << " on VC " << static_cast<uint32_t> (vcId));
-
-  // Send packet
-  if (m_sendPacket && !m_switchMac.IsGroup ())
+  // Ensure the resent packet carries the intended sequence/link type
+  SueTag tag;
+  if (packet->PeekPacketTag (tag))
     {
-      m_sendPacket (packet, m_switchMac, m_protocolNum);
+      SueTag::UpdateSequenceAndLinkTypeInPacket (packet, resendSeq, 0);
+    }
+  else
+    {
+      SueTag newTag (Simulator::Now (), resendSeq);
+      newTag.SetLinkType (0);
+      packet->AddPacketTag (newTag);
     }
 
-  m_llrResendseq++;
-}
+  NS_LOG_DEBUG ("Resending packet seq " << resendSeq
+	               << " on VC " << static_cast<uint32_t> (vcId));
 
-bool
-LlrNodeManager::GetLlrEnabled (void) const
-{
-  return m_llrEnabled;
-}
+	  m_llrResendseq[vcId]++;
+	  return packet;
+	}
+
+	void
+	LlrNodeManager::MarkPacketSent (uint8_t vcId, uint32_t seq)
+	{
+	  if (!m_llrEnabled || vcId >= m_numVcs)
+	    {
+	      return;
+	    }
+
+	  if (!m_hasSent[vcId] || seq > m_lastSentSeq[vcId])
+	    {
+	      m_lastSentSeq[vcId] = seq;
+	      m_hasSent[vcId] = true;
+	    }
+	}
+
+	bool
+	LlrNodeManager::GetLlrEnabled (void) const
+	{
+	  return m_llrEnabled;
+	}
 
 bool
 LlrNodeManager::IsLlrResending (uint8_t vcId) const
@@ -558,6 +727,42 @@ LlrNodeManager::IsLlrResending (uint8_t vcId) const
       return false;
     }
   return m_llrResending[vcId];
+}
+
+uint32_t
+LlrNodeManager::GetSendBaseSeq (uint8_t vcId) const
+{
+  if (vcId >= m_numVcs)
+    {
+      return 0;
+    }
+  return m_sendBaseSeq[vcId];
+}
+
+bool
+LlrNodeManager::IsWithinSendWindow (uint8_t vcId, uint32_t seq) const
+{
+  if (!m_llrEnabled)
+    {
+      return true;
+    }
+  if (vcId >= m_numVcs)
+    {
+      return true;
+    }
+  if (m_llrWindowSize == 0)
+    {
+      return true;
+    }
+
+  const uint32_t base = m_sendBaseSeq[vcId];
+  if (seq < base)
+    {
+      // Old/duplicate sequence; allow sender to proceed (receiver will discard/ACK as needed).
+      return true;
+    }
+
+  return (seq - base) < m_llrWindowSize;
 }
 
 void
@@ -653,14 +858,19 @@ LlrSwitchPortManager::Initialize (bool llrEnabled,
   // Initialize LLR structures for connected peer (direct connection)
   m_sendList[m_peerMac].resize (m_numVcs);
   m_waitSeq[m_peerMac].resize (m_numVcs, 0);
-  m_sendSeq[m_peerMac].resize (m_numVcs, 0);
-  m_unack[m_peerMac].resize (m_numVcs, 0);
-  m_llrResendseq[m_peerMac].resize (m_numVcs, 0);
-  m_llrWait[m_peerMac].resize (m_numVcs, false);
-  m_llrResending[m_peerMac].resize (m_numVcs, false);
-  m_lastAckedTime[m_peerMac].resize (m_numVcs);
-  m_lastAcksend[m_peerMac].resize (m_numVcs);
-  m_resendPkt[m_peerMac].resize (m_numVcs);
+	  m_sendSeq[m_peerMac].resize (m_numVcs, 0);
+		  m_sendBaseSeq[m_peerMac].resize (m_numVcs, 0);
+		  m_unack[m_peerMac].resize (m_numVcs, 0);
+		  m_llrResendseq[m_peerMac].resize (m_numVcs, 0);
+		  m_llrResendEndSeq[m_peerMac].resize (m_numVcs, 0);
+		  m_lastSentSeq[m_peerMac].resize (m_numVcs, 0);
+		  m_hasSent[m_peerMac].resize (m_numVcs, false);
+		  m_llrWait[m_peerMac].resize (m_numVcs, false);
+	  m_llrResending[m_peerMac].resize (m_numVcs, false);
+	  m_lastAckedTime[m_peerMac].resize (m_numVcs);
+	  m_lastAcksend[m_peerMac].resize (m_numVcs);
+	  m_resendPkt[m_peerMac].resize (m_numVcs);
+	  m_lastNackSeq[m_peerMac].resize (m_numVcs, std::numeric_limits<uint32_t>::max ());
 
   // Clear all send lists for peer
   for (uint8_t i = 0; i < m_numVcs; i++)
@@ -686,14 +896,19 @@ LlrSwitchPortManager::Initialize (bool llrEnabled,
                       // Initialize LLR structures for this switch port
                       m_sendList[mac].resize (m_numVcs);
                       m_waitSeq[mac].resize (m_numVcs, 0);
-                      m_sendSeq[mac].resize (m_numVcs, 0);
-                      m_unack[mac].resize (m_numVcs, 0);
-                      m_llrResendseq[mac].resize (m_numVcs, 0);
-                      m_llrWait[mac].resize (m_numVcs, false);
-                      m_llrResending[mac].resize (m_numVcs, false);
-                      m_lastAckedTime[mac].resize (m_numVcs);
-                      m_lastAcksend[mac].resize (m_numVcs);
-                      m_resendPkt[mac].resize (m_numVcs);
+	                      m_sendSeq[mac].resize (m_numVcs, 0);
+		                      m_sendBaseSeq[mac].resize (m_numVcs, 0);
+		                      m_unack[mac].resize (m_numVcs, 0);
+		                      m_llrResendseq[mac].resize (m_numVcs, 0);
+		                      m_llrResendEndSeq[mac].resize (m_numVcs, 0);
+		                      m_lastSentSeq[mac].resize (m_numVcs, 0);
+		                      m_hasSent[mac].resize (m_numVcs, false);
+		                      m_llrWait[mac].resize (m_numVcs, false);
+		                      m_llrResending[mac].resize (m_numVcs, false);
+	                      m_lastAckedTime[mac].resize (m_numVcs);
+	                      m_lastAcksend[mac].resize (m_numVcs);
+	                      m_resendPkt[mac].resize (m_numVcs);
+	                      m_lastNackSeq[mac].resize (m_numVcs, std::numeric_limits<uint32_t>::max ());
 
                       // Clear send lists for this MAC
                       for (uint8_t j = 0; j < m_numVcs; j++)
@@ -720,37 +935,61 @@ LlrSwitchPortManager::LlrSendPacket (Ptr<Packet> packet, uint8_t vcId, Mac48Addr
 {
   NS_LOG_FUNCTION (this << packet << static_cast<uint32_t> (vcId));
 
-  if (!m_llrEnabled)
-    {
-      // Non-LLR mode: add PPP header
-      SuePppHeader ppp;
-      ppp.SetProtocol (SuePacketUtils::EtherToPpp (0x0800));
-      packet->AddHeader (ppp);
-
-      // For switch ports in non-LLR mode, no tag operations needed
-      // (second and third hops don't need tag in non-LLR mode)
-      NS_LOG_DEBUG ("Non-LLR mode: added PPP header for switch port");
-      return 0;
-    }
-
   if (vcId >= m_numVcs)
     {
       NS_LOG_WARN ("Invalid VC ID: " << static_cast<uint32_t> (vcId));
       return 0;
     }
 
+  // Detect whether a valid PPP header is already present (e.g., CBFC update packets)
+  auto hasValidPppHeader = [] (Ptr<Packet> p, SuePppHeader& out) -> bool {
+    if (!p || p->GetSize () < out.GetSerializedSize ())
+      {
+        return false;
+      }
+
+    Ptr<Packet> copy = p->Copy ();
+    SuePppHeader tmp;
+    if (!copy->RemoveHeader (tmp))
+      {
+        return false;
+      }
+
+	    const uint16_t proto = tmp.GetProtocol ();
+	    if (proto == SuePacketUtils::EtherToPpp (0x0800) ||
+	        proto == SuePacketUtils::EtherToPpp (0x86DD) ||
+	        proto == SuePacketUtils::EtherToPpp (SuePacketUtils::PROT_CBFC_UPDATE) ||
+	        proto == SuePacketUtils::EtherToPpp (SuePacketUtils::PROT_CBFC_SYNC) ||
+	        proto == SuePacketUtils::EtherToPpp (SuePacketUtils::ACK_REV) ||
+	        proto == SuePacketUtils::EtherToPpp (SuePacketUtils::NACK_REV))
+	      {
+	        out = tmp;
+	        return true;
+      }
+    return false;
+  };
+
+  SuePppHeader existingPpp;
+  const bool hasPpp = hasValidPppHeader (packet, existingPpp);
+
+  // Ensure PPP header exists for on-wire packets
+  if (!hasPpp)
+    {
+      SuePppHeader ppp;
+      ppp.SetProtocol (SuePacketUtils::EtherToPpp (0x0800));
+      packet->AddHeader (ppp);
+    }
+
+  if (!m_llrEnabled)
+    {
+      // Non-LLR mode: keep headers intact; no tag operations needed for switch ports
+      NS_LOG_DEBUG ("Non-LLR mode: ensured PPP header for switch port");
+      return 0;
+    }
+
   // Get next sequence number
   uint32_t sequenceNumber = m_sendSeq[mac][vcId];
   m_sendSeq[mac][vcId]++;
-
-  // Store packet for potential retransmission
-  m_sendList[mac][vcId][sequenceNumber] = packet->Copy ();
-  m_unack[mac][vcId]++;
-
-  // Add PPP Header (protocol number 0x0800 for IP)
-  SuePppHeader ppp;
-  ppp.SetProtocol (SuePacketUtils::EtherToPpp (0x0800));
-  packet->AddHeader (ppp);
 
   // Handle tag based on whether this is internal forwarding or egress
   SueTag tag;
@@ -775,13 +1014,22 @@ LlrSwitchPortManager::LlrSendPacket (Ptr<Packet> packet, uint8_t vcId, Mac48Addr
 
     // Update sequence and link type in the packet's tag
     SueTag::UpdateSequenceAndLinkTypeInPacket (packet, sequenceNumber, newLinkType);
-  } else {
-    // This should not happen in normal operation, but handle gracefully
-    NS_LOG_WARN ("Switch port sending packet without existing tag, adding new tag");
-    SueTag newTag (Simulator::Now (), sequenceNumber);
-    newTag.SetLinkType (1); // Default to switch ingress
-    packet->AddPacketTag (newTag);
-  }
+	  } else {
+	    // This should not happen in normal operation, but handle gracefully
+	    NS_LOG_DEBUG ("Switch port sending packet without existing tag, adding new tag");
+	    SueTag newTag (Simulator::Now (), sequenceNumber);
+	    bool peerIsSwitch = m_getSwitch && m_getSwitch () && m_getSwitch ()->IsSwitchDevice (mac);
+	    newTag.SetLinkType (peerIsSwitch ? 1 : 2);
+	    packet->AddPacketTag (newTag);
+	  }
+
+  // Store fully-framed packet for potential retransmission
+  m_sendList[mac][vcId][sequenceNumber] = packet->Copy ();
+  m_unack[mac][vcId]++;
+  if (m_sendList[mac][vcId].size () == 1)
+    {
+      m_sendBaseSeq[mac][vcId] = sequenceNumber;
+    }
 
   NS_LOG_DEBUG ("Switch port sending data packet with seq " << sequenceNumber
                << " on VC " << static_cast<uint32_t> (vcId)
@@ -828,18 +1076,26 @@ LlrSwitchPortManager::LlrReceivePacket (Ptr<Packet> packet, uint8_t vcId, uint32
 
       return true; // Process the packet (forward it)
     }
-  else if (seq_rev > expectedSeq)
-    {
-      // Out-of-order packet, missing packets detected
-      NS_LOG_INFO ("Switch port received out-of-order packet seq " << seq_rev
-                  << " on VC " << static_cast<uint32_t> (vcId)
-                  << ", expected " << expectedSeq);
+	  else if (seq_rev > expectedSeq)
+	    {
+	      // Out-of-order packet, missing packets detected
+	      NS_LOG_DEBUG ("Switch port received out-of-order packet seq " << seq_rev
+	                   << " on VC " << static_cast<uint32_t> (vcId)
+	                   << ", expected " << expectedSeq);
 
-      // Send NACK for the missing sequence
-      SendLlrNack (vcId, expectedSeq, source);
+	      // Send NACK for the missing sequence (suppress duplicates for the same expectedSeq)
+	      if (m_lastNackSeq[source].size () < m_numVcs)
+	        {
+	          m_lastNackSeq[source].resize (m_numVcs, std::numeric_limits<uint32_t>::max ());
+	        }
+	      if (m_lastNackSeq[source][vcId] != expectedSeq)
+	        {
+	          m_lastNackSeq[source][vcId] = expectedSeq;
+	          SendLlrNack (vcId, expectedSeq, source);
+	        }
 
-      return false; // Don't process the packet yet
-    }
+	      return false; // Don't process the packet yet
+	    }
   else
     {
       // Duplicate packet, just send ACK and discard
@@ -848,6 +1104,57 @@ LlrSwitchPortManager::LlrReceivePacket (Ptr<Packet> packet, uint8_t vcId, uint32
 
       SendLlrAck (vcId, seq_rev, source);
       return false; // Discard duplicate
+    }
+}
+
+void
+LlrSwitchPortManager::LlrNotifyDropBeforeReceive (uint8_t vcId, uint32_t seq_rev, Mac48Address source)
+{
+  NS_LOG_FUNCTION (this << static_cast<uint32_t> (vcId) << seq_rev << source);
+
+  if (!m_llrEnabled)
+    {
+      return;
+    }
+
+  if (vcId >= m_numVcs)
+    {
+      NS_LOG_WARN ("LlrNotifyDropBeforeReceive: invalid VC ID " << static_cast<uint32_t> (vcId));
+      return;
+    }
+
+  // Ensure per-peer state is sized (defensive for unexpected peers).
+  if (m_waitSeq[source].size () < m_numVcs)
+    {
+      m_waitSeq[source].resize (m_numVcs, 0);
+    }
+  const uint32_t expectedSeq = m_waitSeq[source][vcId];
+
+  if (seq_rev < expectedSeq)
+    {
+      // Duplicate packet: re-ACK so sender can advance if needed.
+      SendLlrAck (vcId, seq_rev, source);
+      return;
+    }
+
+  // In-order or out-of-order: NACK the expected sequence (do not advance receiver state).
+  if (m_lastNackSeq[source].size () < m_numVcs)
+    {
+      m_lastNackSeq[source].resize (m_numVcs, std::numeric_limits<uint32_t>::max ());
+    }
+  if (m_lastAcksend[source].size () < m_numVcs)
+    {
+      m_lastAcksend[source].resize (m_numVcs);
+    }
+  const Time now = Simulator::Now ();
+  const Time minInterval = std::min (m_llrTimeout, MicroSeconds (1));
+  if (m_lastNackSeq[source][vcId] != expectedSeq ||
+      m_lastAcksend[source][vcId].IsZero () ||
+      now - m_lastAcksend[source][vcId] >= minInterval)
+    {
+      m_lastNackSeq[source][vcId] = expectedSeq;
+      m_lastAcksend[source][vcId] = now;
+      SendLlrNack (vcId, expectedSeq, source);
     }
 }
 
@@ -987,33 +1294,43 @@ LlrSwitchPortManager::ProcessLlrAck (Ptr<Packet> p)
 
   NS_LOG_DEBUG ("Switch port ProcessLlrAck: read seq " << seq << " for VC " << static_cast<uint32_t> (vcId) << " from MAC " << mac);
 
-  // Start processing ACK sequence number (exactly like NetDevice)
-  auto it1 = m_sendList[mac][vcId].begin ();
-  auto it2 = m_sendList[mac][vcId].find (seq);
-  if (seq < m_waitSeq[mac][vcId])
-    { // Received duplicate or old ACK
-      NS_LOG_INFO ("Switch port: Duplicate or old ACK received for VC " << static_cast<uint32_t> (vcId) << " seq " << seq << ", expected " << m_waitSeq[mac][vcId]);
-      return;
-    }
-  else if (it2 == m_sendList[mac][vcId].end ())
-    { // Cannot find corresponding seq
-      NS_LOG_INFO ("Switch port: ACK received for VC " << static_cast<uint32_t> (vcId) << " seq " << seq << " which is not in send list, possible duplicate ACK or out-of-order ACK.");
-      return;
-    }
-  else
-    {
-      // Found corresponding seq, delete this and previous packets
-      m_sendList[mac][vcId].erase (it1, it2);
-      m_sendList[mac][vcId].erase (it2);
-      m_waitSeq[mac][vcId] = seq + 1;
-      NS_LOG_INFO ("Switch port: Updated waitSeq for VC " << static_cast<uint32_t> (vcId) << " to " << m_waitSeq[mac][vcId]);
-      m_llrResending[mac][vcId] = false; // Stop retransmission
-      // Set retransmission timer
-      if (m_resendPkt[mac][vcId].IsPending ())
-        {
-          m_resendPkt[mac][vcId].Cancel ();
-        }
-    }
+	  // Start processing ACK sequence number (exactly like NetDevice)
+	  const uint32_t sendBase = m_sendBaseSeq[mac][vcId];
+	  if (seq < sendBase)
+	    {
+	      NS_LOG_INFO ("Switch port: Duplicate/old ACK received for VC " << static_cast<uint32_t> (vcId)
+	                   << " seq " << seq << ", sendBase " << sendBase);
+	      return;
+	    }
+
+	  auto it2 = m_sendList[mac][vcId].find (seq);
+	  if (it2 == m_sendList[mac][vcId].end ())
+	    {
+	      NS_LOG_INFO ("Switch port: ACK received for VC " << static_cast<uint32_t> (vcId) << " seq " << seq
+	                   << " which is not in send list (possibly duplicate/out-of-order ACK).");
+	      return;
+	    }
+
+	  auto itEraseEnd = it2;
+	  ++itEraseEnd;
+		  m_sendList[mac][vcId].erase (m_sendList[mac][vcId].begin (), itEraseEnd);
+		  m_sendBaseSeq[mac][vcId] = seq + 1;
+		  NS_LOG_DEBUG ("Switch port: Updated sendBaseSeq for VC " << static_cast<uint32_t> (vcId) << " to " << m_sendBaseSeq[mac][vcId]);
+		  if (m_llrResending[mac][vcId] && m_llrResendseq[mac][vcId] < m_sendBaseSeq[mac][vcId])
+		    {
+		      m_llrResendseq[mac][vcId] = m_sendBaseSeq[mac][vcId];
+		    }
+
+	  if (m_resendPkt[mac][vcId].IsPending ())
+	    {
+	      m_resendPkt[mac][vcId].Cancel ();
+	    }
+	  if (!m_sendList[mac][vcId].empty ())
+	    {
+	      m_resendPkt[mac][vcId] = Simulator::Schedule (m_llrTimeout,
+	                                                   &LlrSwitchPortManager::Resend,
+	                                                   this, vcId, mac);
+	    }
 }
 
 void
@@ -1054,39 +1371,80 @@ LlrSwitchPortManager::ProcessLlrNack (Ptr<Packet> p)
       return;
     }
 
-  NS_LOG_DEBUG ("Switch port ProcessLlrNack: read seq " << seq << " for VC " << static_cast<uint32_t> (vcId) << " from MAC " << mac);
+	  NS_LOG_DEBUG ("Switch port ProcessLlrNack: read seq " << seq << " for VC " << static_cast<uint32_t> (vcId) << " from MAC " << mac);
 
-  // Start processing NACK sequence number (exactly like NetDevice)
-  auto it1 = m_sendList[mac][vcId].begin ();
-  auto it2 = m_sendList[mac][vcId].find (seq);
-  if (seq < m_waitSeq[mac][vcId])
-    {
-      NS_LOG_INFO ("Switch port: Duplicate or old NACK received for VC " << static_cast<uint32_t> (vcId) << " seq " << seq << ", expected " << m_waitSeq[mac][vcId]);
-      return;
-    }
-  else if (it2 == m_sendList[mac][vcId].end ())
-    {
+	  // Avoid repeatedly restarting the same retransmission due to duplicate NACKs
+	  if (m_llrResending[mac].size () < m_numVcs)
+	    {
+	      m_llrResending[mac].resize (m_numVcs, false);
+	    }
+	  if (m_sendBaseSeq[mac].size () < m_numVcs)
+	    {
+	      m_sendBaseSeq[mac].resize (m_numVcs, 0);
+	    }
+	  if (m_llrResending[mac][vcId] && seq == m_sendBaseSeq[mac][vcId])
+	    {
+	      NS_LOG_DEBUG ("Switch port duplicate NACK for VC " << static_cast<uint32_t> (vcId) << " seq " << seq
+	                    << " while already resending from sendBase " << m_sendBaseSeq[mac][vcId]);
+	      return;
+	    }
+
+		  // Start processing NACK sequence number (exactly like NetDevice)
+		  auto it1 = m_sendList[mac][vcId].begin ();
+		  auto it2 = m_sendList[mac][vcId].find (seq);
+		  if (seq < m_sendBaseSeq[mac][vcId])
+	    {
+	      NS_LOG_INFO ("Switch port: Duplicate/old NACK received for VC " << static_cast<uint32_t> (vcId)
+	                   << " seq " << seq << ", sendBase " << m_sendBaseSeq[mac][vcId]);
+	      return;
+	    }
+	  else if (it2 == m_sendList[mac][vcId].end ())
+	    {
       NS_LOG_INFO ("Switch port: NACK received for VC " << static_cast<uint32_t> (vcId) << " seq " << seq << " which is not in send list, possible duplicate NACK or out-of-order NACK.");
       return;
     }
   else
-    {
-      // Received NACK for seq, which means all packets before seq have been received, but seq packet is lost, retransmit seq and subsequent packets
-      m_sendList[mac][vcId].erase (it1, it2);
-      m_waitSeq[mac][vcId] = seq;
-      m_llrResendseq[mac][vcId] = seq;
-      m_llrResending[mac][vcId] = true;
-      NS_LOG_INFO ("Switch port: NACK received, will resend from seq " << seq << " for VC " << static_cast<uint32_t> (vcId));
-      // Set retransmission timer
-      if (m_resendPkt[mac][vcId].IsPending ())
-        {
-          m_resendPkt[mac][vcId].Cancel ();
-        }
-      // Schedule retransmission
-      m_resendPkt[mac][vcId] = Simulator::Schedule (m_llrTimeout,
-                                                &LlrSwitchPortManager::Resend,
-                                                this, vcId, mac);
-    }
+	    {
+	      // Received NACK for seq, which means all packets before seq have been received, but seq packet is lost, retransmit seq and subsequent packets
+		      m_sendList[mac][vcId].erase (it1, it2);
+		      m_sendBaseSeq[mac][vcId] = seq;
+		      m_llrResendseq[mac][vcId] = seq;
+		      if (m_hasSent[mac].size () < m_numVcs)
+		        {
+		          m_hasSent[mac].resize (m_numVcs, false);
+		        }
+		      if (m_lastSentSeq[mac].size () < m_numVcs)
+		        {
+		          m_lastSentSeq[mac].resize (m_numVcs, 0);
+		        }
+		      if (m_llrResendEndSeq[mac].size () < m_numVcs)
+		        {
+		          m_llrResendEndSeq[mac].resize (m_numVcs, 0);
+		        }
+		      if (m_hasSent[mac][vcId] && m_lastSentSeq[mac][vcId] >= seq)
+		        {
+		          m_llrResendEndSeq[mac][vcId] = m_lastSentSeq[mac][vcId];
+		        }
+		      else
+		        {
+		          m_llrResendEndSeq[mac][vcId] = seq;
+		        }
+		      m_llrResending[mac][vcId] = true;
+		      NS_LOG_INFO ("Switch port: NACK received, will resend from seq " << seq << " for VC " << static_cast<uint32_t> (vcId));
+	      // Set retransmission timer
+	      if (m_resendPkt[mac][vcId].IsPending ())
+	        {
+	          m_resendPkt[mac][vcId].Cancel ();
+	        }
+	      // Trigger retransmission immediately and restart timeout
+	      if (m_tryTransmit)
+	        {
+	          m_tryTransmit ();
+	        }
+	      m_resendPkt[mac][vcId] = Simulator::Schedule (m_llrTimeout,
+	                                                &LlrSwitchPortManager::Resend,
+	                                                this, vcId, mac);
+	    }
 }
 
 void
@@ -1123,6 +1481,26 @@ LlrSwitchPortManager::Resend (uint8_t vcId, Mac48Address mac)
 
   m_llrResending[mac][vcId] = true;
   m_llrResendseq[mac][vcId] = m_sendList[mac][vcId].begin ()->first;
+  if (m_hasSent[mac].size () < m_numVcs)
+    {
+      m_hasSent[mac].resize (m_numVcs, false);
+    }
+  if (m_lastSentSeq[mac].size () < m_numVcs)
+    {
+      m_lastSentSeq[mac].resize (m_numVcs, 0);
+    }
+  if (m_llrResendEndSeq[mac].size () < m_numVcs)
+    {
+      m_llrResendEndSeq[mac].resize (m_numVcs, 0);
+    }
+  if (m_hasSent[mac][vcId] && m_lastSentSeq[mac][vcId] >= m_llrResendseq[mac][vcId])
+    {
+      m_llrResendEndSeq[mac][vcId] = m_lastSentSeq[mac][vcId];
+    }
+  else
+    {
+      m_llrResendEndSeq[mac][vcId] = m_llrResendseq[mac][vcId];
+    }
 
   NS_LOG_DEBUG ("Switch port starting retransmission for VC " << static_cast<uint32_t> (vcId)
                << " from seq " << m_llrResendseq[mac][vcId]);
@@ -1132,59 +1510,165 @@ LlrSwitchPortManager::Resend (uint8_t vcId, Mac48Address mac)
     {
       m_tryTransmit ();
     }
+
+  // Restart retransmission timer so loss can be recovered repeatedly
+  if (m_resendPkt[mac][vcId].IsPending ())
+    {
+      m_resendPkt[mac][vcId].Cancel ();
+    }
+  m_resendPkt[mac][vcId] = Simulator::Schedule (m_llrTimeout,
+                                               &LlrSwitchPortManager::Resend,
+                                               this, vcId, mac);
 }
 
-void
+Ptr<Packet>
 LlrSwitchPortManager::LlrResendPacket (uint8_t vcId, Mac48Address mac)
 {
   NS_LOG_FUNCTION (this << static_cast<uint32_t> (vcId));
 
   if (!m_llrEnabled || vcId >= m_numVcs)
     {
-      return;
+      return nullptr;
     }
 
   if (!m_llrResending[mac][vcId] || m_sendList[mac][vcId].empty ())
     {
-      return;
+      return nullptr;
     }
 
-  auto it = m_sendList[mac][vcId].find (m_llrResendseq[mac][vcId]);
+	  const uint32_t resendSeq = m_llrResendseq[mac][vcId];
+	  if (m_llrResendEndSeq[mac].size () < m_numVcs)
+	    {
+	      m_llrResendEndSeq[mac].resize (m_numVcs, 0);
+	    }
+	  if (resendSeq > m_llrResendEndSeq[mac][vcId])
+	    {
+	      m_llrResending[mac][vcId] = false;
+	      return nullptr;
+	    }
+	  auto it = m_sendList[mac][vcId].find (resendSeq);
   if (it == m_sendList[mac][vcId].end ())
     {
-      NS_LOG_WARN ("Resend sequence not found in send list");
+      NS_LOG_DEBUG ("Switch port resend sequence not found in send list (VC "
+                    << static_cast<uint32_t> (vcId) << ", MAC " << mac << ", seq " << resendSeq << ")");
       m_llrResending[mac][vcId] = false;
-      return;
+      return nullptr;
     }
 
   Ptr<Packet> packet = it->second->Copy ();
 
-  // Add sequence tag
-  SueTag tag (Simulator::Now (), m_llrResendseq[mac][vcId]);
-  packet->AddPacketTag (tag);
+  // Ensure the resent packet carries the intended sequence/link type
+  const bool peerIsSwitch = m_getSwitch && m_getSwitch () && m_getSwitch ()->IsSwitchDevice (mac);
+  const uint8_t linkType = peerIsSwitch ? 1 : 2;
 
-  NS_LOG_DEBUG ("Switch port resending packet seq " << m_llrResendseq[mac][vcId]
-               << " on VC " << static_cast<uint32_t> (vcId));
-
-  // Send packet
-  if (m_sendPacket && !mac.IsGroup ())
+  SueTag tag;
+  if (packet->PeekPacketTag (tag))
     {
-      m_sendPacket (packet, mac, m_protocolNum);
+      SueTag::UpdateSequenceAndLinkTypeInPacket (packet, resendSeq, linkType);
+    }
+  else
+    {
+      SueTag newTag (Simulator::Now (), resendSeq);
+      newTag.SetLinkType (linkType);
+      packet->AddPacketTag (newTag);
     }
 
-  m_llrResendseq[mac][vcId]++;
-}
+  NS_LOG_DEBUG ("Switch port resending packet seq " << resendSeq
+	               << " on VC " << static_cast<uint32_t> (vcId));
 
-bool
-LlrSwitchPortManager::GetLlrEnabled (void) const
-{
-  return m_llrEnabled;
-}
+	  m_llrResendseq[mac][vcId]++;
+	  return packet;
+	}
+
+	void
+	LlrSwitchPortManager::MarkPacketSent (uint8_t vcId, uint32_t seq, Mac48Address mac)
+	{
+	  if (!m_llrEnabled || vcId >= m_numVcs)
+	    {
+	      return;
+	    }
+
+	  if (m_hasSent[mac].size () < m_numVcs)
+	    {
+	      m_hasSent[mac].resize (m_numVcs, false);
+	    }
+	  if (m_lastSentSeq[mac].size () < m_numVcs)
+	    {
+	      m_lastSentSeq[mac].resize (m_numVcs, 0);
+	    }
+
+	  if (!m_hasSent[mac][vcId] || seq > m_lastSentSeq[mac][vcId])
+	    {
+	      m_lastSentSeq[mac][vcId] = seq;
+	      m_hasSent[mac][vcId] = true;
+	    }
+	}
+
+	bool
+	LlrSwitchPortManager::GetLlrEnabled (void) const
+	{
+	  return m_llrEnabled;
+	}
 
 Mac48Address
 LlrSwitchPortManager::GetPeerMac (void) const
 {
   return m_peerMac;
+}
+
+bool
+LlrSwitchPortManager::IsLlrResending (uint8_t vcId, Mac48Address mac) const
+{
+  if (vcId >= m_numVcs)
+    {
+      return false;
+    }
+  auto it = m_llrResending.find (mac);
+  if (it == m_llrResending.end ())
+    {
+      return false;
+    }
+  return it->second[vcId];
+}
+
+uint32_t
+LlrSwitchPortManager::GetSendBaseSeq (uint8_t vcId, Mac48Address mac) const
+{
+  if (vcId >= m_numVcs)
+    {
+      return 0;
+    }
+  auto it = m_sendBaseSeq.find (mac);
+  if (it == m_sendBaseSeq.end () || it->second.size () <= vcId)
+    {
+      return 0;
+    }
+  return it->second[vcId];
+}
+
+bool
+LlrSwitchPortManager::IsWithinSendWindow (uint8_t vcId, uint32_t seq, Mac48Address mac) const
+{
+  if (!m_llrEnabled)
+    {
+      return true;
+    }
+  if (vcId >= m_numVcs)
+    {
+      return true;
+    }
+  if (m_llrWindowSize == 0)
+    {
+      return true;
+    }
+
+  const uint32_t base = GetSendBaseSeq (vcId, mac);
+  if (seq < base)
+    {
+      return true;
+    }
+
+  return (seq - base) < m_llrWindowSize;
 }
 
 

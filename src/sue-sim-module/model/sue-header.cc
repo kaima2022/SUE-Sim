@@ -2,18 +2,17 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation;
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "sue-header.h"
@@ -55,7 +54,7 @@ SueHeader::GetInstanceTypeId(void) const
 }
 
 // Total size in bytes. The RH is 8 bytes total as per the spec.
-// (psn+xpuid+op+vc+rsv...) = 16+10+2+2+... = 64 bits = 8 bytes
+// (psn+xpuid+op+vc+rsv...) = 16+10+2+... = 64 bits = 8 bytes
 uint32_t
 SueHeader::GetSerializedSize(void) const
 {
@@ -77,8 +76,12 @@ SueHeader::Serialize(Buffer::Iterator start) const
 
     // Second 32 bits
     uint32_t second_word = 0;
-    second_word |= (GetVc() & 0x03) << 30; // vc: 2 bits
-    // 'rsvd' and 'partition' are ignored for now
+    // VC:
+    // - Keep the original 2-bit field at bits [31:30] for backwards compatibility.
+    // - Use one extra bit at [29] (reserved/partition space) to support up to 8 VCs.
+    const uint8_t vc = GetVc() & 0x07;
+    second_word |= (vc & 0x03) << 30;          // vc[1:0]
+    second_word |= ((vc >> 2) & 0x01) << 29;   // vc[2]
     second_word |= (GetRpsn() & 0xFFFF);   // rpsn: 16 bits
     start.WriteHtonU32(second_word);
 }
@@ -93,7 +96,9 @@ SueHeader::Deserialize(Buffer::Iterator start)
     SetPsn(first_word & 0xFFFF);
 
     uint32_t second_word = start.ReadNtohU32();
-    SetVc((second_word >> 30) & 0x03);
+    const uint8_t vc_low = static_cast<uint8_t>((second_word >> 30) & 0x03);
+    const uint8_t vc_hi = static_cast<uint8_t>((second_word >> 29) & 0x01);
+    SetVc(static_cast<uint8_t>((vc_hi << 2) | vc_low));
     SetRpsn(second_word & 0xFFFF);
     
     return GetSerializedSize();
@@ -114,8 +119,8 @@ void SueHeader::SetRpsn(uint16_t rpsn) { m_rpsn = rpsn; }
 uint16_t SueHeader::GetRpsn(void) const { return m_rpsn; }
 void SueHeader::SetXpuId(uint16_t xpuid) { m_xpuid = xpuid & 0x03FF; } // Mask to 10 bits
 uint16_t SueHeader::GetXpuId(void) const { return m_xpuid; }
-void SueHeader::SetVc(uint8_t vc) { m_vc_part = (m_vc_part & 0x3FFF) | ((vc & 0x03) << 14); }
-uint8_t SueHeader::GetVc(void) const { return (m_vc_part >> 14) & 0x03; }
+void SueHeader::SetVc(uint8_t vc) { m_vc_part = (m_vc_part & 0x1FFF) | ((vc & 0x07) << 13); }
+uint8_t SueHeader::GetVc(void) const { return (m_vc_part >> 13) & 0x07; }
 void SueHeader::SetOp(uint8_t op) { m_op_ver_rsv = (m_op_ver_rsv & 0x3F) | ((op & 0x03) << 6); }
 uint8_t SueHeader::GetOp(void) const { return (m_op_ver_rsv >> 6) & 0x03; }
 

@@ -2,27 +2,28 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef PERFORMANCE_LOGGER_H
 #define PERFORMANCE_LOGGER_H
 
+#include <atomic>
+#include <cstdint>
 #include <map>
 #include <fstream>
 #include <string>
+#include <thread>
 #include "ns3/nstime.h"
 
 namespace ns3 {
@@ -297,6 +298,21 @@ private:
 
   std::ofstream m_file;                    //!< Main log file stream
   std::string m_filename;                  //!< Base filename for logs
+  std::string m_runId;                     //!< Timestamp/run identifier for derived log files
+
+  // Lightweight aggregated throughput (used when per-packet throughput logging is disabled)
+  std::map<uint32_t, uint64_t> m_totalTxBits; //!< Total Tx DataSize per NodeId
+  std::map<uint32_t, uint64_t> m_totalRxBits; //!< Total Rx DataSize per NodeId
+  // Lightweight progress snapshots (for watchdog-style early termination).
+  // NOTE: implemented via a wall-clock thread to avoid injecting extra ns-3 events.
+  std::ofstream m_progressLog;                //!< Progress snapshots (small, periodic)
+  std::thread m_progressThread;
+  std::atomic<bool> m_progressThreadStop {false};
+  uint64_t m_progressIntervalMs = 0;
+  std::atomic<uint64_t> m_progressLastSimTimeNs {0};
+  std::atomic<uint64_t> m_progressTxBytesTotal {0};
+  std::atomic<uint64_t> m_progressRxBytesTotal {0};
+  std::atomic<uint64_t> m_progressDropsTotal {0};
 
   // Packing log files
   std::ofstream m_packDelayLog;            //!< Packing delay log file stream
@@ -318,6 +334,11 @@ private:
 
   // Event-driven packet drop monitoring log file
   std::ofstream m_dropLog;                 //!< Packet drop log file stream
+  bool m_dropLogEnabled = false;
+  uint64_t m_dropLogMaxLines = 0;
+  uint64_t m_dropLogLinesWritten = 0;
+  uint64_t m_dropTotal = 0;
+  std::map<std::string, uint64_t> m_dropByReason;
 
   // LoadBalancer monitoring log files
   std::ofstream m_sueBufferQueueLog;       //!< SUE buffer queue statistics log file stream
@@ -327,6 +348,8 @@ private:
 
   // Application layer transmission monitoring log file
   std::ofstream m_appLayerTxLog;           //!< Application layer transmission statistics log file stream
+
+  void ProgressThreadMain ();
 };
 
 } // namespace ns3

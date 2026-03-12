@@ -2,28 +2,32 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef PARAMETER_CONFIG_H
 #define PARAMETER_CONFIG_H
 
 #include "ns3/core-module.h"
+#include <limits>
 #include <string>
 
 namespace ns3 {
+
+// Sentinel values for auto-selection in fine-grained traffic configs.
+constexpr uint32_t kAutoSueId = std::numeric_limits<uint32_t>::max();
+constexpr uint32_t kAutoSuePort = std::numeric_limits<uint32_t>::max();
+constexpr uint8_t kAutoVcId = std::numeric_limits<uint8_t>::max();
 
 /**
  * \brief Timing configuration parameters
@@ -104,6 +108,9 @@ struct TrafficConfig
 struct LinkConfig
 {
     double errorRate;              //!< Error rate
+    std::string errorRateStopAfter; //!< Disable receiver error model after this duration since clientStart (e.g., 500us). Empty means never stop.
+    bool errorModelApplyToControlPackets; //!< Apply error model to CBFC/ACK/NACK control packets
+    bool errorModelApplyToSyncPackets;    //!< Apply error model to CBFC_SYNC packets
     std::string processingDelay;   //!< Processing delay per packet
     uint8_t numVcs;                //!< Number of link-layer VCs
     std::string LinkDataRate;      //!< Link data rate
@@ -122,6 +129,7 @@ struct QueueConfig
     uint32_t processingQueueMaxBytes; //!< Processing queue max bytes (calculated)
     double destQueueMaxKB;           //!< Destination queue maximum size (KB)
     uint32_t destQueueMaxBytes;      //!< Destination queue max bytes (calculated)
+    uint32_t switchEgressOverflowPolicy; //!< Switch egress overflow policy (0=retry, 1=drop)
 };
 
 /**
@@ -138,6 +146,13 @@ struct CbfcConfig
 
     // Credit-to-byte mapping parameters
     uint32_t BytesPerCredit;  //!< Bytes per credit (default: 256 bytes/credit)
+
+    // Periodic credit sync (to correct credit drift/leaks under loss/drop)
+    bool EnableCreditSync;       //!< Enable periodic credit sync
+    std::string CreditSyncInterval; //!< Credit sync interval (e.g., 10us)
+
+    // Link credit allocation mode
+    uint32_t LinkCreditMode;     //!< 0=SHARED (all VCs share one pool), 1=EXCLUSIVE (per-VC equal split)
 };
 
 /**
@@ -171,15 +186,13 @@ struct DelayConfig
     // Transmitter delays
     std::string SchedulingInterval;              //!< Transmitter scheduler polling interval
     std::string PackingDelayPerPacket;           //!< Packet packing processing time
-    std::string destQueueSchedulingDelay;        //!< Destination queue scheduling delay
     std::string transactionClassificationDelay;  //!< Transaction classification delay
     std::string packetCombinationDelay;         //!< Packet combination delay
     std::string ackProcessingDelay;             //!< ACK processing delay
 
     // Link layer delays
     std::string vcSchedulingDelay;               //!< VC queue scheduling delay
-    std::string DataAddHeadDelay;                //!< Data packet header addition delay
-
+    
     // Credit-related delays
     std::string creditGenerateDelay;            //!< Credit packet generation delay
     std::string CreUpdateAddHeadDelay;           //!< Credit packet header addition delay
@@ -200,6 +213,7 @@ struct DelayConfig
 struct LlrConfig
 {
     bool m_llrEnabled;                    //!< Enable Link Layer Reliability
+    bool LlrProtectCbfcUpdates;           //!< Also apply LLR sequencing to CBFC update packets
     std::string LlrTimeout;               //!< LLR timeout value
     uint32_t LlrWindowSize;               //!< LLR window size
     std::string AckAddHeaderDelay;        //!< ACK/NACK header adding delay

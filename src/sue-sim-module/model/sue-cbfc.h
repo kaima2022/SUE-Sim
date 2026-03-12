@@ -2,19 +2,17 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef CBFC_MANAGER_H
@@ -38,6 +36,18 @@ namespace ns3 {
 
 // Forward declarations
 class SueCbfcHeader;
+
+/**
+ * \brief Link-level credit allocation mode.
+ *
+ * SHARED  — all VCs compete for a single credit pool (total = buffer / bytesPerCredit).
+ * EXCLUSIVE — each VC gets an equal fraction of the total credits (total / numVcs).
+ */
+enum class LinkCreditMode : uint8_t
+{
+  SHARED    = 0,
+  EXCLUSIVE = 1
+};
 
 /**
  * \brief Callback types for NetDevice operations
@@ -98,7 +108,7 @@ public:
    * \param protocolNum Protocol number for CBFC updates
    * \param getRemoteMac Callback to get remote MAC address
    * \param isSwitchDevice Callback to check if device is a switch
-   * \param switchCredits Default credits for switch devices (default: 85)
+   * \param switchCredits Switch-internal egress credit budget (total across all VCs)
    */
   void Initialize (uint8_t numVcs,
                   uint32_t initialCredits,
@@ -111,7 +121,8 @@ public:
                   uint16_t protocolNum,
                   std::function<Mac48Address()> getRemoteMac,
                   std::function<bool()> isSwitchDevice,
-                  uint32_t switchCredits = 85);
+                  uint32_t switchCredits = 85,
+                  uint32_t creditWindowPacketBytes = 0);
 
   /**
    * \brief Configure CBFC parameters
@@ -166,11 +177,12 @@ public:
    *
    * \param getRemoteMac Callback to get remote MAC address
    * \param isSwitchDevice Callback to check if device is a switch
-   * \param switchCredits Default credits for switch devices (default: 85)
+   * \param switchCredits Switch-internal egress credit budget (total across all VCs)
    */
   void InitializePeerDeviceCredits (std::function<Mac48Address()> getRemoteMac,
                                    std::function<bool()> isSwitchDevice,
-                                   uint32_t switchCredits = 85);
+                                   uint32_t switchCredits = 85,
+                                   uint32_t creditWindowPacketBytes = 0);
 
   /**
    * \brief Get the number of transmit credits for a specific peer and VC (migrated from PointToPointSueNetDevice)
@@ -255,6 +267,13 @@ public:
   void AddTxCredits (Mac48Address mac, uint8_t vcId, uint32_t credits);
 
   /**
+   * \brief Set (overwrite) transmit credits for a specific peer and VC.
+   *
+   * Used by periodic credit sync to recover from credit drift/leaks under loss/drop.
+   */
+  void SetTxCredits (Mac48Address mac, uint8_t vcId, uint32_t credits);
+
+  /**
    * \brief Handle credit return for a received packet (migrated from PointToPointSueNetDevice)
    *
    * \param ethHeader Ethernet header of the received packet
@@ -329,6 +348,20 @@ public:
    */
   bool IsLinkCbfcEnabled (void) const;
 
+  /**
+   * \brief Get the current link credit mode
+   *
+   * \return The link credit mode (SHARED or EXCLUSIVE)
+   */
+  LinkCreditMode GetLinkCreditMode (void) const;
+
+  /**
+   * \brief Set the link credit mode
+   *
+   * \param mode The link credit mode to set
+   */
+  void SetLinkCreditMode (LinkCreditMode mode);
+
 private:
   /**
    * \brief Internal method to send credit packet via callback
@@ -343,8 +376,14 @@ private:
   bool m_enableLinkCBFC;                 //!< CBFC enable flag
 
   // Credit management maps - replicated from original logic
-  std::map<Mac48Address, std::map<uint8_t, uint32_t>> m_txCreditsMap;        //!< TX credits: MAC -> VC -> credits
+  std::map<Mac48Address, std::map<uint8_t, uint32_t>> m_txCreditsMap;        //!< TX credits: MAC -> VC -> credits (per-VC, used for EXCLUSIVE mode and switch-internal)
   std::map<Mac48Address, std::map<uint8_t, uint32_t>> m_rxCreditsToReturnMap; //!< RX credits to return: MAC -> VC -> credits
+
+  std::map<Mac48Address, uint32_t> m_sharedTxCreditsMap; //!< Shared TX credit pool: MAC -> credits (used in SHARED mode for link peer)
+  Mac48Address m_linkPeerMac;                            //!< Link peer MAC address (set during first AddPeerDevice call)
+  bool m_linkPeerMacSet;                                  //!< Whether m_linkPeerMac has been set
+  LinkCreditMode m_linkCreditMode;                       //!< Link credit allocation mode (SHARED or EXCLUSIVE)
+  uint8_t m_linkCreditModeRaw;                           //!< Raw storage for ns3 attribute binding
 
   // Configuration parameters
   uint32_t m_initialCredits;          //!< Initial credit count

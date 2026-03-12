@@ -1,0 +1,5 @@
+timestamp,sourceXpuId,destXpuId,sueId,suePort,vcId,dataRate,totalBytes
+0,1,0,0,0,0,50000,10485760
+0,1,0,0,0,1,50000,10485760
+0,1,0,0,0,2,50000,10485760
+0,1,0,0,0,3,50000,10485760

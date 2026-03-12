@@ -2,24 +2,23 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef SUE_LLR_H
 #define SUE_LLR_H
 
+#include <limits>
 #include <map>
 #include <functional>
 #include "ns3/mac48-address.h"
@@ -141,12 +140,24 @@ public:
    * \param source Source MAC address
    * \param seq_rev Received sequence number
    */
-  void LlrReceivePacket (Ptr<Packet> packet, uint8_t vcId, Mac48Address source, uint32_t seq_rev);
+	  bool LlrReceivePacket (Ptr<Packet> packet, uint8_t vcId, Mac48Address source, uint32_t seq_rev);
 
-  /**
-   * \brief Send LLR ACK (matching SendLlrAck)
-   *
-   * \param vcId Virtual channel ID
+	  /**
+	   * \brief Notify LLR that a data packet was dropped before it could be buffered/admitted.
+	   *
+	   * This emits an ACK for duplicates (seq < expected) and a NACK(expected) for
+	   * in-order/out-of-order packets, without advancing receiver state.
+	   *
+	   * Used to avoid silent loss under admission-control drops (e.g., processing
+	   * queue full / switch egress admission failure) that would otherwise rely purely
+	   * on timeout-based recovery.
+	   */
+	  void LlrNotifyDropBeforeReceive (uint8_t vcId, uint32_t seq_rev, Mac48Address source);
+
+	  /**
+	   * \brief Send LLR ACK (matching SendLlrAck)
+	   *
+	   * \param vcId Virtual channel ID
    * \param seq Sequence number to acknowledge
    */
   void SendLlrAck (uint8_t vcId, uint32_t seq);
@@ -185,11 +196,20 @@ public:
    *
    * \param vcId Virtual channel ID
    */
-  void LlrResendPacket (uint8_t vcId);
+  Ptr<Packet> LlrResendPacket (uint8_t vcId);
+
+  /**
+   * \brief Notify the LLR manager that a packet sequence has been transmitted once (first send).
+   *
+   * Used to bound Go-Back-N retransmissions to sequences that have actually been sent.
+   */
+  void MarkPacketSent (uint8_t vcId, uint32_t seq);
 
   // State query methods (matching NetDevice function names)
   bool GetLlrEnabled (void) const;
   bool IsLlrResending (uint8_t vcId) const;
+  uint32_t GetSendBaseSeq (uint8_t vcId) const;
+  bool IsWithinSendWindow (uint8_t vcId, uint32_t seq) const;
 
   
 private:
@@ -206,15 +226,19 @@ private:
   Mac48Address m_switchMac;           //!< Switch MAC address for communication
 
   // LLR state data structures (simplified for single switch communication)
-  std::vector<std::map<uint32_t, Ptr<Packet>>> m_sendList;              //!< Per VC map seq->packet
-  std::vector<uint32_t> m_waitSeq;                                     //!< Per VC: expected next receive sequence
-  std::vector<uint32_t> m_sendSeq;                                     //!< Per VC: next sequence to send
-  std::vector<uint32_t> m_unack;                                       //!< Per VC: outstanding unacknowledged sequences
-  uint32_t m_llrResendseq;                                             //!< Next sequence to resend
+	  std::vector<std::map<uint32_t, Ptr<Packet>>> m_sendList;              //!< Per VC map seq->packet (sender-side, used for retransmission)
+	  std::vector<uint32_t> m_waitSeq;                                     //!< Per VC: expected next receive sequence (receiver-side)
+	  std::vector<uint32_t> m_sendSeq;                                     //!< Per VC: next sequence to send
+	  std::vector<uint32_t> m_sendBaseSeq;                                 //!< Per VC: lowest unacknowledged sequence (sender-side)
+	  std::vector<uint32_t> m_unack;                                       //!< Per VC: outstanding unacknowledged sequences
+		  std::vector<uint32_t> m_llrResendseq;                                //!< Per VC: next sequence to resend
+		  std::vector<uint32_t> m_llrResendEndSeq;                             //!< Per VC: upper bound for current resend session (inclusive)
+		  std::vector<uint32_t> m_lastSentSeq;                                 //!< Per VC: highest sequence that has been transmitted once
+		  std::vector<bool> m_hasSent;                                         //!< Per VC: whether any sequence has been transmitted once
 
-  // State flags (matching NetDevice implementation)
-  std::vector<bool> m_llrWait;                                         //!< Per VC: waiting for ACK
-  std::vector<bool> m_llrResending;                                    //!< Per VC: currently resending
+	  // State flags (matching NetDevice implementation)
+	  std::vector<bool> m_llrWait;                                         //!< Per VC: waiting for ACK
+	  std::vector<bool> m_llrResending;                                    //!< Per VC: currently resending
 
   // Timing information (matching NetDevice implementation)
   std::vector<Time> m_lastAckedTime;                                   //!< Per VC: last ACK receive time
@@ -222,6 +246,9 @@ private:
 
   // Retransmission events (matching NetDevice implementation)
   std::vector<EventId> m_resendPkt;                                     //!< Per VC: scheduled resend events
+
+  // Receiver-side NACK suppression: remember last missing sequence we already NACKed per VC
+  std::vector<uint32_t> m_lastNackSeq;                                  //!< Per VC: last NACKed expected sequence
 
   // Callbacks
   GetLocalMacCallback m_getLocalMac;
@@ -318,12 +345,23 @@ public:
    * \param source Source MAC address
    * \return True if packet should be processed, false if duplicate/out-of-order
    */
-  bool LlrReceivePacket (Ptr<Packet> packet, uint8_t vcId, uint32_t seq_rev, Mac48Address source);
+	  bool LlrReceivePacket (Ptr<Packet> packet, uint8_t vcId, uint32_t seq_rev, Mac48Address source);
 
-  /**
-   * \brief Send LLR ACK for switch port (matching SendLlrAck)
-   *
-   * \param vcId Virtual channel ID
+	  /**
+	   * \brief Notify switch-port LLR that a data packet was dropped before it could be buffered/admitted.
+	   *
+	   * This emits an ACK for duplicates (seq < expected) and a NACK(expected) for
+	   * in-order/out-of-order packets, without advancing receiver state.
+	   *
+	   * Used to avoid very slow timeout-only recovery when the switch drops packets
+	   * due to egress admission overflow under lossy (DROP) mode.
+	   */
+	  void LlrNotifyDropBeforeReceive (uint8_t vcId, uint32_t seq_rev, Mac48Address source);
+
+	  /**
+	   * \brief Send LLR ACK for switch port (matching SendLlrAck)
+	   *
+	   * \param vcId Virtual channel ID
    * \param seq Sequence number to acknowledge
    * \param mac Target MAC address
    */
@@ -368,17 +406,27 @@ public:
    */
   void Resend (uint8_t vcId, Mac48Address mac);
 
-  /**
-   * \brief Perform resend for switch ports (matching LlrResendPacket)
-   *
-   * \param vcId Virtual channel ID
-   * \param mac Target MAC address
-   */
-  void LlrResendPacket (uint8_t vcId, Mac48Address mac);
+	  /**
+	   * \brief Perform resend for switch ports (matching LlrResendPacket)
+	   *
+	   * \param vcId Virtual channel ID
+	   * \param mac Target MAC address
+	   */
+		  Ptr<Packet> LlrResendPacket (uint8_t vcId, Mac48Address mac);
 
-  // State query methods (matching NetDevice function names)
-  bool GetLlrEnabled (void) const;
-  Mac48Address GetPeerMac (void) const;
+		  /**
+		   * \brief Notify the switch-port LLR manager that a packet sequence has been transmitted once (first send).
+		   *
+		   * Used to bound Go-Back-N retransmissions to sequences that have actually been sent.
+		   */
+		  void MarkPacketSent (uint8_t vcId, uint32_t seq, Mac48Address mac);
+
+		  // State query methods (matching NetDevice function names)
+		  bool GetLlrEnabled (void) const;
+		  Mac48Address GetPeerMac (void) const;
+		  bool IsLlrResending (uint8_t vcId, Mac48Address mac) const;
+		  uint32_t GetSendBaseSeq (uint8_t vcId, Mac48Address mac) const;
+		  bool IsWithinSendWindow (uint8_t vcId, uint32_t seq, Mac48Address mac) const;
 
   
 private:
@@ -393,15 +441,19 @@ private:
   Mac48Address m_peerMac;             //!< MAC address of connected peer device
 
   // LLR state data structures (exactly matching NetDevice implementation for multiple peers)
-  std::map<Mac48Address, std::vector<std::map<uint32_t, Ptr<Packet>>>> m_sendList;   //!< Per MAC, per VC map seq->packet
-  std::map<Mac48Address, std::vector<uint32_t>> m_waitSeq;                           //!< Per MAC, per VC: expected next receive sequence
-  std::map<Mac48Address, std::vector<uint32_t>> m_sendSeq;                           //!< Per MAC, per VC: next sequence to send
-  std::map<Mac48Address, std::vector<uint32_t>> m_unack;                             //!< Per MAC, per VC: outstanding unacknowledged sequences
-  std::map<Mac48Address, std::vector<uint32_t>> m_llrResendseq;                      //!< Per MAC, per VC: next sequence to resend
+	  std::map<Mac48Address, std::vector<std::map<uint32_t, Ptr<Packet>>>> m_sendList;   //!< Per MAC, per VC map seq->packet (sender-side, used for retransmission)
+	  std::map<Mac48Address, std::vector<uint32_t>> m_waitSeq;                           //!< Per MAC, per VC: expected next receive sequence (receiver-side)
+	  std::map<Mac48Address, std::vector<uint32_t>> m_sendSeq;                           //!< Per MAC, per VC: next sequence to send
+	  std::map<Mac48Address, std::vector<uint32_t>> m_sendBaseSeq;                       //!< Per MAC, per VC: lowest unacknowledged sequence (sender-side)
+	  std::map<Mac48Address, std::vector<uint32_t>> m_unack;                             //!< Per MAC, per VC: outstanding unacknowledged sequences
+		  std::map<Mac48Address, std::vector<uint32_t>> m_llrResendseq;                      //!< Per MAC, per VC: next sequence to resend
+		  std::map<Mac48Address, std::vector<uint32_t>> m_llrResendEndSeq;                   //!< Per MAC, per VC: upper bound for current resend session (inclusive)
+		  std::map<Mac48Address, std::vector<uint32_t>> m_lastSentSeq;                       //!< Per MAC, per VC: highest sequence that has been transmitted once
+		  std::map<Mac48Address, std::vector<bool>> m_hasSent;                               //!< Per MAC, per VC: whether any sequence has been transmitted once
 
-  // State flags (exactly matching NetDevice implementation)
-  std::map<Mac48Address, std::vector<bool>> m_llrWait;                               //!< Per MAC, per VC: waiting for ACK
-  std::map<Mac48Address, std::vector<bool>> m_llrResending;                          //!< Per MAC, per VC: currently resending
+	  // State flags (exactly matching NetDevice implementation)
+	  std::map<Mac48Address, std::vector<bool>> m_llrWait;                               //!< Per MAC, per VC: waiting for ACK
+	  std::map<Mac48Address, std::vector<bool>> m_llrResending;                          //!< Per MAC, per VC: currently resending
 
   // Timing information (exactly matching NetDevice implementation)
   std::map<Mac48Address, std::vector<Time>> m_lastAckedTime;                         //!< Per MAC, per VC: last ACK receive time
@@ -409,6 +461,9 @@ private:
 
   // Retransmission events (exactly matching NetDevice implementation)
   std::map<Mac48Address, std::vector<EventId>> m_resendPkt;                           //!< Per MAC, per VC: scheduled resend events
+
+  // Receiver-side NACK suppression: remember last missing sequence we already NACKed per {peer,VC}
+  std::map<Mac48Address, std::vector<uint32_t>> m_lastNackSeq;                        //!< Per MAC, per VC: last NACKed expected sequence
 
   // Callbacks
   GetLocalMacCallback m_getLocalMac;

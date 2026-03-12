@@ -2,19 +2,17 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef SUE_CLIENT_H
@@ -191,6 +189,13 @@ public:
   static void SetGlobalIpMacMap (const std::map<Ipv4Address, Mac48Address>& map);
 
   /**
+   * \brief Set global XPU port IP mapping
+   *
+   * \param xpuPortIps Indexed as [xpuId][globalPortIdx]
+   */
+  static void SetGlobalXpuPortIps (const std::vector<std::vector<Ipv4Address>>& xpuPortIps);
+
+  /**
    * \brief Check if there are pending transactions
    *
    * \return true if there are pending transactions
@@ -327,6 +332,11 @@ private:
                     Ptr<PointToPointSueNetDevice> device);
 
   /**
+   * \brief Mark a scheduled burst as finished and re-arm the scheduler if needed.
+   */
+  void OnSendBurstFinished ();
+
+  /**
    * \brief Pack transactions by VC ID intelligently
    *
    * \param dest Destination information
@@ -393,6 +403,17 @@ private:
   void LogNetworkState (const Destination& dest);
 
   /**
+   * \brief Resolve destination IP using topology-provided XPU/port mapping
+   *
+   * \param destXpuId Destination XPU identifier
+   * \param selectedIfIndex Source device interface index (loopback-excluded)
+   * \param outGlobalPortIdx Resolved global port index for server port calculation
+   * \return Resolved destination IP or zero address on failure
+   */
+  Ipv4Address ResolveRemoteIp (uint32_t destXpuId, Ptr<PointToPointSueNetDevice> selectedDevice,
+                               uint32_t& outGlobalPortIdx) const;
+
+  /**
    * \brief Get MAC address for IP address
    *
    * \param ip IP address
@@ -454,6 +475,7 @@ private:
   // Event management
   EventId m_schedulerEvent;                                               //!< Scheduler event ID
   EventId m_logClientStatisticsEvent;                                     //!< Log statistics event ID
+  uint32_t m_outstandingSendEvents = 0;                                   //!< Number of scheduled DoSendBurst events not yet finished
 
   // Configuration parameters
   Time m_schedulingInterval;                                              //!< Scheduling interval
@@ -468,6 +490,7 @@ private:
 
   // Global mappings
   static std::map<Ipv4Address, Mac48Address> s_ipToMacMap;               //!< Global IP to MAC mapping
+  static std::vector<std::vector<Ipv4Address>> s_xpuPortIps;             //!< Global [xpuId][globalPortIdx] IP map
 };
 
 } // namespace ns3

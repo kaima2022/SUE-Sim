@@ -2,19 +2,17 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "sue-utils.h"
@@ -35,6 +33,7 @@ namespace ns3 {
 
 // Define static constants
 const uint16_t SuePacketUtils::PROT_CBFC_UPDATE = 0xCBFC;
+const uint16_t SuePacketUtils::PROT_CBFC_SYNC = 0xCBFD;
 const uint16_t SuePacketUtils::ACK_REV = 0x1111;
 const uint16_t SuePacketUtils::NACK_REV = 0x2222;
 
@@ -196,81 +195,92 @@ SuePacketUtils::ExtractVcIdFromPacket(Ptr<const Packet> packet)
 {
     NS_LOG_FUNCTION(packet);
 
+    if (!packet)
+    {
+        NS_LOG_WARN("ExtractVcIdFromPacket: null packet");
+        return 0;
+    }
+
     Packet p = *packet;
 
-    try {
-        // First check if there's a PPP header
-        SuePppHeader ppp;
-        bool hasPppHeader = true;
+    SuePppHeader ppp;
+    const uint32_t pppSize = ppp.GetSerializedSize();
+    const uint16_t pppProtoIpv4 = SuePacketUtils::EtherToPpp(0x0800);
+    const uint16_t pppProtoIpv6 = SuePacketUtils::EtherToPpp(0x86DD);
+    const uint16_t pppProtoCbfc = SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_UPDATE);
+    const uint16_t pppProtoCbfcSync = SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_SYNC);
+    const uint16_t pppProtoAck = SuePacketUtils::EtherToPpp(SuePacketUtils::ACK_REV);
+    const uint16_t pppProtoNack = SuePacketUtils::EtherToPpp(SuePacketUtils::NACK_REV);
 
-        // Try to Peek PPP header to check protocol number
-        try {
-            p.PeekHeader(ppp);
-            uint16_t protocol = ppp.GetProtocol();
+    bool hasValidPppHeader = false;
+    uint16_t pppProto = 0;
 
-            // Check if protocol number is valid
-            if (!protocol) {
-                // Protocol number is 0 or invalid, indicating it's not a PPP header
-                hasPppHeader = false;
-            }
-        }
-        catch (...) {
-            // Not enough data to form PPP header
-            hasPppHeader = false;
-        }
-
-        if (hasPppHeader) {
-            // Remove PPP header to get to the actual content
+    if (p.GetSize() >= pppSize)
+    {
+        p.PeekHeader(ppp);
+        pppProto = ppp.GetProtocol();
+        if (pppProto == pppProtoIpv4 || pppProto == pppProtoIpv6 ||
+            pppProto == pppProtoCbfc || pppProto == pppProtoCbfcSync ||
+            pppProto == pppProtoAck || pppProto == pppProtoNack)
+        {
+            hasValidPppHeader = true;
             p.RemoveHeader(ppp);
-
-            // Check if it's a credit update packet based on PPP protocol
-            if (ppp.GetProtocol() == 0x00FB) { // EtherToPpp(PROT_CBFC_UPDATE)
-                // Credit update packet: extract VC ID from CBFC header
-                SueCbfcHeader cbfcHeader;
-                p.RemoveHeader(cbfcHeader);
-
-                // Remove Ethernet header
-                EthernetHeader eth;
-                p.RemoveHeader(eth);
-
-                return cbfcHeader.GetVcId();
-            }
-            else {
-                // Data packet structure: PPP + Ethernet + IPv4 + UDP + SueHeader
-                EthernetHeader eth;
-                p.RemoveHeader(eth);
-
-                Ipv4Header ipv4;
-                p.RemoveHeader(ipv4);
-
-                UdpHeader udp;
-                p.RemoveHeader(udp);
-
-                SueHeader sueHeader;
-                p.RemoveHeader(sueHeader);
-                return sueHeader.GetVc();
-            }
-        }
-        else {
-            // Packet structure: Ethernet + IPv4 + UDP + SueHeader
-            EthernetHeader eth;
-            p.RemoveHeader(eth);
-
-            Ipv4Header ipv4;
-            p.RemoveHeader(ipv4);
-
-            UdpHeader udp;
-            p.RemoveHeader(udp);
-
-            SueHeader sueHeader;
-            p.RemoveHeader(sueHeader);
-            return sueHeader.GetVc();
         }
     }
-    catch (...) {
-        NS_LOG_WARN("Failed to extract VC ID from packet");
-        return 0; // Default VC
+
+    // Control packets: PPP + CBFC header (+ Ethernet header), extract VC directly from CBFC header.
+    if (hasValidPppHeader &&
+        (pppProto == pppProtoCbfc || pppProto == pppProtoCbfcSync ||
+         pppProto == pppProtoAck || pppProto == pppProtoNack))
+    {
+        SueCbfcHeader cbfcHeader;
+        if (p.GetSize() < cbfcHeader.GetSerializedSize())
+        {
+            NS_LOG_WARN("ExtractVcIdFromPacket: control packet too small for CBFC header, size=" << p.GetSize());
+            return 0;
+        }
+        p.RemoveHeader(cbfcHeader);
+        return cbfcHeader.GetVcId();
     }
+
+    // Data packet structure (with or without PPP):
+    //   [PPP] + Ethernet + IPv4 + [UDP] + SueHeader
+    EthernetHeader eth;
+    if (p.GetSize() < eth.GetSerializedSize())
+    {
+        NS_LOG_WARN("ExtractVcIdFromPacket: packet too small for Ethernet header, size=" << p.GetSize());
+        return 0;
+    }
+    p.RemoveHeader(eth);
+
+    Ipv4Header ipv4;
+    if (p.GetSize() < ipv4.GetSerializedSize())
+    {
+        NS_LOG_WARN("ExtractVcIdFromPacket: packet too small for IPv4 header, size=" << p.GetSize());
+        return 0;
+    }
+    p.RemoveHeader(ipv4);
+
+    // UDP is expected for normal traffic, but avoid crashing on malformed/control packets.
+    if (ipv4.GetProtocol() == 17) // UDP
+    {
+        UdpHeader udp;
+        if (p.GetSize() < udp.GetSerializedSize())
+        {
+            NS_LOG_WARN("ExtractVcIdFromPacket: packet too small for UDP header, size=" << p.GetSize());
+            return 0;
+        }
+        p.RemoveHeader(udp);
+    }
+
+    SueHeader sueHeader;
+    if (p.GetSize() < sueHeader.GetSerializedSize())
+    {
+        NS_LOG_WARN("ExtractVcIdFromPacket: packet too small for SueHeader, size=" << p.GetSize());
+        return 0;
+    }
+    p.RemoveHeader(sueHeader);
+    return sueHeader.GetVc();
 }
 
 Ipv4Address
@@ -407,6 +417,8 @@ SuePacketUtils::PppToEther(uint16_t proto)
         return 0x86DD; // IPv6
     case 0x00FB:
         return PROT_CBFC_UPDATE; // CBFC Update
+    case 0x00FC:
+        return PROT_CBFC_SYNC; // CBFC Credit Sync
     case 0x1111:
         return ACK_REV; // LLR ACK
     case 0x2222:
@@ -429,6 +441,8 @@ SuePacketUtils::EtherToPpp(uint16_t proto)
         return 0x0057; // IPv6
     case PROT_CBFC_UPDATE:
         return 0x00FB; // CBFC Update
+    case PROT_CBFC_SYNC:
+        return 0x00FC; // CBFC Credit Sync
     case ACK_REV:
         return 0x1111; // LLR ACK
     case NACK_REV:
@@ -509,30 +523,32 @@ SueStatsUtils::ProcessSentPacketStats(Ptr<Packet> packet,
     SuePppHeader ppp;
     packet->PeekHeader(ppp);
 
-    // Extract VC ID from packet
+    // Control packets (CBFC credit / LLR ACK / LLR NACK) are not counted in VC statistics.
+    if (ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_UPDATE) ||
+        ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_SYNC) ||
+        ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::ACK_REV) ||
+        ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::NACK_REV))
+    {
+        NS_LOG_DEBUG("Control packet sent, not counting in VC statistics");
+        return;
+    }
+
+    // Extract VC ID from packet (data packets only)
     uint8_t vcId = SuePacketUtils::ExtractVcIdFromPacket(packet);
 
-    if (ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_UPDATE))
-    {
-        // Credit packet - don't count in statistics
-        NS_LOG_DEBUG("Credit packet sent, not counting in VC statistics");
-    }
-    else
-    {
-        // === EVENT-DRIVEN STATISTICS ===
-        // For fine-grained testing, log packet immediately when sent
-        // Use actual node and device IDs passed from caller
+    // === EVENT-DRIVEN STATISTICS ===
+    // For fine-grained testing, log packet immediately when sent
+    // Use actual node and device IDs passed from caller
 
-        int64_t timestampNs = Simulator::Now().GetNanoSeconds();
-        uint32_t packetSizeBits = packet->GetSize();
+    int64_t timestampNs = Simulator::Now().GetNanoSeconds();
+    uint32_t packetSizeBits = packet->GetSize() * 8;
 
-        // Use PerformanceLogger with correct node and device context
-        PerformanceLogger::GetInstance().LogPacketTx(
-            timestampNs, nodeId, deviceId, vcId, "Tx", packetSizeBits);
+    // Use PerformanceLogger with correct node and device context
+    PerformanceLogger::GetInstance().LogPacketTx(
+        timestampNs, nodeId, deviceId, vcId, "Tx", packetSizeBits);
 
-        NS_LOG_DEBUG("Data packet sent on VC " << static_cast<uint32_t>(vcId)
-                    << ", size: " << packet->GetSize() << " bytes");
-    }
+    NS_LOG_DEBUG("Data packet sent on VC " << static_cast<uint32_t>(vcId)
+                << ", size: " << packet->GetSize() << " bytes");
 }
 
 void
@@ -544,30 +560,32 @@ SueStatsUtils::ProcessReceivedPacketStats(Ptr<Packet> packet,
     SuePppHeader ppp;
     packet->PeekHeader(ppp);
 
-    // Extract VC ID from packet
+    // Control packets (CBFC credit / LLR ACK / LLR NACK) are not counted in VC statistics.
+    if (ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_UPDATE) ||
+        ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_SYNC) ||
+        ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::ACK_REV) ||
+        ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::NACK_REV))
+    {
+        NS_LOG_DEBUG("Control packet received, not counting in VC statistics");
+        return;
+    }
+
+    // Extract VC ID from packet (data packets only)
     uint8_t vcId = SuePacketUtils::ExtractVcIdFromPacket(packet);
 
-    if (ppp.GetProtocol() == SuePacketUtils::EtherToPpp(SuePacketUtils::PROT_CBFC_UPDATE))
-    {
-        // Credit packet - don't count in statistics
-        NS_LOG_DEBUG("Credit packet received, not counting in VC statistics");
-    }
-    else
-    {
-        // === EVENT-DRIVEN STATISTICS ===
-        // For fine-grained testing, log packet immediately when received
-        // Use actual node and device IDs passed from caller
+    // === EVENT-DRIVEN STATISTICS ===
+    // For fine-grained testing, log packet immediately when received
+    // Use actual node and device IDs passed from caller
 
-        int64_t timestampNs = Simulator::Now().GetNanoSeconds();
-        uint32_t packetSizeBits = packet->GetSize();
+    int64_t timestampNs = Simulator::Now().GetNanoSeconds();
+    uint32_t packetSizeBits = packet->GetSize() * 8;
 
-        // Use PerformanceLogger with correct node and device context
-        PerformanceLogger::GetInstance().LogPacketRx(
-            timestampNs, nodeId, deviceId, vcId, "Rx", packetSizeBits);
+    // Use PerformanceLogger with correct node and device context
+    PerformanceLogger::GetInstance().LogPacketRx(
+        timestampNs, nodeId, deviceId, vcId, "Rx", packetSizeBits);
 
-        NS_LOG_DEBUG("Data packet received on VC " << static_cast<uint32_t>(vcId)
-                    << ", size: " << packet->GetSize() << " bytes");
-    }
+    NS_LOG_DEBUG("Data packet received on VC " << static_cast<uint32_t>(vcId)
+                << ", size: " << packet->GetSize() << " bytes");
 }
 
 

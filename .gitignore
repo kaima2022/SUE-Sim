@@ -35,3 +35,5 @@ Thumbs.db
 # Ignore CCCC runtime domain (Ephemeral mode)
 /.cccc/**
 docs/**
+
+temp

@@ -2,24 +2,24 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation;
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "parameter-config.h"
 #include "ns3/core-module.h"
 #include <iostream>
 #include <iomanip>
+#include <algorithm>
 
 namespace ns3 {
 
@@ -57,6 +57,9 @@ SueSimulationConfig::SueSimulationConfig ()
 
     // Initialize link configuration
     link.errorRate = 0.00;
+    link.errorRateStopAfter = "";
+    link.errorModelApplyToControlPackets = true;
+    link.errorModelApplyToSyncPackets = true;
     link.processingDelay = "10ns";
     link.numVcs = 4;
     link.LinkDataRate = "200Gbps";
@@ -70,17 +73,21 @@ SueSimulationConfig::SueSimulationConfig ()
     queue.processingQueueMaxBytes = 0; // Will be calculated
     queue.destQueueMaxKB = 30.0;
     queue.destQueueMaxBytes = 0; // Will be calculated
+    queue.switchEgressOverflowPolicy = 0; // 0=retry (lossless), 1=drop (lossy)
 
     // Initialize CBFC configuration
     cbfc.EnableLinkCBFC = true;
-    cbfc.LinkCredits = 85;
+    cbfc.LinkCredits = 0;
     cbfc.CreditBatchSize = 1;
-    cbfc.SwitchCredits = 85;
+    cbfc.SwitchCredits = 0;
     cbfc.HeaderSize = 52;
     cbfc.BaseCredit = 1;
 
     // Initialize credit-to-byte mapping parameters
     cbfc.BytesPerCredit = 32;           // Bytes per credit
+    cbfc.EnableCreditSync = false;
+    cbfc.CreditSyncInterval = "0ns";
+    cbfc.LinkCreditMode = 0;            // 0=SHARED, 1=EXCLUSIVE
 
     // Initialize load balance configuration
     loadBalance.loadBalanceAlgorithm = 3;
@@ -96,24 +103,23 @@ SueSimulationConfig::SueSimulationConfig ()
     trace.ClientStatInterval = "10us";
     
     // Initialize delay configuration
-    delay.SchedulingInterval = "100ns";
+    delay.SchedulingInterval = "12ns";
     delay.PackingDelayPerPacket = "3ns";
-    delay.destQueueSchedulingDelay = "5ns";
     delay.transactionClassificationDelay = "0ns";
     delay.packetCombinationDelay = "12ns";
     delay.ackProcessingDelay = "15ns";
-    delay.vcSchedulingDelay = "8ns";
-    delay.DataAddHeadDelay = "5ns";
+    delay.vcSchedulingDelay = "0ns";
     delay.additionalHeaderSize = 44;
     delay.creditGenerateDelay = "10ns";
     delay.CreUpdateAddHeadDelay = "3ns";
     delay.creditReturnProcessingDelay = "8ns";
     delay.batchCreditAggregationDelay = "5ns";
-    delay.switchForwardDelay = "50ns";
-    delay.processingQueueScheduleDelay = "5ns";
+    delay.switchForwardDelay = "12ns";
+    delay.processingQueueScheduleDelay = "0ns";
 
     //Initialize LLR configuration
     llr.m_llrEnabled = false;
+    llr.LlrProtectCbfcUpdates = true;
     llr.LlrTimeout = "10000ns";
     llr.LlrWindowSize = 10;
     llr.AckAddHeaderDelay = "10ns";
@@ -157,6 +163,16 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
 
     // Link layer parameters
     cmd.AddValue("errorRate", "The packet error rate for the links", link.errorRate);
+    cmd.AddValue("ErrorRateStopAfter",
+                 "Disable receiver error model after this duration since clientStart (e.g., 500us). "
+                 "Empty means keep enabled.",
+                 link.errorRateStopAfter);
+    cmd.AddValue("ErrorModelApplyToControlPackets",
+                 "Whether to apply error model to control packets (CBFC/LLR ACK/NACK)",
+                 link.errorModelApplyToControlPackets);
+    cmd.AddValue("ErrorModelApplyToSyncPackets",
+                 "Whether to apply error model to CBFC_SYNC credit synchronization packets",
+                 link.errorModelApplyToSyncPackets);
     cmd.AddValue("processingDelay", "Processing delay per packet", link.processingDelay);
     cmd.AddValue("numVcs", "Number of virtual channels at link layer", link.numVcs);
     cmd.AddValue("LinkDataRate", "Link data rate", link.LinkDataRate);
@@ -167,17 +183,29 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("VcQueueMaxKB", "Maximum VC queue size in KB (default: 30KB)", queue.vcQueueMaxKB);
     cmd.AddValue("ProcessingQueueMaxKB", "Maximum processing queue size in KB (default: 30KB)", queue.processingQueueMaxKB);
     cmd.AddValue("DestQueueMaxKB", "Maximum destination queue size in KB (default: 30KB)", queue.destQueueMaxKB);
+    cmd.AddValue("SwitchEgressOverflowPolicy",
+                 "Switch egress overflow policy: 0=retry (lossless), 1=drop (lossy). "
+                 "If set to drop, EnableLLR should be true to avoid silent deadlocks.",
+                 queue.switchEgressOverflowPolicy);
 
     // CBFC flow control parameters
     cmd.AddValue("EnableLinkCBFC", "Enable Credit-Based Flow Control", cbfc.EnableLinkCBFC);
-    cmd.AddValue("LinkCredits", "Initial credits at link layer", cbfc.LinkCredits);
+    cmd.AddValue("LinkCredits",
+                 "Initial link credits. 0 means auto: floor(ProcessingQueueMaxKB*1024 / BytesPerCredit).",
+                 cbfc.LinkCredits);
     cmd.AddValue("CreditBatchSize", "Credit accumulation threshold", cbfc.CreditBatchSize);
-    cmd.AddValue("SwitchCredits", "Switch credits", cbfc.SwitchCredits);
+    cmd.AddValue("SwitchCredits",
+                 "Switch-internal egress credit budget (total across all VCs). "
+                 "0 means auto: floor(VcQueueMaxKB*1024 / BytesPerCredit) * numVcs.",
+                 cbfc.SwitchCredits);
     cmd.AddValue("HeaderSize", "Header size (Ethernet + SUE headers)", cbfc.HeaderSize);
     cmd.AddValue("BaseCredit", "Base credit value for minimum packet", cbfc.BaseCredit);
 
     // Credit calculation parameters
     cmd.AddValue("BytesPerCredit", "Bytes per credit (default: 256)", cbfc.BytesPerCredit);
+    cmd.AddValue("EnableCreditSync", "Enable periodic credit sync (default: false)", cbfc.EnableCreditSync);
+    cmd.AddValue("CreditSyncInterval", "Periodic credit sync interval (e.g., 10us, 1000ns)", cbfc.CreditSyncInterval);
+    cmd.AddValue("LinkCreditMode", "Link credit allocation mode: 0=SHARED (all VCs share one pool), 1=EXCLUSIVE (per-VC equal split)", cbfc.LinkCreditMode);
 
     // Trace sampling parameters
     cmd.AddValue("StatLoggingEnabled", "Link Layer Stat Logging Enabled Switch", trace.statLoggingEnabled);
@@ -186,15 +214,13 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     // Delay parameters - transmitter scheduling
     cmd.AddValue("SchedulingInterval", "Transmitter scheduler polling interval", delay.SchedulingInterval);
     cmd.AddValue("PackingDelayPerPacket", "Packet packing processing time", delay.PackingDelayPerPacket);
-    cmd.AddValue("destQueueSchedulingDelay", "Destination queue scheduling delay", delay.destQueueSchedulingDelay);
     cmd.AddValue("transactionClassificationDelay", "Transaction classification delay", delay.transactionClassificationDelay);
     cmd.AddValue("packetCombinationDelay", "Packet combination delay", delay.packetCombinationDelay);
     cmd.AddValue("ackProcessingDelay", "ACK processing delay", delay.ackProcessingDelay);
 
     // Link layer delay parameters
     cmd.AddValue("vcSchedulingDelay", "VC queue scheduling delay", delay.vcSchedulingDelay);
-    cmd.AddValue("DataAddHeadDelay", "Data packet header addition delay", delay.DataAddHeadDelay);
-
+    
     // Credit-related delays
     cmd.AddValue("creditGenerateDelay", "Credit packet generation delay", delay.creditGenerateDelay);
     cmd.AddValue("CreUpdateAddHeadDelay", "Credit update packet header addition delay", delay.CreUpdateAddHeadDelay);
@@ -219,6 +245,10 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
 
     //Llr related parameters
     cmd.AddValue("EnableLLR", "Enable Link Layer Reliability", llr.m_llrEnabled);
+    cmd.AddValue("LlrProtectCbfcUpdates",
+                 "When EnableLLR=true, also apply LLR sequencing to CBFC update packets "
+                 "(prevents credit leak when control packets can be lost)",
+                 llr.LlrProtectCbfcUpdates);
     cmd.AddValue("LlrTimeout", "LLR timeout value", llr.LlrTimeout);
     cmd.AddValue("LlrWindowSize", "LLR window size", llr.LlrWindowSize);
     cmd.AddValue("AckAddHeaderDelay", "ACK/NACK header adding delay", llr.AckAddHeaderDelay);
@@ -239,7 +269,39 @@ SueSimulationConfig::ValidateAndCalculate ()
     queue.processingQueueMaxBytes = static_cast<uint32_t>(queue.processingQueueMaxKB * 1024);
     queue.destQueueMaxBytes = static_cast<uint32_t>(queue.destQueueMaxKB * 1024);
 
+    // Auto-calibrate credits from buffer capacities (optional).
+    if (cbfc.EnableLinkCBFC)
+    {
+        if (cbfc.BytesPerCredit == 0)
+        {
+            NS_ABORT_MSG("BytesPerCredit must be > 0 when EnableLinkCBFC=true");
+        }
+
+        // Link credits: approximate receiver buffering using the ingress processing queue capacity.
+        if (cbfc.LinkCredits == 0)
+        {
+            cbfc.LinkCredits = std::max(1u, queue.processingQueueMaxBytes / cbfc.BytesPerCredit);
+        }
+
+        // Switch credits (total across all VCs): approximate egress buffering using the egress VC queue capacity.
+        if (cbfc.SwitchCredits == 0)
+        {
+            const uint32_t vcFactor = std::max(1u, static_cast<uint32_t>(link.numVcs));
+            cbfc.SwitchCredits =
+                std::max(1u, (queue.vcQueueMaxBytes / cbfc.BytesPerCredit) * vcFactor);
+        }
+    }
+
     // Parameter validation
+    if (queue.switchEgressOverflowPolicy > 1)
+    {
+        NS_ABORT_MSG("SwitchEgressOverflowPolicy must be 0 (retry) or 1 (drop). Current value: "
+                     << queue.switchEgressOverflowPolicy);
+    }
+    if (queue.switchEgressOverflowPolicy == 1 && !llr.m_llrEnabled)
+    {
+        NS_ABORT_MSG("SwitchEgressOverflowPolicy=drop requires EnableLLR=true to avoid silent deadlocks.");
+    }
     if (network.portsPerSue != 1 && network.portsPerSue != 2 && network.portsPerSue != 4) {
         NS_ABORT_MSG("portsPerSue must be 1, 2, or 4. Current value: " << network.portsPerSue);
     }
@@ -269,10 +331,13 @@ SueSimulationConfig::PrintConfiguration () const
     std::cout << "  Link Data Rate: " << link.LinkDataRate << std::endl;
     std::cout << "  Processing Rate: " << link.ProcessingRate << std::endl;
     std::cout << "  Link Delay: " << link.LinkDelay << std::endl;
+    if (!link.errorRateStopAfter.empty()) {
+        std::cout << "  Error Rate Stop After (since clientStart): " << link.errorRateStopAfter << std::endl;
+    }
     std::cout << "  Enable Link CBFC: " << (cbfc.EnableLinkCBFC ? "true" : "false") << std::endl;
     std::cout << "  Link Credits: " << cbfc.LinkCredits << std::endl;
     std::cout << "  Credit Batch Size: " << cbfc.CreditBatchSize << std::endl;
-    std::cout << "  Switch Credits: " << cbfc.SwitchCredits << std::endl;
+    std::cout << "  Switch Credits (total across all VCs): " << cbfc.SwitchCredits << std::endl;
     std::cout << "  Header Size: " << cbfc.HeaderSize << " bytes" << std::endl;
     std::cout << "  Base Credit: " << cbfc.BaseCredit << std::endl;
     std::cout << "  Bytes Per Credit: " << cbfc.BytesPerCredit << " bytes" << std::endl;

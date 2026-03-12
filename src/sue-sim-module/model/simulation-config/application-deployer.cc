@@ -2,18 +2,17 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation;
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "application-deployer.h"
@@ -82,6 +81,7 @@ ApplicationDeployer::InstallClientsAndTrafficGenerators (const SueSimulationConf
     double clientStop = config.GetClientStop ();
 
     NodeContainer* xpuNodes = topologyBuilder.GetXpuNodes ();
+    SueClient::SetGlobalXpuPortIps(topologyBuilder.GetXpuPortIps());
 
     // Install client applications and traffic generators (SUE-based creation method)
     for (uint32_t xpuIdx = 0; xpuIdx < nXpus; ++xpuIdx)
@@ -331,6 +331,7 @@ ApplicationDeployer::CreateConfigurableTrafficGenerator (uint32_t xpuIdx, Ptr<Lo
 
     uint32_t transactionSize = config.traffic.transactionSize;
     uint32_t maxBurstSize = config.traffic.maxBurstSize;
+    uint8_t vcNum = config.traffic.vcNum;
 
     // Parse fine-grained traffic configuration
     std::vector<FineGrainedTrafficFlow> fineGrainedFlows = ParseFineGrainedTrafficConfig (config);
@@ -341,6 +342,7 @@ ApplicationDeployer::CreateConfigurableTrafficGenerator (uint32_t xpuIdx, Ptr<Lo
     // Set attributes
     configTrafficGen->SetAttribute("TransactionSize", UintegerValue(transactionSize));
     configTrafficGen->SetAttribute("MaxBurstSize", UintegerValue(maxBurstSize));
+    configTrafficGen->SetAttribute("MaxVcId", UintegerValue(vcNum > 0 ? vcNum - 1 : 0));
 
     // Configure configurable traffic generator
     configTrafficGen->SetLoadBalancer(loadBalancer);
@@ -377,6 +379,20 @@ ApplicationDeployer::ParseFineGrainedTrafficConfig (const SueSimulationConfig& c
 
     std::string line;
     uint32_t lineNumber = 0;
+    auto parseOptionalUint32 = [](const std::string& value, uint32_t autoValue) -> uint32_t {
+        long long parsed = std::stoll(value);
+        if (parsed < 0) {
+            return autoValue;
+        }
+        return static_cast<uint32_t>(parsed);
+    };
+    auto parseOptionalUint8 = [](const std::string& value, uint8_t autoValue) -> uint8_t {
+        long long parsed = std::stoll(value);
+        if (parsed < 0) {
+            return autoValue;
+        }
+        return static_cast<uint8_t>(parsed);
+    };
 
     while (std::getline(configFile, line))
     {
@@ -431,9 +447,9 @@ ApplicationDeployer::ParseFineGrainedTrafficConfig (const SueSimulationConfig& c
                 flow.startTime = timestampNs / 1e9;                           // Convert ns to seconds
                 flow.sourceXpuId = static_cast<uint32_t>(std::stoul(tokens[1])); // 0-based
                 flow.destXpuId = static_cast<uint32_t>(std::stoul(tokens[2]));   // 0-based
-                flow.sueId = static_cast<uint32_t>(std::stoul(tokens[3]));      // 0-based
-                flow.suePort = static_cast<uint32_t>(std::stoul(tokens[4]));         // 0-based port
-                flow.vcId = static_cast<uint8_t>(std::stoul(tokens[5]));            // VC ID (0-3)
+                flow.sueId = parseOptionalUint32(tokens[3], kAutoSueId);      // 0-based
+                flow.suePort = parseOptionalUint32(tokens[4], kAutoSuePort);         // 0-based port
+                flow.vcId = parseOptionalUint8(tokens[5], kAutoVcId);            // VC ID (0-3)
                 flow.dataRate = std::stod(tokens[6]);                                // Mbps
                 flow.totalBytes = static_cast<uint32_t>(std::stoul(tokens[7]));     // Bytes
             }
@@ -443,15 +459,15 @@ ApplicationDeployer::ParseFineGrainedTrafficConfig (const SueSimulationConfig& c
                 flow.startTime = 0.0;  // Default start time for legacy format
                 flow.sourceXpuId = static_cast<uint32_t>(std::stoul(tokens[0])); // 0-based
                 flow.destXpuId = static_cast<uint32_t>(std::stoul(tokens[1]));   // 0-based
-                flow.sueId = static_cast<uint32_t>(std::stoul(tokens[2]));      // 0-based
-                flow.suePort = static_cast<uint32_t>(std::stoul(tokens[3]));         // 0-based port
-                flow.vcId = static_cast<uint8_t>(std::stoul(tokens[4]));            // VC ID (0-3)
+                flow.sueId = parseOptionalUint32(tokens[2], kAutoSueId);      // 0-based
+                flow.suePort = parseOptionalUint32(tokens[3], kAutoSuePort);         // 0-based port
+                flow.vcId = parseOptionalUint8(tokens[4], kAutoVcId);            // VC ID (0-3)
                 flow.dataRate = std::stod(tokens[5]);                                // Mbps
                 flow.totalBytes = static_cast<uint32_t>(std::stoul(tokens[6]));     // Bytes
             }
 
             // Validate VC ID range
-            if (flow.vcId > 3)
+            if (flow.vcId != kAutoVcId && flow.vcId > 3)
             {
                 NS_LOG_WARN("VC ID " << (uint32_t)flow.vcId << " out of range (0-3) on line " << lineNumber
                           << ", using VC 0");
@@ -468,9 +484,12 @@ ApplicationDeployer::ParseFineGrainedTrafficConfig (const SueSimulationConfig& c
 
             flows.push_back(flow);
 
+            std::string sueLabel = (flow.sueId == kAutoSueId) ? "auto" : std::to_string(flow.sueId + 1);
+            std::string portLabel = (flow.suePort == kAutoSuePort) ? "auto" : std::to_string(flow.suePort);
+            std::string vcLabel = (flow.vcId == kAutoVcId) ? "auto" : std::to_string(static_cast<uint32_t>(flow.vcId));
             NS_LOG_INFO("Parsed flow: XPU" << flow.sourceXpuId + 1 << " -> XPU" << flow.destXpuId + 1
-                      << " via SUE" << flow.sueId + 1 << ":Port" << flow.suePort << " at " << flow.dataRate << " Mbps"
-                      << " on VC" << (uint32_t)flow.vcId << " for " << flow.totalBytes << " bytes"
+                      << " via SUE" << sueLabel << ":Port" << portLabel << " at " << flow.dataRate << " Mbps"
+                      << " on VC" << vcLabel << " for " << flow.totalBytes << " bytes"
                       << " (start: " << flow.startTime << "s after client start)");
         }
         catch (const std::exception& e)

@@ -2,19 +2,17 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #ifndef POINT_TO_POINT_SUE_NET_DEVICE_H
@@ -81,6 +79,26 @@ struct ProcessItem
   Ptr<Packet> packet;         //!< Processed packet
   uint8_t vcId;              //!< Virtual Channel ID
   uint16_t protocol;         //!< Protocol number
+
+  // Switch DROP-mode correctness bookkeeping:
+  // When switch egress overflow policy is DROP, we must not emit LLR ACK/NACK
+  // for a packet that will be dropped later due to egress VC admission failure.
+  //
+  // To avoid overly pessimistic "early drops" at Receive() time, we defer switch
+  // egress admission + (optional) LLR ReceiveCommon processing to the processing
+  // stage. These fields keep per-packet admission state across retries (e.g.,
+  // switch-internal CBFC blocking causing processing-queue rotation).
+  bool switchDropAdmissionDone {false};
+  uint32_t switchDropReservedOutPortIndex {0};
+  uint32_t switchDropReservedBytes {0};
+
+  // If switch egress overflow policy is DROP, we may need to pre-consume
+  // switch-internal CBFC credits before admitting (reserving) egress bytes.
+  // This avoids reserving egress capacity for packets that are later blocked
+  // by internal CBFC, which would otherwise trigger avoidable drops.
+  bool switchDropInternalCreditsConsumed {false};
+  Mac48Address switchDropInternalCreditPeerMac;
+  uint32_t switchDropInternalCreditBytes {0};
 };
 
 class PointToPointSueNetDevice : public NetDevice
@@ -212,6 +230,53 @@ public:
    */
   bool IsSwitchDevice(Mac48Address mac) const;
 
+  /**
+   * \brief Register a MAC address role for switch/XPU identification.
+   *
+   * The SUE-Sim link layer sometimes needs to know whether a given MAC belongs
+   * to a switch port or an XPU NIC (e.g., for LLR/CBFC behaviors). TopologyBuilder
+   * calls this during topology construction to avoid relying on heuristics.
+   */
+  static void RegisterDeviceRole(Mac48Address mac, bool isSwitchDevice);
+
+  /**
+   * \brief Register topology metadata for a MAC address.
+   *
+   * This is used to disambiguate "which XPU/port does this MAC belong to" for
+   * higher-level mechanisms such as switch-internal CBFC credit distribution.
+   *
+   * \param mac Device MAC address
+   * \param isSwitchDevice True if this MAC belongs to a switch port device
+   * \param xpuId For XPU devices: local XPU id. For switch devices: the connected XPU id.
+   * \param portId Global port id (1-based, consistent with XPU port GetIfIndex()).
+   */
+  static void RegisterDeviceMeta(Mac48Address mac,
+                                 bool isSwitchDevice,
+                                 uint32_t xpuId,
+                                 uint32_t portId);
+
+  /**
+   * \brief Clear all registered device roles.
+   */
+  static void ClearRegisteredDeviceRoles();
+
+  /**
+   * \brief Lookup a registered MAC role.
+   *
+   * \return true if found, and writes to isSwitchDeviceOut.
+   */
+  static bool LookupRegisteredDeviceRole(Mac48Address mac, bool* isSwitchDeviceOut);
+
+  /**
+   * \brief Lookup registered topology metadata.
+   *
+   * \return true if found. Out pointers are optional.
+   */
+  static bool LookupRegisteredDeviceMeta(Mac48Address mac,
+                                         bool* isSwitchDeviceOut,
+                                         uint32_t* xpuIdOut,
+                                         uint32_t* portIdOut);
+
   // LLR support methods for switch
   /**
    * \brief Check if LLR is enabled
@@ -271,6 +336,17 @@ public:
    */
   void Receive (Ptr<Packet> p);
 
+  /**
+   * \brief Receive a packet from an internal switch shortcut path.
+   *
+   * Used by internal helpers like FindDeviceAndSend/CompleteCreditSend to deliver
+   * packets between devices on the same switch node. This path should not apply
+   * link error models (which are meant for on-wire loss).
+   *
+   * \param p Ptr to the received packet.
+   */
+  void ReceiveInternal (Ptr<Packet> p);
+
   // The remaining methods are documented in ns3::NetDevice
   virtual void SetIfIndex (const uint32_t index);
   virtual uint32_t GetIfIndex (void) const;
@@ -312,6 +388,9 @@ protected:
   void DoMpiReceive (Ptr<Packet> p);
 
 private:
+  // NOTE: Role/meta registry is implemented in point-to-point-sue-net-device.cc
+  // as a translation-unit static map to avoid leaking internal representation.
+
   /**
    * \brief Copy constructor
    *
@@ -331,10 +410,17 @@ private:
    */
   PointToPointSueNetDevice& operator = (const PointToPointSueNetDevice &o);
 
+  void ReceiveCommon (Ptr<Packet> p, bool applyErrorModel);
+
   /**
    * \brief Log statistics for the network device
    */
   void LogStatistics();
+
+  /**
+   * \brief Periodic credit sync tick (optional).
+   */
+  void CreditSyncTick();
 
   /**
    * \returns the address of the remote device connected to this device
@@ -441,7 +527,7 @@ private:
    *
    * \param item Packet item to process
    */
-  void ProcessingReceivedPacket(ProcessItem item);
+  void ProcessingReceivedPacket();
 
   /**
    * \brief Enqueue a packet to the processing queue
@@ -472,7 +558,8 @@ private:
    * \param targetMac Target MAC address
    * \param protocolNum Protocol number
    */
-  void FindDeviceAndSend (Ptr<Packet> packet, Mac48Address targetMac, uint16_t protocolNum);
+  bool FindDeviceAndSend (Ptr<Packet> packet, Mac48Address targetMac, uint16_t protocolNum);
+  void CompleteCreditSend (Ptr<PointToPointSueNetDevice> targetDevice, Ptr<Packet> packet);
 
   
 
@@ -493,7 +580,8 @@ public:
    * \param p2pDev Target device
    * \param packet Packet to enqueue
    */
-  void SpecDevEnqueueToVcQueue(Ptr<PointToPointSueNetDevice> p2pDev, Ptr<Packet> packet);
+  bool SpecDevEnqueueToVcQueue (Ptr<PointToPointSueNetDevice> p2pDev,
+                                Ptr<Packet> packet);
 
   /**
    * \brief Enqueue packet to appropriate VC queue
@@ -543,6 +631,8 @@ public:
   Ptr<PointToPointSueChannel> m_channel; //!< Attached channel
   Ptr<Queue<Packet> > m_queue;            //!< Transmit queue
   Ptr<ErrorModel> m_receiveErrorModel;    //!< Receive error model
+  bool m_errorModelApplyToControlPackets; //!< Apply error model to control packets (CBFC/ACK/NACK)
+  bool m_errorModelApplyToSyncPackets;    //!< Apply error model to CBFC_SYNC packets
   Ptr<Node> m_node;                       //!< Node owning this NetDevice
   Mac48Address m_address;                 //!< MAC address
   NetDevice::ReceiveCallback m_rxCallback; //!< Receive callback
@@ -581,10 +671,14 @@ public:
   uint32_t m_additionalHeaderSize;  //!< Additional header size for capacity reservation
   uint32_t m_headerSize;            //!< Header size for dynamic credit calculation
   uint32_t m_transactionSize;       //!< Transaction size for dynamic credit calculation
+  uint32_t m_cbfcCreditWindowPacketBytes; //!< Packet size hint for CBFC window validation (0 disables)
   bool m_enableLinkCBFC;            //!< CBFC enable flag
+  uint8_t m_linkCreditModeRaw;      //!< Link credit mode: 0=SHARED, 1=EXCLUSIVE
 
   // Credit-to-byte mapping parameters
   uint32_t m_bytesPerCredit;        //!< Bytes per credit
+
+  // Credit sending state machine
 
   // Processing queue
   std::queue<ProcessItem> m_processingQueue; //!< Processing queue
@@ -597,13 +691,15 @@ public:
 
   
   
-  // Timing parameters
-  Time m_creUpdateAddHeadDelay;  //!< Credit update header addition delay
-  Time m_dataAddHeadDelay;       //!< Data packet header addition delay
-  Time m_creditGenerateDelay;    //!< Credit generation delay
-  Time m_switchForwardDelay;     //!< Switch forward delay
-  Time m_vcSchedulingDelay;      //!< VC scheduling delay
-  Time m_processingQueueScheduleDelay; //!< Processing queue scheduling delay
+	  // Timing parameters
+	  Time m_creUpdateAddHeadDelay;  //!< Credit update header addition delay
+	  Time m_creditGenerateDelay;    //!< Credit generation delay
+	  bool m_enableCreditSync;       //!< Periodic credit sync enable
+	  Time m_creditSyncInterval;     //!< Periodic credit sync interval
+	  EventId m_creditSyncEvent;     //!< Credit sync event
+	  Time m_switchForwardDelay;     //!< Switch forward delay
+	  Time m_vcSchedulingDelay;      //!< VC scheduling delay
+	  Time m_processingQueueScheduleDelay; //!< Processing queue scheduling delay
   
   // Event and logging
   EventId m_logStatisticsEvent;  //!< Statistics logging event
@@ -619,14 +715,23 @@ public:
   Ptr<LlrNodeManager> m_llrNodeManager;         //!< LLR manager for end nodes
   Ptr<LlrSwitchPortManager> m_llrSwitchPortManager; //!< LLR manager for switch ports
 
-  /// ---- LLR Configuration ----
-  bool m_llrEnabled;                 //!< Whether LLR is enabled
-  uint32_t m_llrWindowSize;          //!< LLR window size (max outstanding packets per VC)
-  Time m_llrTimeout;                 //!< Retransmission timeout
-  Time m_AckAddHeaderDelay;          //!< Delay to add ACK/NACK header
-  Time m_AckProcessDelay;            //!< Delay to process received ACK/NACK
+	  /// ---- LLR Configuration ----
+		  bool m_llrEnabled;                 //!< Whether LLR is enabled
+		  bool m_llrProtectCbfcUpdates;      //!< Whether to apply LLR sequencing to CBFC update packets
+		  bool m_llrInitialized;             //!< Whether LLR managers have been initialized
+		  uint32_t m_llrWindowSize;          //!< LLR window size (max outstanding packets per VC)
+		  Time m_llrTimeout;                 //!< Retransmission timeout
+		  Time m_AckAddHeaderDelay;          //!< Delay to add ACK/NACK header
+		  Time m_AckProcessDelay;            //!< Delay to process received ACK/NACK
+		  // NOTE: Credit return de-duplication under LLR is handled in the switch port logic
+		  // by checking LLR's resend mode. We intentionally avoid a monotonic "last seq" heuristic
+		  // because packets can be transmitted out-of-order across VCs even without retransmission.
 
-  };
+      // LLR helper utilities (control/data VC separation).
+      uint8_t GetLlrNumVcs () const;
+      uint8_t GetLlrControlVcId () const;
+
+	  };
 
 } // namespace ns3
 

@@ -2,19 +2,17 @@
 /*
  * Copyright 2025 SUE-Sim Contributors
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "sue-client.h"
@@ -28,11 +26,13 @@
 #include "ns3/random-variable-stream.h"
 #include "ns3/performance-logger.h"
 #include "sue-utils.h"
+#include <algorithm>
 
 
 namespace ns3 {
 
 std::map<Ipv4Address, Mac48Address> SueClient::s_ipToMacMap;
+std::vector<std::vector<Ipv4Address>> SueClient::s_xpuPortIps;
 NS_LOG_COMPONENT_DEFINE("SueClientApplication");
 NS_OBJECT_ENSURE_REGISTERED(SueClient);
 
@@ -289,6 +289,12 @@ void SueClient::SetGlobalIpMacMap(const std::map<Ipv4Address, Mac48Address>& map
     s_ipToMacMap = map;
 }
 
+void
+SueClient::SetGlobalXpuPortIps(const std::vector<std::vector<Ipv4Address>>& xpuPortIps)
+{
+    s_xpuPortIps = xpuPortIps;
+}
+
 
     // Cancel all log events
 void SueClient::CancelAllLogEvents() {
@@ -303,54 +309,6 @@ void SueClient::CancelAllLogEvents() {
 
         std::cout << Simulator::Now() << " Cancelled client log statistics event for XPU" << m_xpuId << std::endl;
     }
-
-    // Disable statistics only for devices managed by this SUE
-    for (size_t i = 0; i < m_managedDevices.size(); ++i) {
-        Ptr<PointToPointSueNetDevice> p2pDev = m_managedDevices[i];
-        if (p2pDev) {
-            // Verify device belongs to current node before disabling
-            if (p2pDev->GetNode() == GetNode()) {
-                // Use Config::Set to disable logging for this specific device
-                std::ostringstream configPath;
-                configPath << "/NodeList/" << GetNode()->GetId()
-                           << "/DeviceList/" << p2pDev->GetIfIndex()
-                           << "/$ns3::PointToPointSueNetDevice/StatLoggingEnabled";
-                Config::Set(configPath.str(), BooleanValue(false));
-
-                NS_LOG_INFO("Disabled statistics for managed device " << p2pDev->GetIfIndex()
-                           << " (Node " << GetNode()->GetId() << ")");
-            }
-        }
-    // Also disable statistics for switch devices
-    // Find all switch devices in the system
-    for (uint32_t nodeId = 0; nodeId < NodeList::GetNNodes(); ++nodeId) {
-            Ptr<Node> node = NodeList::GetNode(nodeId);
-            for (uint32_t j = 0; j < node->GetNDevices(); ++j) {
-                Ptr<NetDevice> dev = node->GetDevice(j);
-                Ptr<PointToPointSueNetDevice> switchP2pDev =
-                    DynamicCast<PointToPointSueNetDevice>(dev);
-
-                if (switchP2pDev) {
-                    // Try to convert address to Mac48Address
-                    Mac48Address macAddr = Mac48Address::ConvertFrom(switchP2pDev->GetAddress());
-                    if (switchP2pDev->IsSwitchDevice(macAddr)) {
-                        std::ostringstream switchConfigPath;
-                        switchConfigPath << "/NodeList/" << nodeId
-                                            << "/DeviceList/" << switchP2pDev->GetIfIndex()
-                                            << "/$ns3::PointToPointSueNetDevice/StatLoggingEnabled";
-                        Config::Set(switchConfigPath.str(), BooleanValue(false));
-
-                        NS_LOG_INFO("Disabled statistics for connected switch device "
-                                    << switchP2pDev->GetIfIndex()
-                                    << " (Switch Node " << nodeId << ")");
-                    }
-                }
-            }
-        }
-    }
-
-    std::cout << Simulator::Now() << " Disabled statistics for " << m_managedDevices.size()
-              << " managed devices by XPU" << m_xpuId << " SUE" << m_sueId << std::endl;
 }
 
 
@@ -390,13 +348,82 @@ void SueClient::AddTransaction(Ptr<Packet> transaction, uint32_t destXpuId) {
     if (m_currentQueueIt == m_destQueues.end() && !m_destQueues.empty()) {
         m_currentQueueIt = m_destQueues.begin();
     }
+
+    // Start (or restart) the send scheduler when new work arrives.
+    // Logging may be disabled independently (e.g., LoadBalancer::StopAllLogging()) and should
+    // not prevent the remaining queued transactions from being transmitted.
+    if (!m_deviceSockets.empty() && !m_schedulerEvent.IsPending() &&
+        m_outstandingSendEvents == 0)
+    {
+        m_schedulerEvent = Simulator::Schedule(m_schedulingInterval, &SueClient::ScheduleNextSend, this);
+    }
+}
+
+Ipv4Address
+SueClient::ResolveRemoteIp(uint32_t destXpuId, Ptr<PointToPointSueNetDevice> selectedDevice,
+                           uint32_t& outGlobalPortIdx) const
+{
+    outGlobalPortIdx = 0;
+    if (!selectedDevice)
+    {
+        NS_LOG_WARN("ResolveRemoteIp: selectedDevice is null");
+        return Ipv4Address::GetZero();
+    }
+    if (m_xpuId >= s_xpuPortIps.size() || destXpuId >= s_xpuPortIps.size())
+    {
+        NS_LOG_WARN("ResolveRemoteIp: xpuId out of range, srcXpuId=" << m_xpuId
+                    << " destXpuId=" << destXpuId << " mapSize=" << s_xpuPortIps.size());
+        return Ipv4Address::GetZero();
+    }
+
+    Ptr<Ipv4> ipv4 = GetNode()->GetObject<Ipv4>();
+    if (!ipv4)
+    {
+        NS_LOG_WARN("ResolveRemoteIp: no IPv4 stack on node");
+        return Ipv4Address::GetZero();
+    }
+    int32_t interfaceIndex = ipv4->GetInterfaceForDevice(selectedDevice);
+    if (interfaceIndex < 0)
+    {
+        NS_LOG_WARN("ResolveRemoteIp: failed to get interface for selected device");
+        return Ipv4Address::GetZero();
+    }
+    Ipv4Address localIp = ipv4->GetAddress(interfaceIndex, 0).GetLocal();
+
+    const auto& srcPortIps = s_xpuPortIps[m_xpuId];
+    auto it = std::find(srcPortIps.begin(), srcPortIps.end(), localIp);
+    if (it == srcPortIps.end())
+    {
+        NS_LOG_WARN("ResolveRemoteIp: local IP " << localIp
+                    << " not found in src XPU port map, srcXpuId=" << m_xpuId);
+        return Ipv4Address::GetZero();
+    }
+    outGlobalPortIdx = static_cast<uint32_t>(std::distance(srcPortIps.begin(), it));
+
+    const auto& dstPortIps = s_xpuPortIps[destXpuId];
+    if (outGlobalPortIdx >= dstPortIps.size())
+    {
+        NS_LOG_WARN("ResolveRemoteIp: globalPortIdx out of range, destXpuId=" << destXpuId
+                    << " globalPortIdx=" << outGlobalPortIdx << " portCount=" << dstPortIps.size());
+        return Ipv4Address::GetZero();
+    }
+    return dstPortIps[outGlobalPortIdx];
 }
 
 
 void SueClient::ScheduleNextSend() {
-    if (m_loggingEnabled != false){
-        m_schedulerEvent = Simulator::Schedule(m_schedulingInterval, &SueClient::ScheduleNextSend, this);
+    if (m_outstandingSendEvents > 0)
+    {
+        return;
     }
+
+    auto schedule_retry = [this]() {
+        if (m_outstandingSendEvents == 0 && HasPendingTransactions() &&
+            !m_schedulerEvent.IsPending())
+        {
+            m_schedulerEvent = Simulator::Schedule(m_schedulingInterval, &SueClient::ScheduleNextSend, this);
+        }
+    };
 
     if (m_destQueues.empty()) return;
 
@@ -420,6 +447,7 @@ void SueClient::ScheduleNextSend() {
     
     // If no non-empty queue found, return
     if (selectedQueueIt == m_destQueues.end()) {
+        schedule_retry();
         return;
     }
     
@@ -442,21 +470,36 @@ void SueClient::ScheduleNextSend() {
             // No managed devices available, continue waiting
             NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId
                         << "] No managed devices available, continue waiting...");
+            schedule_retry();
             return;
         }
 
-        // Find device with maximum available capacity for target VC
-        Ptr<PointToPointSueNetDevice> maxCapacityDevice = nullptr;
-        uint32_t maxDeviceCapacity = 0;
-        uint8_t maxCapacityDeviceIndex = 0;
+        // Get SueHeader size for calculation
+        SueHeader sueHeader;
+        uint32_t sueHeaderSize = sueHeader.GetSerializedSize();
 
+        // Calculate how many transactions we can pack across ALL managed devices.
+        // This allows a single destination queue to utilize multiple rails (ports)
+        // when a SUE manages multiple PointToPointSueNetDevice instances.
+        uint32_t maxPacketsToPack = 0;
+        uint64_t totalAvailableBytes = 0;
         for (const auto& capacityInfo : deviceCapacities) {
-            if (dest.vcId < capacityInfo.vcCapacities.size()) {
-                uint32_t deviceVcCapacity = capacityInfo.vcCapacities[dest.vcId];
-                if (deviceVcCapacity > maxDeviceCapacity) {
-                    maxDeviceCapacity = deviceVcCapacity;
-                    maxCapacityDevice = capacityInfo.device;
-                    maxCapacityDeviceIndex = capacityInfo.deviceIndex;
+            if (dest.vcId >= capacityInfo.vcCapacities.size()) {
+                continue;
+            }
+            uint32_t cap = capacityInfo.vcCapacities[dest.vcId];
+            totalAvailableBytes += cap;
+
+            while (cap > m_transactionSize + sueHeaderSize + m_additionalHeaderSize) {
+                uint32_t availableForTransactions =
+                    cap - sueHeaderSize - m_additionalHeaderSize;
+                if (availableForTransactions > m_maxBurstSize) {
+                    maxPacketsToPack += m_maxBurstSize / m_transactionSize;
+                    cap -= (m_maxBurstSize + sueHeaderSize + m_additionalHeaderSize);
+                } else {
+                    uint32_t numTemp = availableForTransactions / m_transactionSize;
+                    maxPacketsToPack += numTemp;
+                    cap -= (numTemp * m_transactionSize + sueHeaderSize + m_additionalHeaderSize);
                 }
             }
         }
@@ -470,47 +513,34 @@ void SueClient::ScheduleNextSend() {
         }
 
         // Check if any device has capacity
-        if (maxDeviceCapacity == 0 || !maxCapacityDevice) {
+        if (maxPacketsToPack == 0) {
             // No device has sufficient capacity, continue waiting
+            if (m_waitingStartTime.IsZero()) {
+                m_waitingStartTime = Simulator::Now();
+            }
             NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId
                         << "] No device has available VC" << (uint32_t)dest.vcId << " capacity, continue waiting...");
+            schedule_retry();
             return;
         }
-
-        // Get SueHeader size for calculation
-        SueHeader sueHeader;
-        uint32_t sueHeaderSize = sueHeader.GetSerializedSize();
-
-        // Calculate how many transactions we can pack: transactionSize * n + sueHeader <= available bytes
-        uint32_t maxPacketsToPack = 0;
-        while (maxDeviceCapacity > m_transactionSize + sueHeaderSize + m_additionalHeaderSize) {
-            uint32_t availableForTransactions = maxDeviceCapacity - sueHeaderSize - m_additionalHeaderSize;
-            if(availableForTransactions > m_maxBurstSize){
-                maxPacketsToPack += m_maxBurstSize / m_transactionSize;
-                maxDeviceCapacity = maxDeviceCapacity - (m_maxBurstSize + sueHeaderSize + m_additionalHeaderSize);
-            }
-            else{
-                uint8_t numTemp = availableForTransactions / m_transactionSize;
-                maxPacketsToPack += numTemp;
-                maxDeviceCapacity = maxDeviceCapacity - (numTemp * m_transactionSize + sueHeaderSize + m_additionalHeaderSize);
-            }
-        }
-
-        if(maxDeviceCapacity == 0) return;
 
         // Limit by queue size
         maxPacketsToPack = std::min(maxPacketsToPack, static_cast<uint32_t>(queueInfo.queue.size()));
 
         NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId
-                    << "] Selected device " << (uint32_t)maxCapacityDeviceIndex
-                    << " with VC" << (uint32_t)dest.vcId << " capacity: " << maxDeviceCapacity
-                    << " bytes (header: " << sueHeaderSize << "), can pack up to " << maxPacketsToPack << " packets");
+                    << "] VC" << (uint32_t)dest.vcId
+                    << " total available capacity across " << m_portsPerSue
+                    << " ports: " << totalAvailableBytes
+                    << " bytes (SueHeader: " << sueHeaderSize
+                    << ", additional: " << m_additionalHeaderSize
+                    << "), can pack up to " << maxPacketsToPack << " transactions");
 
         // 3. Smart packing based on calculated capacity
         std::vector<Ptr<Packet>> packedPackets = SmartPacking(dest, maxPacketsToPack);
 
         if (packedPackets.empty()) {
             // No packed packets available to send, continue waiting
+            schedule_retry();
             return;
         }
 
@@ -527,29 +557,36 @@ void SueClient::ScheduleNextSend() {
             packedPacket->PeekHeader(sueHeader);
             uint8_t vcId = sueHeader.GetVc();
 
-            // Use the pre-selected device with maximum capacity
-            Ptr<PointToPointSueNetDevice> currentDevice = maxCapacityDevice;
+            // Select a managed device (port) for this packed packet in a round-robin
+            // manner, while also reserving VC capacity to avoid over-commitment.
+            Ptr<PointToPointSueNetDevice> currentDevice =
+                SelectDeviceByVcCapacity(packetSize, vcId);
+            if (!currentDevice) {
+                if (m_waitingStartTime.IsZero()) {
+                    m_waitingStartTime = Simulator::Now();
+                }
+                NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId
+                            << "] No port has enough VC" << (uint32_t)vcId
+                            << " capacity for packetSize=" << packetSize
+                            << " bytes, will retry");
+                break;
+            }
 
-            // Final validation: ensure the selected device still has capacity
-            NS_ASSERT_MSG(currentDevice, "Pre-selected device is null! This should not happen in normal operation.");
-
-            // Reserve VC capacity for this packet
-            auto queueManager = currentDevice->GetQueueManager();
-            NS_ASSERT_MSG(queueManager, "Queue manager is null for pre-selected device! This should not happen in normal operation.");
-            NS_ASSERT_MSG(queueManager->ReserveVcCapacity(vcId, packetSize),
-                         "Failed to reserve VC capacity on pre-selected device! "
-                         "This indicates a serious logic error in capacity calculation or concurrent access issue.");
-
-            NS_LOG_DEBUG(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << " SUE" << m_sueId
-                         << "] Reserved capacity for packet " << (i+1)
-                         << " on pre-selected device " << currentDevice->GetIfIndex());
-
-            // Generate remote address based on selected device and target XPU
+            // Resolve remote address from topology-provided [xpuId][globalPortIdx] mapping.
+            // This avoids hardcoding legacy 10.<xpu+1>.<port>.1 addressing assumptions.
+            uint32_t globalPortIdx = 0;
+            Ipv4Address remoteIp = ResolveRemoteIp(targetXpu, currentDevice, globalPortIdx);
+            if (remoteIp == Ipv4Address::GetZero())
+            {
+                auto queueManager = currentDevice->GetQueueManager();
+                if (queueManager)
+                {
+                    queueManager->ReleaseVcCapacity(vcId, packetSize);
+                }
+                continue;
+            }
             uint32_t selectedPort = currentDevice->GetIfIndex();
-            std::ostringstream ipStream;
-            ipStream << "10." << (targetXpu + 1) << "." << selectedPort << ".1";
-            Ipv4Address remoteIp(ipStream.str().c_str());
-            uint16_t remotePort = 8080 + (selectedPort-1);
+            uint16_t remotePort = 8080 + globalPortIdx;
             
             InetSocketAddress remoteAddr(remoteIp, remotePort);
             auto socketIt = m_deviceSockets.find(currentDevice);
@@ -575,9 +612,11 @@ void SueClient::ScheduleNextSend() {
 
             // Schedule send event with packing delay
             Time sendDelay = processingDelay * (i + 1);
+            m_outstandingSendEvents++;
             Simulator::Schedule(sendDelay, &SueClient::DoSendBurst, this,
                                packedPacket, sendingSocket, remoteAddr, dest, currentDevice);
         }
+        schedule_retry();
         // Note: Credit checking is now handled by LoadBalancer
         // SueClient no longer needs to check device credits
         // The LoadBalancer ensures that only SUEs with available credits receive transactions
@@ -587,7 +626,48 @@ void SueClient::ScheduleNextSend() {
     // Note: m_currentQueueIt is no longer used for polling
 }
 
+void SueClient::OnSendBurstFinished()
+{
+    if (m_outstandingSendEvents > 0)
+    {
+        m_outstandingSendEvents--;
+    }
+    if (m_outstandingSendEvents == 0 && HasPendingTransactions() &&
+        !m_schedulerEvent.IsPending())
+    {
+        m_schedulerEvent = Simulator::Schedule(m_schedulingInterval, &SueClient::ScheduleNextSend, this);
+    }
+}
+
 void SueClient::DoSendBurst(Ptr<Packet> burstPacket, Ptr<Socket> sendingSocket, InetSocketAddress remoteAddr, const Destination& dest, Ptr<PointToPointSueNetDevice> device){
+    SueHeader sueHeader;
+    burstPacket->PeekHeader(sueHeader);
+    const uint8_t vcId = sueHeader.GetVc();
+    const uint32_t packetSize = burstPacket->GetSize();
+
+    struct ScopedSendFinish
+    {
+        SueClient* client = nullptr;
+        Ptr<PointToPointSueNetDevice> device;
+        uint8_t vcId = 0;
+        uint32_t packetSize = 0;
+        ~ScopedSendFinish()
+        {
+            if (device)
+            {
+                auto queueManager = device->GetQueueManager();
+                if (queueManager)
+                {
+                    queueManager->ReleaseVcCapacity(vcId, packetSize);
+                }
+            }
+            if (client)
+            {
+                client->OnSendBurstFinished();
+            }
+        }
+    } onFinish{this, device, vcId, packetSize};
+
     // EthernetHeader will be added in link layer Send method
     // Link layer extracts destination IP from IPv4 header and queries corresponding MAC address
 
@@ -612,15 +692,13 @@ void SueClient::DoSendBurst(Ptr<Packet> burstPacket, Ptr<Socket> sendingSocket, 
     uint32_t transactionCount = AnalyzeTransactionCount(burstPacket);
     NS_LOG_DEBUG("Packet contains " << transactionCount << " transactions, restoring " << transactionCount << " credits");
 
-    // Extract VC ID for capacity management
-    SueHeader sueHeader;
-    burstPacket->PeekHeader(sueHeader);
-    uint8_t vcId = sueHeader.GetVc();
-    uint32_t packetSize = burstPacket->GetSize();
-
+    const uint32_t expectedBytes = burstPacket->GetSize();
     int32_t result = sendingSocket->SendTo(burstPacket, 0, remoteAddr);
 
-    if (result >= 0) {  // Send successful
+    // For UDP, a successful send should accept the whole datagram.
+    // Treat short/zero sends as failures to avoid silently dropping transactions
+    // (which would deadlock Astra-sim end-to-end completion mode).
+    if (result == static_cast<int32_t>(expectedBytes)) {
         m_psn++;
         m_packetsSent++;
         NS_LOG_DEBUG(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << " SUE" << m_sueId
@@ -630,28 +708,20 @@ void SueClient::DoSendBurst(Ptr<Packet> burstPacket, Ptr<Socket> sendingSocket, 
         // Remove sent transactions from destination queue after successful send
         PopTransactionsFromQueue(dest, transactionCount);
 
-        // Release reserved VC capacity
-        if (device) {
-            auto queueManager = device->GetQueueManager();
-            if (queueManager) {
-                queueManager->ReleaseVcCapacity(vcId, packetSize);
-            }
-        }
-
         NS_LOG_DEBUG("Successfully sent " << transactionCount << " transactions for SUE " << m_sueId);
     } else {
-        // Also release reserved VC capacity on send failure
-        if (device) {
-            auto queueManager = device->GetQueueManager();
-            if (queueManager) {
-                queueManager->ReleaseVcCapacity(vcId, packetSize);
-            }
+        if (m_loggingEnabled)
+        {
+            SueStatsUtils::ProcessPacketDropStats(burstPacket, GetNode()->GetId(), device ? (device->GetIfIndex() - 1) : 0, "UdpSendFailed");
         }
         // Detailed error handling
         std::string errorMsg;
         switch (result) {
             case -1:
                 errorMsg = "Socket error (possibly not connected or invalid address)";
+                break;
+            case 0:
+                errorMsg = "Short/zero send (treated as failure)";
                 break;
             default:
                 errorMsg = "Unknown error code: " + std::to_string(result);
@@ -661,7 +731,7 @@ void SueClient::DoSendBurst(Ptr<Packet> burstPacket, Ptr<Socket> sendingSocket, 
         NS_LOG_ERROR(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << " SUE" << m_sueId
                     << "] Send FAILED to XPU" << dest.destXpuId
                     << " - Error: " << errorMsg
-                    << " (Packet size: " << burstPacket->GetSize() << " bytes)");
+                    << " (sent: " << result << "/" << expectedBytes << " bytes)");
 
         // Log detailed network status information
         LogNetworkState(dest);
@@ -837,12 +907,13 @@ void SueClient::PopTransactionsFromQueue(const Destination& dest, uint32_t count
         // Trigger destination queue statistics (event-driven) - after dequeue
         SueStatsUtils::ProcessDestinationQueueStats(m_xpuId, m_sueId, dest.destXpuId, dest.vcId,
                                                    queueInfo.currentBurstSize, m_destQueueMaxBytes);
+    }
 
-        // Notify LoadBalancer that destination queue space is available
-        if (m_destQueueSpaceCallback)
-        {
-            m_destQueueSpaceCallback (m_sueId, dest.destXpuId, dest.vcId);
-        }
+    // Notify LoadBalancer once per dequeue-batch (instead of per-transaction) to avoid
+    // pathological O(N^2) buffer draining when destination queues are under sustained pressure.
+    if (removedCount > 0 && m_destQueueSpaceCallback)
+    {
+        m_destQueueSpaceCallback (m_sueId, dest.destXpuId, dest.vcId);
     }
     
     NS_LOG_INFO(Simulator::Now().GetSeconds() << "s [XPU" << m_xpuId << " SUE" << m_sueId
@@ -896,11 +967,10 @@ void SueClient::LogNetworkState(const Destination& dest) {
         }
     }
 
-    // Check MAC address corresponding to target XPU
-    // Calculate IP address based on target XPU
-    std::ostringstream ipStream;
-    ipStream << "10." << (dest.destXpuId + 1) << ".1.1";
-    Ipv4Address destIp(ipStream.str().c_str());
+    // Check MAC address corresponding to target XPU port0 by topology-provided mapping
+    uint32_t dummyPortIdx = 0;
+    Ptr<PointToPointSueNetDevice> baseDev = m_managedDevices.empty() ? nullptr : m_managedDevices[0];
+    Ipv4Address destIp = ResolveRemoteIp(dest.destXpuId, baseDev, dummyPortIdx);
     Mac48Address destMac = GetMacForIp(destIp);
     NS_LOG_INFO("Destination MAC for XPU" << dest.destXpuId << ": " << destMac);
 
