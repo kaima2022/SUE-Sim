@@ -49,6 +49,9 @@ SUE-Sim supports rich configuration parameters, covering network topology, traff
 | `--ProcessingRate` | "200Gbps" | Processing rate |
 | `--LinkDelay` | "10ns" | Link propagation delay |
 | `--errorRate` | 0.00 | Error rate |
+| `--ErrorRateStopAfter` | "" | Disable receiver error model after a specified duration |
+| `--ErrorModelApplyToControlPackets` | true | Apply error model to CBFC and LLR control packets |
+| `--ErrorModelApplyToSyncPackets` | true | Apply error model to CBFC_SYNC credit synchronization packets |
 | `--processingDelay` | "10ns" | Packet processing delay |
 
 ### CBFC Credit Flow Control Parameters
@@ -56,12 +59,16 @@ SUE-Sim supports rich configuration parameters, covering network topology, traff
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
 | `--EnableLinkCBFC` | true | Enable link layer CBFC flow control |
-| `--LinkCredits` | 85 | Initial CBFC credits for link layer |
+| `--LinkCredits` | 0 | Initial link credits. `0` means auto-calibrate from processing queue size and `BytesPerCredit` |
 | `--CreditBatchSize` | 1 | Credit accumulation threshold |
-| `--SwitchCredits` | 85 | Switch credits |
+| `--SwitchCredits` | 0 | Switch egress credit budget. `0` means auto-calibrate from VC queue size and VC count |
 | `--HeaderSize` | 52 | Header size 
 | `--BaseCredit` | 1 | Base credit value for minimum packet |
 | `--BytesPerCredit` | 32 | Bytes per credit for linear mapping (bytes) |
+| `--SwitchEgressOverflowPolicy` | 0 | Switch egress overflow policy: `0=retry`, `1=drop` |
+| `--EnableCreditSync` | false | Enable periodic credit synchronization |
+| `--CreditSyncInterval` | "0ns" | Periodic credit synchronization interval |
+| `--LinkCreditMode` | 0 | Link credit allocation mode: `0=SHARED`, `1=EXCLUSIVE` |
 
 ### Queue Buffer Parameters
 
@@ -136,10 +143,21 @@ SUE-Sim supports rich configuration parameters, covering network topology, traff
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
 | `--EnableLLR` | false | Enable Link Layer Reliability |
+| `--LlrProtectCbfcUpdates` | true | Protect CBFC update packets with LLR sequencing and retransmission |
 | `--LlrTimeout` | "10000ns" | LLR timeout value |
 | `--LlrWindowSize` | 10 | LLR window size |
 | `--AckAddHeaderDelay` | "10ns" | ACK/NACK header addition delay |
 | `--AckProcessDelay` | "10ns" | ACK/NACK processing delay |
+
+### Migration Update Notes
+
+The main repository now includes the migration-tested feature set that was previously validated in the SUE-Sim test repository. The most important operational implications are:
+
+- `portsPerXpu=1` is required for real `N -> 1` incast and backpressure tests because the migrated routing path preserves port identity.
+- `LinkCreditMode` allows direct comparison between shared-pool and per-VC exclusive credit allocation.
+- `EnableCreditSync` is intended for targeted experiments and should normally remain disabled unless credit-drift behavior is being studied.
+- When `SwitchEgressOverflowPolicy=1`, `EnableLLR=true` is strongly recommended to avoid silent loss-induced deadlock scenarios.
+- `LinkCredits=0` and `SwitchCredits=0` are the recommended defaults because they track queue-capacity-based automatic calibration.
 
 ### Capacity Reservation Parameters
 

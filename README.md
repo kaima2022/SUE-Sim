@@ -57,7 +57,7 @@ SUE-Sim serves two primary objectives:
 
 - **SUE Framework Specification Optimization**: The platform enables researchers to optimize SUE framework specifications through advanceing algorithms and protocol validating. 
 
-**Current Version**: SUE-Sim v2.1 
+**Current Version**: SUE-Sim v3.0
 
 ## System Architecture
 <p align="center">
@@ -89,11 +89,7 @@ SUE-Sim/
 ├── scratch/                        # Simulation scripts
 │   └── SUE-Sim/                    # Main simulation script and configurations
 │       ├── SUE-Sim.cc              # Entry point for SUE simulation
-│       ├── config/                 # Simulation configuration files
-│       │   └── test-fine-grained-config.csv  # Fine-grained test configuration
-│       └── trace/                            # Traffic trace files
-│           └── all_trace_entries.csv         # Complete traffic trace data
-│
+│       └── config/                 # Simulation configuration files
 ├── src/                              # ns-3 source code
 │   └── sue-sim-module/               # SUE module
 │       ├── model/                    # Core models
@@ -246,6 +242,19 @@ SUE-Sim supports configuration parameters, covering network topology, traffic ge
 
 ---
 ## Changelog
+
+### v3.0 (2026-03-12)
+- **Major Changes**:
+  - Added credit synchronization capability for correcting drift under packet-loss scenarios
+  - Added lossy switch-egress handling and improved link-layer loss recovery behavior
+  - Added automatic credit calibration and stronger credit-window consistency checks
+  - Updated routing and device-role handling to remove heuristic address mapping behavior
+  - Merged the per-egress-port forwarding pipeline and improved switch-side credit arbitration
+  - Enhanced load balancing, virtual-channel support, multi-port scheduling, and subnet allocation behavior
+  - Expanded performance logging and synchronized the fine-grained test inputs used by the validated scenarios
+  - Fixed throughput accounting and address mapping issues in the migrated implementation
+- **Stability**:
+  - Fixed multiple bugs and optimized many implementation details
 
 ### v2.1 (2025-12-07)
 - **Major Changes**:
