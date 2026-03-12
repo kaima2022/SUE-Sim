@@ -202,8 +202,7 @@ cd SUE-Sim
 
 ### Usage
 
-SUE-Sim supports three traffic modes: Uniform Traffic, Trace-based Traffic, and Configuration-based Traffic.
-The following command demonstrates a 4-node XPU test scenario:
+The following command is the recommended basic starting point for running SUE-Sim.
 
 #### Topology Composition
 - **XPU Nodes**: 4 XPUs, each XPU contains 16 ports
@@ -213,22 +212,10 @@ The following command demonstrates a 4-node XPU test scenario:
   <img src="images/DisplayDiagram/Topology.png" alt="XPU Internal Architecture Diagram" width="80%">
 </p>
 
-#### 1. Uniform Traffic Mode
-Generates uniform traffic patterns across all nodes:
-```bash
-./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=16 --portsPerSue=4 --threadRate=3000000 --totalBytesToSend=5" > log/sue-sim.log 2>&1
-```
+#### Basic Run Command
 
-#### 2. Trace-based Traffic Mode
-Uses real traffic traces for realistic simulation:
 ```bash
-./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=4 --portsPerSue=1 --enableTraceMode=true --traceFilePath=scratch/SUE-Sim/trace/all_trace_entries.csv" > log/sue-sim.log 2>&1
-```
-
-#### 3. Configuration-based Traffic Mode (Recommended)
-Uses detailed configuration files for custom traffic patterns:
-```bash
-./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=4 --portsPerSue=1 --enableFineGrainedMode=true --fineGrainedConfigFile=scratch/SUE-Sim/config/test-fine-grained-config.csv --LinkCredits=900 --SwitchCredits=300" > log/sue-sim.log 2>&1
+./ns3 run "scratch/SUE-Sim/SUE-Sim --nXpus=4 --portsPerXpu=4 --portsPerSue=1 --enableFineGrainedMode=true --fineGrainedConfigFile=scratch/SUE-Sim/config/config.csv"
 ```
 
 **Note**: NS3 logging is disabled by default. Performance data is automatically saved to `performance-data/data`. 
