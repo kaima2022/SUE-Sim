@@ -202,7 +202,7 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("BaseCredit", "Base credit value for minimum packet", cbfc.BaseCredit);
 
     // Credit calculation parameters
-    cmd.AddValue("BytesPerCredit", "Bytes per credit (default: 256)", cbfc.BytesPerCredit);
+    cmd.AddValue("BytesPerCredit", "Bytes per credit (default: 32)", cbfc.BytesPerCredit);
     cmd.AddValue("EnableCreditSync", "Enable periodic credit sync (default: false)", cbfc.EnableCreditSync);
     cmd.AddValue("CreditSyncInterval", "Periodic credit sync interval (e.g., 10us, 1000ns)", cbfc.CreditSyncInterval);
     cmd.AddValue("LinkCreditMode", "Link credit allocation mode: 0=SHARED (all VCs share one pool), 1=EXCLUSIVE (per-VC equal split)", cbfc.LinkCreditMode);
@@ -232,7 +232,7 @@ SueSimulationConfig::ParseCommandLine (int argc, char* argv[])
     cmd.AddValue("processingQueueScheduleDelay", "Processing queue scheduling delay", delay.processingQueueScheduleDelay);
 
     // Capacity reservation parameters
-    cmd.AddValue("AdditionalHeaderSize", "Additional header size for capacity reservation (default: 46 bytes)", delay.additionalHeaderSize);
+    cmd.AddValue("AdditionalHeaderSize", "Additional header size for capacity reservation (default: 44 bytes)", delay.additionalHeaderSize);
 
     // Load balancing parameters
     cmd.AddValue("loadBalanceAlgorithm", "Load balancing algorithm (0=SIMPLE_MOD, 1=MOD_WITH_SEED, 2=PRIME_HASH, 3=ENHANCED_HASH, 4=ROUND_ROBIN, 5=CONSISTENT_HASH)", loadBalance.loadBalanceAlgorithm);

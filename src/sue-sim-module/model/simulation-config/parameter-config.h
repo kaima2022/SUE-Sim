@@ -145,7 +145,7 @@ struct CbfcConfig
     uint32_t BaseCredit;      //!< Base credit value for minimum packet
 
     // Credit-to-byte mapping parameters
-    uint32_t BytesPerCredit;  //!< Bytes per credit (default: 256 bytes/credit)
+    uint32_t BytesPerCredit;  //!< Bytes per credit (default: 32 bytes/credit)
 
     // Periodic credit sync (to correct credit drift/leaks under loss/drop)
     bool EnableCreditSync;       //!< Enable periodic credit sync

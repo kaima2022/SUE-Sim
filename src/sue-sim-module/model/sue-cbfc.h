@@ -378,7 +378,6 @@ private:
   // Credit management maps - replicated from original logic
   std::map<Mac48Address, std::map<uint8_t, uint32_t>> m_txCreditsMap;        //!< TX credits: MAC -> VC -> credits (per-VC, used for EXCLUSIVE mode and switch-internal)
   std::map<Mac48Address, std::map<uint8_t, uint32_t>> m_rxCreditsToReturnMap; //!< RX credits to return: MAC -> VC -> credits
-
   std::map<Mac48Address, uint32_t> m_sharedTxCreditsMap; //!< Shared TX credit pool: MAC -> credits (used in SHARED mode for link peer)
   Mac48Address m_linkPeerMac;                            //!< Link peer MAC address (set during first AddPeerDevice call)
   bool m_linkPeerMacSet;                                  //!< Whether m_linkPeerMac has been set

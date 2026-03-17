@@ -67,6 +67,8 @@ CbfcManager::GetTypeId (void)
 CbfcManager::CbfcManager ()
   : m_initialized (false),
     m_enableLinkCBFC (false),
+    m_linkPeerMac (),
+    m_linkPeerMacSet (false),
     m_linkCreditMode (LinkCreditMode::SHARED),
     m_linkCreditModeRaw (static_cast<uint8_t> (LinkCreditMode::SHARED)),
     m_initialCredits (20),
@@ -82,8 +84,7 @@ CbfcManager::CbfcManager ()
     m_sendPacket (),
     m_creditGenerateDelay (Seconds (0.0)),
     m_protocolNum (0),
-    m_callbacksSet (false),
-    m_linkPeerMacSet (false)
+    m_callbacksSet (false)
 {
   NS_LOG_FUNCTION (this);
 }
@@ -208,7 +209,6 @@ CbfcManager::AddPeerDevice (Mac48Address peerMac, uint32_t initialCredits)
                    << " with " << perVcCredits << " credits per VC");
     }
 
-  // Always initialize rx credits to return (per-VC, regardless of mode)
   for (uint8_t vc = 0; vc < m_numVcs; vc++)
     {
       m_rxCreditsToReturnMap[peerMac][vc] = 0;
@@ -357,20 +357,20 @@ CbfcManager::InitializePeerDeviceCredits (std::function<Mac48Address()> getRemot
                     }
 
                   const uint32_t perPeerTotal = switchCredits / competitorCount;
-                  const uint32_t perPeer = perPeerTotal / vcFactor;
-                  NS_ASSERT_MSG (perPeer > 0, "per-peer switch credits must be > 0");
+                  const uint32_t perPeerPerVc = perPeerTotal / vcFactor;
+                  NS_ASSERT_MSG (perPeerPerVc > 0, "per-peer switch credits must be > 0");
 
                   if (m_enableLinkCBFC && creditWindowPacketBytes > 0)
                     {
                       // Ensure each ingress->egress share can carry at least one max-sized packet.
                       // Otherwise, internal CBFC would block forever (no packet can be admitted).
                       const uint32_t need = CalculateCreditsForPacket (creditWindowPacketBytes);
-                      if (perPeer < need)
+                      if (perPeerPerVc < need)
                         {
                           NS_ABORT_MSG ("SwitchCredits=" << switchCredits
                                                          << " competitorCount=" << competitorCount
                                                          << " numVcs=" << vcFactor
-                                                         << " => perPeer=" << perPeer
+                                                         << " => perPeerPerVc=" << perPeerPerVc
                                                          << " is too small for creditWindowPacketBytes="
                                                          << creditWindowPacketBytes
                                                          << " (BytesPerCredit=" << m_bytesPerCredit
@@ -382,9 +382,13 @@ CbfcManager::InitializePeerDeviceCredits (std::function<Mac48Address()> getRemot
                         }
                     }
 
-                  AddPeerDevice (peer, perPeer);
+                  // AddPeerDevice() expects a TOTAL credit budget for switch-internal peers and
+                  // performs the per-VC split itself. Passing the already-divided per-VC share
+                  // here would divide by numVcs twice and under-provision internal CBFC windows.
+                  AddPeerDevice (peer, perPeerTotal);
                   NS_LOG_INFO ("Switch: Added peer device " << peer
-                                                           << " with perPeer=" << perPeer
+                                                           << " with perPeerTotal=" << perPeerTotal
+                                                           << " perPeerPerVc=" << perPeerPerVc
                                                            << " switchCredits=" << switchCredits
                                                            << " competitorCount=" << competitorCount
                                                            << " numVcs=" << vcFactor);
@@ -413,7 +417,6 @@ CbfcManager::GetTxCredits (Mac48Address mac, uint8_t vcId) const
       return (it != m_sharedTxCreditsMap.end ()) ? it->second : 0;
     }
 
-  // Exclusive mode or switch-internal peer: per-VC credits
   auto it = m_txCreditsMap.find (mac);
   if (it != m_txCreditsMap.end ())
     {
@@ -443,7 +446,6 @@ CbfcManager::DecrementTxCredits (Mac48Address mac, uint8_t vcId)
       return false;
     }
 
-  // Exclusive mode or switch-internal peer
   auto it = m_txCreditsMap.find (mac);
   if (it != m_txCreditsMap.end ())
     {
@@ -474,7 +476,6 @@ CbfcManager::DecrementTxCredits (Mac48Address mac, uint8_t vcId, uint32_t credit
       return false;
     }
 
-  // Exclusive mode or switch-internal peer
   auto it = m_txCreditsMap.find (mac);
   if (it != m_txCreditsMap.end ())
     {
@@ -791,7 +792,6 @@ CbfcManager::HasEnoughCredits (Mac48Address mac, uint8_t vcId, uint32_t packetSi
       return (it != m_sharedTxCreditsMap.end () && it->second >= creditsNeeded);
     }
 
-  // Exclusive mode or switch-internal peer
   auto it = m_txCreditsMap.find (mac);
   if (it != m_txCreditsMap.end ())
     {
